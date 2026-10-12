@@ -1,0 +1,11 @@
+# Backend (Django/Python)
+campushub-backend/venv/
+campushub-backend/.env
+campushub-backend/*.pyc
+campushub-backend/__pycache__/
+campushub-backend/db.sqlite3
+
+# Frontend (Next.js/Node)
+campushub-frontend/node_modules/
+campushub-frontend/.next/
+campushub-frontend/.env*.local
