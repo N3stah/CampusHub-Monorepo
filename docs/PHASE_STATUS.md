@@ -6,7 +6,8 @@
 | Phase | Slice | Backend (Mark) | Frontend (Titus) | Merged to main |
 |-------|-------|---------------|-------------------|----------------|
 | 0 | Config & Setup | `[x]` | `[x]` | `[x]` |
-| 1A/B | Auth & Users | `[-]` | `[ ]` | `[ ]` |
+| 1A | Auth Backend | `[x]` | `[ ]` | `[ ]` |
+| 1B | Auth Frontend | `[ ]` | `[ ]` | `[ ]` |
 | 2A/B | Academics | `[ ]` | `[ ]` | `[ ]` |
 | 3A/B | Resources | `[ ]` | `[ ]` | `[ ]` |
 | 4A/B | Placements | `[ ]` | `[ ]` | `[ ]` |
@@ -22,38 +23,42 @@
 **What was done:**
 - Monorepo created: `CampusHub-Monorepo/`
 - Next.js 16 frontend scaffolded with Tailwind + TypeScript + App Router
-- Django backend scaffolded: `config/`, `apps/accounts/`, `apps/courses/`, `apps/placements/`
-- Root `.gitignore` configured (excluding venv, .env, node_modules, .idea)
-- `.idea/` PyCharm config removed from version control
-- PostgreSQL 18 verified running on Ubuntu
-- Python 3.14 + Node 22 confirmed
-- Django 6.1.2, DRF 3.18.3, SimpleJWT 5.5.1, psycopg2-binary installed
-- Initial commit pushed to `main`
-
-**Git tag to push:** `v0.1.0-setup`
-
-**Remaining Phase 0 tasks:**
-- [ ] Rename Django apps to match VSA structure (`apps/accounts/`, `apps/academics/`, `apps/resources/`, `apps/placements/`, `apps/common/`)
-- [ ] Split settings into `config/settings/base.py` · `dev.py` · `prod.py`
-- [ ] Set `AUTH_USER_MODEL = 'accounts.User'` before first migration
-- [ ] Create `campushub_db` PostgreSQL database
-- [ ] Create `.env` and `.env.example` files
-- [ ] Push git tag: `git tag v0.1.0-setup && git push origin v0.1.0-setup`
+- Django backend scaffolded with VSA structure: `apps/accounts/`, `apps/academics/`, `apps/resources/`, `apps/placements/`, `apps/common/`
+- Settings split into `config/settings/base.py`, `dev.py`, `prod.py`
+- `AUTH_USER_MODEL = 'accounts.User'` set before first migration
+- Custom User model with `role` field, email as USERNAME_FIELD
+- Department stub model in `apps/academics/`
+- PostgreSQL 18 database `campushub_db` created with `campushub_user`
+- `.env` and `.env.example` configured (python-decouple)
+- `makemigrations` + `migrate` ran cleanly
+- Git tag `v0.1.0-setup` pushed
 
 ---
 
-## Phase 1 — In Progress 🔄
+## Phase 1A — Completed ✅
 
-**Target date:** Week 8 (Oct 5–Oct 9, 2026)
+**Date:** 2026-10-13
 
 **Backend tasks (Mark):**
-- [ ] Custom User model with `role` field + `UserManager`
-- [ ] `makemigrations accounts` + `migrate` runs cleanly
-- [ ] `POST /api/auth/register/` endpoint
-- [ ] `POST /api/auth/token/` (SimpleJWT)
-- [ ] `POST /api/auth/token/refresh/`
-- [ ] `GET /api/auth/me/` (authenticated user profile)
-- [ ] Postman collection for auth endpoints
+- [x] Custom User model with `role` field + `UserManager`
+- [x] `makemigrations accounts` + `migrate` runs cleanly
+- [x] `POST /api/auth/register/` — creates user, password write-only
+- [x] `POST /api/auth/token/` — returns access + refresh JWT
+- [x] `POST /api/auth/token/refresh/` — wired via SimpleJWT
+- [x] `GET /api/auth/me/` — returns authenticated user profile
+- [x] UserAdmin registered with CampusHub fieldset
+- [ ] Postman collection for auth endpoints (deferred to 1B)
+
+**Files created:**
+- `apps/accounts/serializers.py`
+- `apps/accounts/views.py`
+- `apps/accounts/urls.py`
+- `apps/accounts/admin.py` (updated)
+- `config/urls.py` (updated)
+
+---
+
+## Phase 1B — Not Started
 
 **Frontend tasks (Partner):**
 - [ ] `src/lib/api.ts` Axios instance with JWT interceptor
@@ -67,13 +72,13 @@
 
 ## Blocker Log
 
-> Record anything that blocked progress here so your AI assistant can help.
-
 | Date | Blocker | Resolution |
 |------|---------|-----------|
 | 2026-10-12 | `.idea/` committed to GitHub | Removed with `git rm --cached`, updated `.gitignore` |
-| 2026-10-12 | `pip install uv` failed (PEP 668) | Used `python3 -m venv venv` instead — correct approach |
-| 2026-10-12 | Git remote URL had `< >` angle brackets | Ran `git remote add origin https://...` without brackets |
+| 2026-10-12 | `pip install uv` failed (PEP 668) | Used `python3 -m venv venv` instead |
+| 2026-10-13 | `AUTH_USER_MODEL` refers to empty model | Wrote full User model + Department stub before `manage.py check` |
+| 2026-10-13 | `migrate` failing — password auth error | PostgreSQL 18 on Ubuntu 26.04 listens on port **5434** (not 5432). Fix: `DB_PORT=5434` in `.env` |
+| 2026-10-13 | `permission denied for schema public` | PostgreSQL 15+ removes CREATE from public schema by default. Fix: `GRANT ALL ON SCHEMA public TO campushub_user;` |
 
 ---
 
@@ -82,6 +87,5 @@
 | Branch | Owner | Status | PR # |
 |--------|-------|--------|------|
 | `main` | Both | Protected | — |
-| `docs/erd-and-design` | Mark | Open | — |
-| `feature/accounts-backend` | Mark | Not started | — |
+| `docs/erd-and-design` | Mark | Open — Phase 1A committed | — |
 | `feature/accounts-frontend` | Partner | Not started | — |
