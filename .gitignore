@@ -9,3 +9,5 @@ campushub-backend/db.sqlite3
 campushub-frontend/node_modules/
 campushub-frontend/.next/
 campushub-frontend/.env*.local
+.env
+.env
