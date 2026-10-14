@@ -1,1 +1,26 @@
 .idea/
+# Python virtual environments
+.venv/
+venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Django database
+db.sqlite3
+
+# Test and coverage files
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Build and distribution files
+build/
+dist/
+*.egg-info/
