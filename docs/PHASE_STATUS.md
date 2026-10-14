@@ -7,7 +7,7 @@
 |-------|-------|---------------|-------------------|----------------|
 | 0 | Config & Setup | `[x]` | `[x]` | `[x]` |
 | 1A | Auth Backend | `[x]` | `[ ]` | `[ ]` |
-| 1B | Auth Frontend | `[ ]` | `[ ]` | `[ ]` |
+| 1B | Auth Frontend | `[x]` | `[x]` | `[ ]` |
 | 2A/B | Academics | `[ ]` | `[ ]` | `[ ]` |
 | 3A/B | Resources | `[ ]` | `[ ]` | `[ ]` |
 | 4A/B | Placements | `[ ]` | `[ ]` | `[ ]` |
@@ -58,15 +58,28 @@
 
 ---
 
-## Phase 1B — Not Started
+## Phase 1B — Completed ✅
+
+**Date:** 2026-10-14
+
+**What was done:**
+- Installed axios for API requests
+- Created lib/api.ts with JWT interceptors (attach token, auto-refresh on 401)
+- Created types/index.ts for TypeScript interfaces
+- Created context/AuthContext.tsx to manage user state, login(), logout()
+- Wrapped app in AuthProvider in layout.tsx
+- Built Login page (/login)
+- Built Register page (/register) with auto-login
+- Built protected Dashboard page (/dashboard)
+- Updated root page to redirect to /dashboard
 
 **Frontend tasks (Partner):**
-- [ ] `src/lib/api.ts` Axios instance with JWT interceptor
-- [ ] `src/types/index.ts` TypeScript interfaces
-- [ ] Login page (`/login`)
-- [ ] Register page (`/register`)
-- [ ] Protected route wrapper
-- [ ] Auth context / user state management
+- [x] `src/lib/api.ts` Axios instance with JWT interceptor
+- [x] `src/types/index.ts` TypeScript interfaces
+- [x] Login page (`/login`)
+- [x] Register page (`/register`)
+- [x] Protected route wrapper
+- [x] Auth context / user state management
 
 ---
 
