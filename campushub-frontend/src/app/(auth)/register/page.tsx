@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { ApiError } from '@/types/index';
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { login } = useAuth();
   
   const [form, setForm] = useState({
     email: '',
@@ -33,24 +35,21 @@ export default function RegisterPage() {
     }
 
     try {
-      // Register the user
+      // 1. Register the user
       await api.post('/auth/register/', {
         email: form.email,
         username: form.username,
         first_name: form.first_name,
         last_name: form.last_name,
         password: form.password,
+        password2: form.password2,
         role: form.role,
       });
 
-      // Auto-login after registration
-      const { data } = await api.post('/auth/token/', {
-        email: form.email,
-        password: form.password,
-      });
-      localStorage.setItem('access_token', data.access);
-      localStorage.setItem('refresh_token', data.refresh);
+      // 2. Auto-login using context to update global state
+      await login(form.email, form.password);
       
+      // 3. Redirect to dashboard
       router.push('/dashboard');
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: ApiError } };
