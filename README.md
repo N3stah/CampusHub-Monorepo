@@ -172,7 +172,7 @@ See [`docs/PHASE_STATUS.md`](docs/PHASE_STATUS.md) for detailed task tracking.
 | Role | Name | GitHub |
 |------|------|--------|
 | Backend Developer | Mark Manoti | [@N3stah](https://github.com/N3stah) |
-| Frontend Developer | Titus | — |
+| Frontend Developer | Titus | [@koech](https://github.com/Koech028) |
 
 ---
 
