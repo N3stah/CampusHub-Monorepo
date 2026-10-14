@@ -65,7 +65,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <dt className="text-sm font-medium text-gray-500">Full Name</dt>
-                <dd className="mt-1 text-sm text-gray-900">{user.full_name}</dd>
+                <dd className="mt-1 text-sm text-gray-900">{user.first_name} {user.last_name}</dd>
               </div>
               <div>
                 <dt className="text-sm font-medium text-gray-500">Role</dt>
