@@ -4,6 +4,9 @@ from decouple import config
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = config('SECRET_KEY')
+JWT_SECRET = config('JWT_SECRET', default=SECRET_KEY)
+JWT_ACCESS_MINUTES = config('JWT_ACCESS_MINUTES', default=30, cast=int)
+JWT_REFRESH_DAYS = config('JWT_REFRESH_DAYS', default=7, cast=int)
 
 INSTALLED_APPS = [
     'django.contrib.admin',
