@@ -37,24 +37,41 @@
 
 ## Phase 1A — Completed ✅
 
-**Date:** 2026-10-13
+**Date:** 2026-10-13 (initial) · 2026-10-14 (DRF removed, auth rewritten)
 
-**Backend tasks (Mark):**
+**Update 2026-10-14: DRF removed.** Auth was rewritten with plain Django
+(`JsonResponse`) + PyJWT. `djangorestframework` and `djangorestframework-simplejwt`
+are gone from `requirements.txt` and `INSTALLED_APPS`, and the `REST_FRAMEWORK`
+settings block is deleted. The model and migrations are unchanged.
+
+**Backend tasks:**
 - [x] Custom User model with `role` field + `UserManager`
 - [x] `makemigrations accounts` + `migrate` runs cleanly
-- [x] `POST /api/auth/register/` — creates user, password write-only
-- [x] `POST /api/auth/token/` — returns access + refresh JWT
-- [x] `POST /api/auth/token/refresh/` — wired via SimpleJWT
-- [x] `GET /api/auth/me/` — returns authenticated user profile
+- [x] `POST /api/auth/register/` — plain Django view, manual validation, always assigns `student` role
+- [x] `POST /api/auth/token/` — email + password, returns access (30 min) + refresh (7 days) JWT via PyJWT
+- [x] `POST /api/auth/token/refresh/` — validates refresh token, returns new access token
+- [x] `GET /api/auth/me/` — returns authenticated user profile (Bearer token)
+- [x] `PATCH /api/auth/me/` — updates whitelisted profile fields
+- [x] `@jwt_required` and `@role_required` decorators for protected views
 - [x] UserAdmin registered with CampusHub fieldset
+- [x] Smoke-tested all endpoints (register, token, me, refresh, 401 without token)
+- [ ] Auth tests (pytest-django)
 - [ ] Postman collection for auth endpoints (deferred to 1B)
 
-**Files created:**
+**Files created/changed:**
+- `apps/accounts/jwt_utils.py` (new: token creation/decoding, decorators)
+- `apps/accounts/views.py` (rewritten, plain Django)
+- `apps/accounts/urls.py` (rewritten)
+- `apps/accounts/admin.py`
+- `config/settings/base.py` (JWT_SECRET, JWT_ACCESS_MINUTES, JWT_REFRESH_DAYS; DRF removed)
+- `config/urls.py`
+- `requirements.txt` (PyJWT added, DRF packages removed)
+
+**Files removed:**
 - `apps/accounts/serializers.py`
-- `apps/accounts/views.py`
-- `apps/accounts/urls.py`
-- `apps/accounts/admin.py` (updated)
-- `config/urls.py` (updated)
+- `apps/accounts/utils.py` (session-based `api_login_required`)
+
+**Known gaps:** no logout/token revocation, no refresh-token rotation.
 
 ---
 
@@ -68,6 +85,10 @@
 - [ ] Protected route wrapper
 - [ ] Auth context / user state management
 
+**API contract:** login with `{email, password}` returns `{access, refresh}`. Send
+`Authorization: Bearer <access>` on protected requests. On 401, call
+`/api/auth/token/refresh/` with `{refresh}` to get a new access token.
+
 ---
 
 ## Blocker Log
@@ -79,6 +100,10 @@
 | 2026-10-13 | `AUTH_USER_MODEL` refers to empty model | Wrote full User model + Department stub before `manage.py check` |
 | 2026-10-13 | `migrate` failing — password auth error | PostgreSQL 18 on Ubuntu 26.04 listens on port **5434** (not 5432). Fix: `DB_PORT=5434` in `.env` |
 | 2026-10-13 | `permission denied for schema public` | PostgreSQL 15+ removes CREATE from public schema by default. Fix: `GRANT ALL ON SCHEMA public TO campushub_user;` |
+| 2026-10-14 | DRF/sessions auth pushed, but spec requires plain Django + PyJWT | Rewrote auth with PyJWT, removed DRF and session decorator |
+| 2026-10-14 | Mixed Python versions (3.11 vs 3.14) across the team | Standardised on Python 3.14; recreate `.venv` with `py -3.14` |
+| 2026-10-14 | `development_branch` missing `manage.py`, `config/settings/*`, models and migrations | Added in the auth commit; teammates must `git pull` |
+| 2026-10-14 | `.pyc` files tracked in git, `requirements.txt` committed as UTF-16 (PowerShell `>`) | Untracked `__pycache__`; regenerate with `pip freeze \| Set-Content -Encoding ascii requirements.txt` |
 
 ---
 
@@ -87,5 +112,6 @@
 | Branch | Owner | Status | PR # |
 |--------|-------|--------|------|
 | `main` | Both | Protected | — |
+| `development_branch` | Both | Active — Phase 1A (plain Django + PyJWT) pushed | — |
 | `docs/erd-and-design` | Mark | Open — Phase 1A committed | — |
 | `feature/accounts-frontend` | Partner | Not started | — |
