@@ -126,6 +126,44 @@ settings block is deleted. The model and migrations are unchanged.
 
 ---
 
+## Phase 2B — Frontend Progress (In Progress)
+
+**Date:** 2026-10-15
+**Branch:** `feature/frontend-student-and-staff-pages`
+**Commits pushed:** `548c0f1` (portal workflows), `3c2f121` (landing and registration)
+
+**Student workflows implemented:**
+- Student dashboard with active courses, course announcements, placement opportunities, and application statuses.
+- My Courses page backed by `GET /api/academics/enrollments/`.
+- Course detail page with course and lecturer information, resources, resource downloads, and lecturer announcements.
+- Placement application form with a cover note and optional CV upload.
+
+**Lecturer and placement workflows implemented:**
+- Searchable lecturer directory; admin create, edit, deactivate, and reactivate controls.
+- Placement listing page; officer/admin create, edit, and remove controls.
+- Officer/admin application review table with pending, shortlisted, accepted, and rejected status updates.
+- Admin overview with stats, management links, role-access summary, and recent activity.
+
+**Shared frontend work:**
+- Role-aware portal navigation and page access checks.
+- Reusable paginated directory table and API response/error helpers.
+- Loading, retry, error, and empty states across API-backed screens.
+- Updated landing and registration pages.
+
+**Validation completed:**
+- `npx tsc --noEmit` — passed.
+- `npm run build` — passed.
+- `npm run lint` — no errors; two warnings remain in existing files (`register/page.tsx` and `lib/api.ts`).
+
+**Remaining work / integration blockers:**
+- Frontend changes are pushed to `feature/frontend-student-and-staff-pages`; they are not yet merged to `main`.
+- Academics backend currently supports enrollment and course detail, but resource and announcement endpoints are not implemented.
+- Lecturer directory CRUD, placement CRUD, and application review endpoints are not yet implemented in the backend.
+- Add and verify server-side role and ownership permissions for management, downloads, and application status changes. Frontend role checks only control the UI.
+- Test the complete student and staff workflows against the backend once the remaining endpoints are available.
+
+---
+
 ## Blocker Log
 
 | Date | Blocker | Resolution |
