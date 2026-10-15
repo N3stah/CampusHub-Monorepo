@@ -146,6 +146,26 @@ settings block is deleted. The model and migrations are unchanged.
 
 ---
 
+## Phase 3A — Completed ✅
+
+**Date:** 2026-10-15
+
+**What was done:**
+- Created Resource and Announcement models in apps/resources/models.py
+- Implemented plain Django views (JsonResponse, csrf_exempt, require_http_methods) for:
+  - GET/POST /api/resources/courses/<course_id>/resources/ (jwt_required, file upload validation)
+  - GET/DELETE /api/resources/courses/<course_id>/resources/<id>/ (jwt_required, uploader/admin delete)
+  - GET/POST /api/resources/courses/<course_id>/announcements/ (jwt_required)
+  - GET /api/resources/courses/<course_id>/announcements/<id>/ (jwt_required)
+- Added permission helper functions (enrolled student / lecturer / admin)
+- Wired up resources URLs in config/urls.py under /api/resources/
+- Applied migrations and registered models in admin
+- All endpoints tested successfully with curl (upload, list, delete)
+
+---
+
+---
+
 ## Blocker Log
 
 | Date | Blocker | Resolution |
