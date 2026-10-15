@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { ApiError } from '@/types/index';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -18,7 +17,6 @@ export default function RegisterPage() {
     last_name: '',
     password: '',
     password2: '',
-    role: 'student',
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -79,7 +77,7 @@ export default function RegisterPage() {
         <div className="bg-white p-8 rounded-2xl shadow-lg">
           <div className="mb-8 text-center">
             <h1 className="text-3xl font-bold text-gray-900">CampusHub</h1>
-            <p className="mt-2 text-gray-600">Create your account</p>
+            <p className="mt-2 text-gray-600">Create your student account</p>
           </div>
 
           {error && (
@@ -146,21 +144,9 @@ export default function RegisterPage() {
               />
             </div>
 
-            <div>
-              <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
-                Role
-              </label>
-              <select
-                id="role"
-                value={form.role}
-                onChange={(e) => setForm({ ...form, role: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition bg-white"
-              >
-                <option value="student">Student</option>
-                <option value="lecturer">Lecturer</option>
-                <option value="officer">Placement Officer</option>
-              </select>
-            </div>
+            <p className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-5 text-blue-900">
+              Public sign-up creates student accounts. Lecturer, placement officer, and admin accounts must be set up by a CampusHub administrator.
+            </p>
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">

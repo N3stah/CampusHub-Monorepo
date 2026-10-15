@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000/api';
+
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000/api',
+  baseURL: apiBaseUrl,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -11,9 +13,16 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('access_token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+      const apiBase = new URL(config.baseURL ?? apiBaseUrl, window.location.origin);
+      const apiOrigin = apiBase.origin;
+      const requestUrl = new URL(config.url ?? '', apiBase);
+      if (requestUrl.origin === apiOrigin) {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+      } else {
+        delete config.headers.Authorization;
       }
     }
     return config;
