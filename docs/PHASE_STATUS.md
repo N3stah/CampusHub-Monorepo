@@ -8,9 +8,9 @@
 | 0 | Config & Setup | `[x]` | `[x]` | `[x]` |
 | 1A | Auth Backend | `[x]` | `[ ]` | `[x]` |
 | 1B | Auth Frontend | `[x]` | `[x]` | `[x]` |
-| 2A/B | Academics | `[x]` | `[-]` | `[x]` (Backend) |
+| 2A/B | Academics | `[x]` | `[x]` | `[x]` |
 | 3A/B | Resources | `[x]` | `[ ]` | `[x]` (Backend) |
-| 4A/B | Placements | `[x]` | `[ ]` | `[ ]` |
+| 4A/B | Placements | `[x]` | `[ ]` | `[x]` (Backend) |
 | 5A/B | Applications | `[ ]` | `[ ]` | `[ ]` |
 | 6A/B | Polish & Deploy | `[ ]` | `[ ]` | `[ ]` |
 | Test | Auth Tests | `[x]` | `[ ]` | `[x]` |
@@ -77,31 +77,7 @@
 
 ---
 
-## Phase 3A — Completed ✅
-
-**Date:** 2026-10-15
-
-**What was done:**
-- Created `Resource` and `Announcement` models in `apps/resources/`
-- Implemented plain Django views for Resources endpoints:
-  - `GET/POST /api/resources/courses/<course_id>/resources/` (jwt_required, file upload validation)
-  - `GET/DELETE /api/resources/courses/<course_id>/resources/<id>/` (jwt_required, uploader/admin delete)
-  - `GET/POST /api/resources/courses/<course_id>/announcements/` (jwt_required)
-  - `GET /api/resources/courses/<course_id>/announcements/<id>/` (jwt_required)
-- Added permission helper functions (enrolled student / lecturer / admin)
-- Wired up resources URLs in `config/urls.py` under `/api/resources/`
-- Applied migrations and registered models in admin
-- Tested upload, list, and delete with curl
-- *Fix:* Added missing `models.py` file that was accidentally left out of the initial commit
-
-**Files changed:**
-- `apps/resources/models.py`, `apps/resources/views.py`, `apps/resources/urls.py`, `apps/resources/admin.py`
-- `apps/resources/migrations/0001_initial.py`
-- `config/urls.py`
-
----
-
-## Phase 2B — Frontend Completed ✅
+## Phase 2B — Completed ✅
 
 **Date:** 2026-10-15
 **Branch:** `feature/frontend-student-and-staff-pages`
@@ -122,20 +98,45 @@
 - Role-aware portal navigation and page access checks.
 - Reusable paginated directory table and API response/error helpers.
 - Loading, retry, error, and empty states across API-backed screens.
-- Updated landing and registration pages; public sign-up is explicitly student-only and explains that staff accounts must be provisioned by an administrator.
+- Updated landing and registration pages; public sign-up is student-only.
 - API client sends bearer tokens only to the configured API origin.
-- Resource download links are restricted to HTTP(S) URLs on the configured API origin.
+- Resource download links restricted to HTTP(S) URLs on the configured API origin.
 
 **Validation completed:**
 - `npx tsc --noEmit` — passed.
 - `npm run build` — passed.
-- `npm run lint` — no errors; one warning remains for the existing full-page redirect in `lib/api.ts`.
+- `npm run lint` — no errors.
 
-**Follow-up required outside this frontend phase:**
-- Integrate-test each page against the backend and align endpoint paths and payloads with the implemented API contracts.
-- Implement or complete any remaining backend routes, and enforce role and ownership permissions server-side. Frontend role checks only control what the UI displays.
-- Token storage remains in `localStorage`; moving to secure HttpOnly cookies requires a coordinated backend authentication change.
-- The security hardening edits made after the feature commits are currently local and must be committed/pushed separately if they are to be included in the shared branch.
+**Follow-up required:**
+- Integrate-test each page against the backend; align endpoint paths and payloads.
+- Token storage in `localStorage` — move to HttpOnly cookies requires coordinated backend change.
+- Security hardening edits (local) must be committed/pushed separately.
+
+---
+
+## Phase 3A — Completed ✅
+
+**Date:** 2026-10-15
+
+**What was done:**
+- Created `Resource` and `Announcement` models in `apps/resources/`
+- Implemented plain Django views for Resources endpoints:
+  - `GET/POST /api/resources/courses/<course_id>/resources/` (jwt_required, file upload validation)
+  - `GET/DELETE /api/resources/courses/<course_id>/resources/<id>/` (jwt_required, uploader/admin delete)
+  - `GET/POST /api/resources/courses/<course_id>/announcements/` (jwt_required)
+  - `GET /api/resources/courses/<course_id>/announcements/<id>/` (jwt_required)
+- Added permission helper functions (enrolled student / lecturer / admin)
+- Wired up resources URLs in `config/urls.py` under `/api/resources/`
+- Applied migrations and registered models in admin
+- Tested upload, list, and delete with curl
+- *Fix:* Added missing `models.py` file accidentally left out of initial commit
+
+**Files changed:**
+- `apps/resources/models.py`, `apps/resources/views.py`, `apps/resources/urls.py`, `apps/resources/admin.py`
+- `apps/resources/migrations/0001_initial.py`
+- `config/urls.py`
+
+---
 
 ## Auth Testing — Completed ✅
 
@@ -159,28 +160,28 @@
 **Date:** 2026-10-15
 
 **What was done:**
-- Created Placement and Application models in apps/placements/models.py
-- Added custom validator  in validators.py
-- Implemented ApplicationService with  and  to prevent race conditions during application submission
+- Created `Placement` and `Application` models in `apps/placements/models.py`
+- Added `deadline_must_be_future` custom validator in `apps/placements/validators.py`
+- Implemented `ApplicationService` with `@transaction.atomic` + `select_for_update()` to prevent race conditions during concurrent application submission
+- Active applications (pending/shortlisted/accepted) counted against `slots_available` — rejected applications free up slots automatically
 - Implemented 8 plain Django endpoints:
-  - GET/POST /api/placements/ (officer/admin create)
-  - GET/PATCH/DELETE /api/placements/<id>/ (officer/admin update/soft-delete)
-  - POST /api/placements/<id>/apply/ (student only, calls ApplicationService.submit)
-  - GET /api/applications/ (students see own, officers see their posted placements, admins see all)
-  - PATCH /api/applications/<id>/status/ (officer/admin only, calls ApplicationService.update_status)
-- Enforced complex business rules:
-  -  cannot be reduced below active application count during PATCH.
-  - Active applications (pending/shortlisted/accepted) are counted against slots.
-  - Officers can only update applications for placements they posted.
-- All 12 curl smoke tests passed (create, apply, duplicate prevention, status update, role enforcement).
+  - `GET/POST /api/placements/` (officer/admin create)
+  - `GET/PATCH/DELETE /api/placements/<id>/` (officer/admin update/soft-delete)
+  - `POST /api/placements/<id>/apply/` (student only, calls `ApplicationService.submit`)
+  - `GET /api/applications/` (students see own; officers see their placements'; admins see all)
+  - `PATCH /api/applications/<id>/status/` (officer/admin, calls `ApplicationService.update_status`)
+- Complex business rules enforced:
+  - `slots_available` cannot be reduced below active application count during `PATCH`
+  - `UNIQUE(student, placement)` constraint at DB level prevents duplicate applications
+  - Officers can only update applications for placements they personally posted
+- All 12 curl smoke tests passed (create, apply, duplicate prevention, status update, role enforcement)
+- Committed and merged to main
 
 **Files changed:**
-- , , 
-- , , 
-- 
-- 
-
----
+- `apps/placements/models.py`, `apps/placements/validators.py`, `apps/placements/services.py`
+- `apps/placements/views.py`, `apps/placements/urls.py`, `apps/placements/admin.py`
+- `apps/placements/migrations/0001_initial.py`
+- `config/urls.py`
 
 ---
 
@@ -194,7 +195,7 @@
 | 2026-10-13 | `permission denied for schema public` | PostgreSQL 15+ removes CREATE from public schema by default. Fix: `GRANT ALL ON SCHEMA public TO campushub_user;` |
 | 2026-10-14 | DRF/sessions auth pushed, but spec requires plain Django + PyJWT | Rewrote auth with PyJWT, removed DRF and session decorator |
 | 2026-10-14 | Mixed Python versions (3.11 vs 3.14) across the team | Standardised on Python 3.14; recreate `.venv` with `py -3.14` |
-| 2026-10-15 | `pytest` failed: `permission denied to create database` | Fix: `sudo -u postgres psql -c "ALTER USER campushub_user CREATEDB;"` |
+| 2026-10-15 | `pytest` failed: `permission denied to create database` | Fix: `sudo -u postgres psql -p 5434 -c "ALTER USER campushub_user CREATEDB;"` |
 | 2026-10-15 | Postman `Register User` returning 400 Bad Request | User already existed from curl tests. Fix: Used a fresh email in the Postman collection JSON |
 | 2026-10-15 | Frontend branch had `ImportError: cannot import name 'Resource'` | Phase 3A commit missed `apps/resources/models.py`. Fix: Created `fix/resources-models-and-requirements` branch, added file, merged to main |
 
@@ -204,5 +205,6 @@
 
 | Branch | Owner | Status | PR # |
 |--------|-------|--------|------|
-| `main` | Both | HEAD at `9ffdd55` — Phase 3A Backend + Tests complete | — |
-| `feature/frontend-student-and-staff-pages` | Titus | Phase 2B Frontend (In Progress) | — |
+| `main` | Both | HEAD — Phase 4A Backend + Phase 2B Frontend complete | — |
+| `phase-5a-applications-backend` | Titus | Next — not started | — |
+| `phase-5b-applications-frontend` | Mark | Blocked on 5A | — |
