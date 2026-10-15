@@ -101,24 +101,41 @@
 
 ---
 
-## Phase 2B — Frontend Progress (In Progress)
+## Phase 2B — Frontend Completed ✅
 
 **Date:** 2026-10-15
 **Branch:** `feature/frontend-student-and-staff-pages`
 
-**Student workflows implemented:**
+**Student workflows delivered:**
 - Student dashboard with active courses, course announcements, placement opportunities, and application statuses.
 - My Courses page backed by `GET /api/academics/enrollments/`.
 - Course detail page with course and lecturer information, resources, resource downloads, and lecturer announcements.
 - Placement application form with a cover note and optional CV upload.
 
-**Lecturer and placement workflows implemented:**
+**Lecturer and placement workflows delivered:**
 - Searchable lecturer directory; admin create, edit, deactivate, and reactivate controls.
 - Placement listing page; officer/admin create, edit, and remove controls.
 - Officer/admin application review table with pending, shortlisted, accepted, and rejected status updates.
 - Admin overview with stats, management links, role-access summary, and recent activity.
 
----
+**Shared frontend and basic security work:**
+- Role-aware portal navigation and page access checks.
+- Reusable paginated directory table and API response/error helpers.
+- Loading, retry, error, and empty states across API-backed screens.
+- Updated landing and registration pages; public sign-up is explicitly student-only and explains that staff accounts must be provisioned by an administrator.
+- API client sends bearer tokens only to the configured API origin.
+- Resource download links are restricted to HTTP(S) URLs on the configured API origin.
+
+**Validation completed:**
+- `npx tsc --noEmit` — passed.
+- `npm run build` — passed.
+- `npm run lint` — no errors; one warning remains for the existing full-page redirect in `lib/api.ts`.
+
+**Follow-up required outside this frontend phase:**
+- Integrate-test each page against the backend and align endpoint paths and payloads with the implemented API contracts.
+- Implement or complete any remaining backend routes, and enforce role and ownership permissions server-side. Frontend role checks only control what the UI displays.
+- Token storage remains in `localStorage`; moving to secure HttpOnly cookies requires a coordinated backend authentication change.
+- The security hardening edits made after the feature commits are currently local and must be committed/pushed separately if they are to be included in the shared branch.
 
 ## Auth Testing — Completed ✅
 
