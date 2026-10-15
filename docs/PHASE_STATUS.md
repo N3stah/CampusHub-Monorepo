@@ -8,7 +8,7 @@
 | 0 | Config & Setup | `[x]` | `[x]` | `[x]` |
 | 1A | Auth Backend | `[x]` | `[ ]` | `[x]` |
 | 1B | Auth Frontend | `[x]` | `[x]` | `[x]` |
-| 2A/B | Academics | `[ ]` | `[ ]` | `[ ]` |
+| 2A/B | Academics | `[x]` | `[ ]` | `[ ]` |
 | 3A/B | Resources | `[ ]` | `[ ]` | `[ ]` |
 | 4A/B | Placements | `[ ]` | `[ ]` | `[ ]` |
 | 5A/B | Applications | `[ ]` | `[ ]` | `[ ]` |
@@ -103,6 +103,26 @@ settings block is deleted. The model and migrations are unchanged.
 **API contract:** login with `{email, password}` returns `{access, refresh}`. Send
 `Authorization: Bearer <access>` on protected requests. On 401, call
 `/api/auth/token/refresh/` with `{refresh}` to get a new access token.
+
+---
+
+## Phase 2A — Completed ✅
+
+**Date:** 2026-10-15
+
+**What was done:**
+- Created Department, Course, and Enrollment models in apps/academics/models.py
+- Implemented plain Django views (JsonResponse, csrf_exempt, require_http_methods) for:
+  - GET /api/academics/departments/
+  - GET /api/academics/courses/ (with ?department filter)
+  - GET /api/academics/courses/<id>/
+  - GET/POST /api/academics/enrollments/ (jwt_required, student role check)
+  - DELETE /api/academics/enrollments/<id>/ (jwt_required, set status to dropped)
+- Wired up academics URLs in config/urls.py
+- Applied migrations and registered models in admin
+- All endpoints tested successfully with curl
+
+---
 
 ---
 
