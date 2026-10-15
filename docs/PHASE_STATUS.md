@@ -10,7 +10,7 @@
 | 1B | Auth Frontend | `[x]` | `[x]` | `[x]` |
 | 2A/B | Academics | `[x]` | `[-]` | `[x]` (Backend) |
 | 3A/B | Resources | `[x]` | `[ ]` | `[x]` (Backend) |
-| 4A/B | Placements | `[ ]` | `[ ]` | `[ ]` |
+| 4A/B | Placements | `[x]` | `[ ]` | `[ ]` |
 | 5A/B | Applications | `[ ]` | `[ ]` | `[ ]` |
 | 6A/B | Polish & Deploy | `[ ]` | `[ ]` | `[ ]` |
 | Test | Auth Tests | `[x]` | `[ ]` | `[x]` |
@@ -151,6 +151,36 @@
 - `campushub-backend/pytest.ini`
 - `apps/accounts/tests/test_auth.py`
 - `docs/CampusHub_Auth.postman_collection.json`
+
+---
+
+## Phase 4A — Completed ✅
+
+**Date:** 2026-10-15
+
+**What was done:**
+- Created Placement and Application models in apps/placements/models.py
+- Added custom validator  in validators.py
+- Implemented ApplicationService with  and  to prevent race conditions during application submission
+- Implemented 8 plain Django endpoints:
+  - GET/POST /api/placements/ (officer/admin create)
+  - GET/PATCH/DELETE /api/placements/<id>/ (officer/admin update/soft-delete)
+  - POST /api/placements/<id>/apply/ (student only, calls ApplicationService.submit)
+  - GET /api/applications/ (students see own, officers see their posted placements, admins see all)
+  - PATCH /api/applications/<id>/status/ (officer/admin only, calls ApplicationService.update_status)
+- Enforced complex business rules:
+  -  cannot be reduced below active application count during PATCH.
+  - Active applications (pending/shortlisted/accepted) are counted against slots.
+  - Officers can only update applications for placements they posted.
+- All 12 curl smoke tests passed (create, apply, duplicate prevention, status update, role enforcement).
+
+**Files changed:**
+- , , 
+- , , 
+- 
+- 
+
+---
 
 ---
 
