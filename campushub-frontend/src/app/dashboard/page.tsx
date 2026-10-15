@@ -1,92 +1,79 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import PortalShell from '@/components/PortalShell';
+import StudentDashboard from '@/components/StudentDashboard';
 import { useAuth } from '@/context/AuthContext';
 
 export default function DashboardPage() {
-  const { user, loading, logout } = useAuth();
-  const router = useRouter();
-
-  // Route protection: redirect to /login if not authenticated
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push('/login');
-    }
-  }, [loading, user, router]);
-
-  // Show a spinner while we verify auth status
-  if (loading || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-      </div>
-    );
-  }
+  const { user } = useAuth();
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      {/* Top Navigation Bar */}
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <span className="text-xl font-bold text-gray-900">CampusHub</span>
-            </div>
-            <div className="flex items-center">
-              <button
-                onClick={logout}
-                className="ml-4 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition"
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">
-            Welcome, {user.first_name}!
+    <PortalShell>
+      {user?.role === 'student' ? <StudentDashboard /> : (
+      <section className="space-y-6">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Your campus, connected</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight">
+            Welcome, {user?.first_name}
           </h1>
-          
-          <div className="bg-white shadow rounded-lg p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">Your Profile</h2>
-            <dl className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Username</dt>
-                <dd className="mt-1 text-sm text-gray-900">{user.username}</dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Email</dt>
-                <dd className="mt-1 text-sm text-gray-900">{user.email}</dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Full Name</dt>
-                <dd className="mt-1 text-sm text-gray-900">{user.first_name} {user.last_name}</dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Role</dt>
-                <dd className="mt-1 text-sm text-gray-900 capitalize">{user.role}</dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Member Since</dt>
-                <dd className="mt-1 text-sm text-gray-900">
-                  {new Date(user.date_joined).toLocaleDateString()}
-                </dd>
-              </div>
-              {user.role === 'student' && user.gpa && (
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">GPA</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{user.gpa}</dd>
-                </div>
-              )}
-            </dl>
-          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Your CampusHub account and a quick route to the resources you need.</p>
         </div>
-      </div>
-    </main>
+
+        <section aria-labelledby="profile-heading" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+            <div>
+              <h2 id="profile-heading" className="text-lg font-semibold">Your profile</h2>
+              <p className="mt-1 text-sm text-slate-500">Account information currently available from your profile.</p>
+            </div>
+            {user && (
+              <span className="w-fit rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold capitalize text-blue-700">{user.role}</span>
+            )}
+          </div>
+          {user && (
+            <dl className="mt-6 grid gap-x-8 gap-y-5 sm:grid-cols-2">
+              {[
+                ['Name', `${user.first_name} ${user.last_name}`],
+                ['Email', user.email],
+                ['Username', user.username],
+                ['Member since', new Date(user.date_joined).toLocaleDateString()],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+                  <dd className="mt-1 text-sm font-medium text-slate-900">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </section>
+
+        <section aria-labelledby="quick-links-heading">
+          <h2 id="quick-links-heading" className="mb-3 font-semibold">Quick links</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Link href="/lecturers" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300">
+              <p className="font-semibold">Lecturer directory</p>
+              <p className="mt-1 text-sm text-slate-500">Find lecturers and their departments.</p>
+            </Link>
+            <Link href="/placements" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300">
+              <p className="font-semibold">Placements</p>
+              <p className="mt-1 text-sm text-slate-500">Explore opportunities and follow application steps.</p>
+            </Link>
+            {(user?.role === 'admin' || user?.role === 'officer') && (
+              <Link href="/users" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300">
+                <p className="font-semibold">Student accounts</p>
+                <p className="mt-1 text-sm text-slate-500">Search student accounts and check their status.</p>
+              </Link>
+            )}
+            {user?.role === 'admin' && (
+              <Link href="/admin" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300">
+                <p className="font-semibold">Administration</p>
+                <p className="mt-1 text-sm text-slate-500">Review portal metrics and recent activity.</p>
+              </Link>
+            )}
+          </div>
+        </section>
+      </section>
+      )}
+    </PortalShell>
   );
 }
