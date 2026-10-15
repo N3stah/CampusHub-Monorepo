@@ -5,11 +5,11 @@
 
 | Phase | Slice | Backend (Titus) | Frontend (Mark) | Merged to main |
 |-------|-------|-----------------|-----------------|----------------|
-| 0 | Config & Setup | `[x]` | `[x]` | `[x]` |
+| 0 | Config & Setup | `[x]` | `[x]` | `[x]` |  
 | 1A | Auth Backend | `[x]` | `[ ]` | `[x]` |
 | 1B | Auth Frontend | `[x]` | `[x]` | `[x]` |
 | 2A/B | Academics | `[x]` | `[ ]` | `[ ]` |
-| 3A/B | Resources | `[ ]` | `[ ]` | `[ ]` |
+| 3A/B | Resources | `[x]` | `[ ]` | `[ ]` |
 | 4A/B | Placements | `[ ]` | `[ ]` | `[ ]` |
 | 5A/B | Applications | `[ ]` | `[ ]` | `[ ]` |
 | 6A/B | Polish & Deploy | `[ ]` | `[ ]` | `[ ]` |
@@ -126,6 +126,7 @@ settings block is deleted. The model and migrations are unchanged.
 
 ---
 
+feature/frontend-student-and-staff-pages
 ## Phase 2B — Frontend Progress (In Progress)
 
 **Date:** 2026-10-15
@@ -161,6 +162,24 @@ settings block is deleted. The model and migrations are unchanged.
 - Lecturer directory CRUD, placement CRUD, and application review endpoints are not yet implemented in the backend.
 - Add and verify server-side role and ownership permissions for management, downloads, and application status changes. Frontend role checks only control the UI.
 - Test the complete student and staff workflows against the backend once the remaining endpoints are available.
+
+
+## Phase 3A — Completed ✅
+
+**Date:** 2026-10-15
+
+**What was done:**
+- Created Resource and Announcement models in apps/resources/models.py
+- Implemented plain Django views (JsonResponse, csrf_exempt, require_http_methods) for:
+  - GET/POST /api/resources/courses/<course_id>/resources/ (jwt_required, file upload validation)
+  - GET/DELETE /api/resources/courses/<course_id>/resources/<id>/ (jwt_required, uploader/admin delete)
+  - GET/POST /api/resources/courses/<course_id>/announcements/ (jwt_required)
+  - GET /api/resources/courses/<course_id>/announcements/<id>/ (jwt_required)
+- Added permission helper functions (enrolled student / lecturer / admin)
+- Wired up resources URLs in config/urls.py under /api/resources/
+- Applied migrations and registered models in admin
+- All endpoints tested successfully with curl (upload, list, delete)
+
 
 ---
 
