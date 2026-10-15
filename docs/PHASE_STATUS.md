@@ -3,11 +3,11 @@
 > Update this file at the end of every work session.  
 > Format: `[x]` = complete · `[-]` = in progress · `[ ]` = not started
 
-| Phase | Slice | Backend (Mark) | Frontend (Titus) | Merged to main |
-|-------|-------|---------------|-------------------|----------------|
+| Phase | Slice | Backend (Titus) | Frontend (Mark) | Merged to main |
+|-------|-------|-----------------|-----------------|----------------|
 | 0 | Config & Setup | `[x]` | `[x]` | `[x]` |
-| 1A | Auth Backend | `[x]` | `[ ]` | `[ ]` |
-| 1B | Auth Frontend | `[x]` | `[x]` | `[ ]` |
+| 1A | Auth Backend | `[x]` | `[ ]` | `[x]` |
+| 1B | Auth Frontend | `[x]` | `[x]` | `[x]` |
 | 2A/B | Academics | `[ ]` | `[ ]` | `[ ]` |
 | 3A/B | Resources | `[ ]` | `[ ]` | `[ ]` |
 | 4A/B | Placements | `[ ]` | `[ ]` | `[ ]` |
@@ -52,11 +52,11 @@ settings block is deleted. The model and migrations are unchanged.
 - [x] `POST /api/auth/token/refresh/` — validates refresh token, returns new access token
 - [x] `GET /api/auth/me/` — returns authenticated user profile (Bearer token)
 - [x] `PATCH /api/auth/me/` — updates whitelisted profile fields
-- [x] `@jwt_required` and `@role_required` decorators for protected views
+- [x] `@jwt_required` decorator for protected views (in `jwt_utils.py`)
 - [x] UserAdmin registered with CampusHub fieldset
 - [x] Smoke-tested all endpoints (register, token, me, refresh, 401 without token)
-- [ ] Auth tests (pytest-django)
-- [ ] Postman collection for auth endpoints (deferred to 1B)
+- [ ] Auth tests (pytest-django) — deferred
+- [ ] Postman collection for auth endpoints — deferred
 
 **Files created/changed:**
 - `apps/accounts/jwt_utils.py` (new: token creation/decoding, decorators)
@@ -81,22 +81,24 @@ settings block is deleted. The model and migrations are unchanged.
 
 **What was done:**
 - Installed axios for API requests
-- Created lib/api.ts with JWT interceptors (attach token, auto-refresh on 401)
-- Created types/index.ts for TypeScript interfaces
-- Created context/AuthContext.tsx to manage user state, login(), logout()
-- Wrapped app in AuthProvider in layout.tsx
-- Built Login page (/login)
-- Built Register page (/register) with auto-login
-- Built protected Dashboard page (/dashboard)
-- Updated root page to redirect to /dashboard
+- Created `lib/api.ts` with JWT interceptors (attach token, auto-refresh on 401)
+- Created `types/index.ts` for TypeScript interfaces
+- Created `context/AuthContext.tsx` to manage user state, `login()`, `logout()`
+- Wrapped app in AuthProvider in `layout.tsx`
+- Built Login page (`/login`)
+- Built Register page (`/register`) with auto-login via `AuthContext.login()`
+- Built protected Dashboard page (`/dashboard`) showing full user profile
+- Updated root page to redirect to `/dashboard`
+- Fixed bug: dashboard used `user.full_name` but API returns `first_name` + `last_name` — patched (`27e8dac`)
 
-**Frontend tasks (Partner):**
+**Frontend tasks:**
 - [x] `src/lib/api.ts` Axios instance with JWT interceptor
 - [x] `src/types/index.ts` TypeScript interfaces
 - [x] Login page (`/login`)
 - [x] Register page (`/register`)
 - [x] Protected route wrapper
 - [x] Auth context / user state management
+- [x] Dashboard profile card (`/dashboard`)
 
 **API contract:** login with `{email, password}` returns `{access, refresh}`. Send
 `Authorization: Bearer <access>` on protected requests. On 401, call
@@ -117,6 +119,8 @@ settings block is deleted. The model and migrations are unchanged.
 | 2026-10-14 | Mixed Python versions (3.11 vs 3.14) across the team | Standardised on Python 3.14; recreate `.venv` with `py -3.14` |
 | 2026-10-14 | `development_branch` missing `manage.py`, `config/settings/*`, models and migrations | Added in the auth commit; teammates must `git pull` |
 | 2026-10-14 | `.pyc` files tracked in git, `requirements.txt` committed as UTF-16 (PowerShell `>`) | Untracked `__pycache__`; regenerate with `pip freeze \| Set-Content -Encoding ascii requirements.txt` |
+| 2026-10-14 | `.env.save` with DB password accidentally committed | `git rm --cached`, rotated DB password, added `.env.save` to `.gitignore` |
+| 2026-10-14 | Dashboard `Full Name` blank — used `user.full_name` but API returns `first_name` + `last_name` | Fixed in `27e8dac` — template now renders `{user.first_name} {user.last_name}` |
 
 ---
 
@@ -124,7 +128,6 @@ settings block is deleted. The model and migrations are unchanged.
 
 | Branch | Owner | Status | PR # |
 |--------|-------|--------|------|
-| `main` | Both | Protected | — |
-| `development_branch` | Both | Active — Phase 1A (plain Django + PyJWT) pushed | — |
-| `docs/erd-and-design` | Mark | Open — Phase 1A committed | — |
-| `feature/accounts-frontend` | Partner | Not started | — |
+| `main` | Both | HEAD at `27e8dac` — Phase 1A + 1B complete | — |
+| `phase-2a-academics-backend` | Titus | Next — not started | — |
+| `phase-2b-academics-frontend` | Mark | Blocked on 2A | — |
