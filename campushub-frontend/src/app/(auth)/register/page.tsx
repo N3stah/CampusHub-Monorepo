@@ -24,49 +24,54 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+  e.preventDefault();
+  setLoading(true);
+  setError(null);
 
-    if (form.password !== form.password2) {
-      setError('Passwords do not match');
-      setLoading(false);
-      return;
+  // 1. Frontend validation safety checks
+  if (form.password !== form.password2) {
+    setError('Passwords do not match');
+    setLoading(false);
+    return;
+  }
+
+  if (form.password.length < 8) {
+    setError('Password must be at least 8 characters long');
+    setLoading(false);
+    return;
+  }
+
+  try {
+    // 2. Register the user against your raw python view
+    // (Notice we drop 'role' and 'password2' since your backend hardcodes 'student')
+    await api.post('/auth/register/', {
+      email: form.email.trim(),
+      username: form.username.trim(),
+      first_name: form.first_name.trim(),
+      last_name: form.last_name.trim(),
+      password: form.password,
+    });
+
+    // 3. Since registration succeeded, authenticate via email
+    await login(form.email.trim(), form.password);
+
+    // 4. Redirect to dashboard
+    router.push('/dashboard');
+  } catch (err: unknown) {
+    const axiosErr = err as { response?: { data?: { error?: string } } };
+    const backendMessage = axiosErr.response?.data?.error;
+
+    if (backendMessage) {
+      // Your backend returns {"error": "..."}. Display it directly!
+      setError(backendMessage);
+    } else {
+      setError('Registration failed. Please verify your connection.');
     }
+  } finally {
+    setLoading(false);
+  }
+ };
 
-    try {
-      // 1. Register the user
-      await api.post('/auth/register/', {
-        email: form.email,
-        username: form.username,
-        first_name: form.first_name,
-        last_name: form.last_name,
-        password: form.password,
-        password2: form.password2,
-        role: form.role,
-      });
-
-      // 2. Auto-login using context to update global state
-      await login(form.email, form.password);
-      
-      // 3. Redirect to dashboard
-      router.push('/dashboard');
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: ApiError } };
-      const errData = axiosErr.response?.data;
-      if (errData && typeof errData === 'object') {
-        // Flatten Django REST errors to a single string
-        const messages = Object.entries(errData)
-          .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
-          .join(' | ');
-        setError(messages);
-      } else {
-        setError('Registration failed. Please try again.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-12">
