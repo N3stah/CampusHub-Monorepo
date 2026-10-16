@@ -266,3 +266,13 @@ For each pending endpoint, implement request/response validation, authentication
 |--------|-------|--------|------|
 | `main` | Both | `4b134d8` — last integrated base; role-based MVP awaits merge | — |
 | `development_branch` | Both | `d69be6c` — role-based MVP and standalone-bootstrap documentation pushed; ready to merge | — |
+---
+
+## Testing Architecture Note
+
+**Date:** 2026-10-15
+
+Tests run against in-memory SQLite (`config.settings.test`), not the dev
+PostgreSQL database. Run `python manage.py test` against real Postgres
+(after `ALTER USER campushub_user CREATEDB;`) only if you need to verify
+Postgres-specific behavior (e.g. a raw SQL query, a DB-level constraint).
