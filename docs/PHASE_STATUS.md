@@ -9,11 +9,12 @@
 | 1A | Auth Backend | `[x]` | `[ ]` | `[x]` |
 | 1B | Auth Frontend | `[x]` | `[x]` | `[x]` |
 | 2A/B | Academics | `[x]` | `[x]` | `[x]` |
-| 3A/B | Resources | `[x]` | `[ ]` | `[x]` (Backend) |
-| 4A/B | Placements | `[x]` | `[ ]` | `[x]` (Backend) |
-| 5A/B | Applications | `[ ]` | `[ ]` | `[ ]` |
+| 3A/B | Resources | `[x]` | `[x]` | `[x]` |
+| 4A/B | Placements | `[x]` | `[x]` | `[x]` |
+| 5A/B | Applications | `[x]` | `[x]` | `[x]` |
 | 6A/B | Polish & Deploy | `[ ]` | `[ ]` | `[ ]` |
 | Test | Auth Tests | `[x]` | `[ ]` | `[x]` |
+| MVP | Role-based accounts & endpoint integration | `[x]` | `[x]` | `[ ]` (`development_branch`) |
 
 ---
 
@@ -108,9 +109,9 @@
 - `npm run lint` — no errors.
 
 **Follow-up required:**
-- Integrate-test each page against the backend; align endpoint paths and payloads.
+- Run end-to-end browser integration against the team's configured PostgreSQL database.
 - Token storage in `localStorage` — move to HttpOnly cookies requires coordinated backend change.
-- Security hardening edits (local) must be committed/pushed separately.
+- Continue production security hardening; the role-based access and resource-download checks delivered so far are recorded in the MVP section below.
 
 ---
 
@@ -185,31 +186,46 @@
 
 ---
 
-## MVP — Role-based Accounts and Core Workflows
+## MVP — Role-based Accounts and Core Workflows — Completed on `development_branch`
 
 **Updated:** 2026-10-16
+**Latest commit:** `d69be6c` (standalone bootstrap refactor)
 
-**Implemented in the current backend MVP branch:**
-- The local-only `campushub-backend/create_admin.py` script interactively bootstraps a CampusHub admin without storing a password in source or shell history. It is intentionally git-ignored; on a clean clone, use `python manage.py createsuperuser` to create the initial admin account. The standalone script also supports promoting an existing account.
-- Admin-only `GET/POST /api/users/` and `GET/PATCH/DELETE /api/users/<id>/` support user account search, role assignment (`student`, `lecturer`, `officer`, `admin`), profile updates, password changes, and soft deactivation. Delete does not cascade-delete user data.
-- Placement officers can read student accounts only. Only admins can create or modify accounts.
-- Lecturer directory APIs support list, detail, admin create/update/deactivation, department, course list, title, bio, and office-hours fields.
-- Admin overview statistics and recent activity are available from `GET /api/admin/stats/` and `GET /api/admin/logs/`. Account, lecturer, placement, and application mutations write audit events.
-- Placement create/update now accepts the frontend's actual model fields (`requirements`, `slots_available`); application submissions accept multipart cover-note/CV requests.
-- Tests use a separate SQLite in-memory test settings module (`pytest.ini`).
-- Validation: all 35 backend tests pass; Django system/migration checks and SQLite migration application pass; frontend type-check and production build pass. Lint has one pre-existing Next.js navigation warning.
+**Backend and access-control work delivered:**
+- Public registration always creates a `student`; it never trusts a client-supplied role. Supported application roles are `student`, `lecturer`, `officer` (placement officer), and `admin`.
+- Admin-only `GET/POST /api/users/` and `GET/PATCH/DELETE /api/users/<id>/` support account search, role assignment, profile updates, password changes, and safe soft-deactivation/reactivation. Deactivation preserves related records; self-deactivation and removal/demotion of the last active superuser are blocked.
+- Placement officers can read student accounts only. They cannot create, update, or deactivate accounts.
+- Lecturer directory endpoints support list/create/detail/update; only admins may create or update lecturer profiles. Lecturer data includes department, course list, title, bio, and office hours.
+- `GET /api/admin/stats/` provides admin overview counts and `GET /api/admin/logs/` returns recent audit activity. Account, lecturer, placement, and application changes write audit events.
+- User management is mounted under `/api/`; authentication remains under `/api/auth/`.
+- `UserManager.create_superuser()` defaults to the application `admin` role and enforces Django staff/superuser flags. Admin-role accounts created through user management are not automatically Django superusers.
+- The one-off `campushub-backend/create_admin.py` script is local-only and git-ignored. When present beside `manage.py`, run `python create_admin.py`; it securely prompts for credentials, supports explicit promotion of an existing account, and recognizes an already configured bootstrap admin. It is not included in a clone. Without that local file, use `python manage.py createsuperuser`.
+
+**Frontend and endpoint integration delivered:**
+- The `/users` admin screen creates accounts for all four roles and supports editing, deactivation, and reactivation. Lecturer directory and `/admin` overview/activity screens are connected to their backend APIs.
+- Student course pages support enrollment and dropping courses, course resources and announcements, and lecturer details. Placement listings support student applications and officer/admin management and application review.
+- Placement create/update fields now match the backend contract (`requirements`, `slots_available`); application submission uses multipart cover-note and optional CV fields. Slot values are validated and cannot be reduced below active application counts.
+- User-facing API requests and forms display loading, empty, success, and error states; role-aware navigation and page access checks are in place.
+- The previous endpoint/payload integration follow-up is resolved for the course-resource, announcement, placement, and application flows covered by this MVP. Full live-browser verification against PostgreSQL remains outstanding.
+
+**Database, testing, and validation:**
+- Added account migrations for lecturer profile fields and audit events.
+- Backend tests use isolated SQLite settings in `config.settings.test`; pytest discovery is configured in `campushub-backend/pytest.ini`.
+- Validation on the pushed branch: **35 backend tests passed**; Django system check passed; `makemigrations --check --dry-run` reported no pending migrations; all migrations applied successfully using the SQLite test settings.
+- Frontend TypeScript check and production build passed. ESLint passed with one existing Next.js navigation warning in `src/lib/api.ts`.
+- `npm ci` reported five high-severity audit findings during setup; package manifests were not changed and those findings have not been reviewed.
 
 **Setup and smoke test:**
 1. From `campushub-backend`, run `python manage.py migrate`.
-2. If the local standalone script is present, run `python create_admin.py` and follow the prompts. Otherwise run `python manage.py createsuperuser`.
+2. If the local-only standalone script is present, run `python create_admin.py` and follow the prompts. Otherwise run `python manage.py createsuperuser`.
 3. Start Django, then sign in through `/login` with the bootstrapped email/password.
 4. Open **User accounts** and create student, lecturer, placement-officer, and admin-role accounts. The initial bootstrap admin is the only one with Django superuser access; role-created admins have CampusHub admin access only.
 5. Verify the account roles by logging in as each user; deactivate/reactivate accounts from the admin user directory as needed.
 6. Run `pytest` for the isolated backend test suite.
 
 **Remaining beyond the MVP:**
-- Run migrations and role/login tests against the team's actual PostgreSQL database, then verify the full student/lecturer/officer/admin workflows with seeded test accounts.
-- Add pagination, richer audit events, and password reset/email invitation flows before production use.
+- Run migrations and role/login tests against the team's actual PostgreSQL database, then verify student, lecturer, officer, and admin workflows with seeded accounts in a live browser.
+- Add pagination, password reset/email invitation flows, and production hardening for audit events before production use.
 
 ## Blocker Log
 
@@ -231,6 +247,5 @@
 
 | Branch | Owner | Status | PR # |
 |--------|-------|--------|------|
-| `main` | Both | HEAD — Phase 4A Backend + Phase 2B Frontend complete | — |
-| `phase-5a-applications-backend` | Titus | Next — not started | — |
-| `phase-5b-applications-frontend` | Mark | Blocked on 5A | — |
+| `main` | Both | `4b134d8` — last integrated base; role-based MVP awaits merge | — |
+| `development_branch` | Both | `d69be6c` — role-based MVP and standalone-bootstrap documentation pushed; ready to merge | — |
