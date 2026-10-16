@@ -79,10 +79,10 @@ export interface CourseResource {
   id: number;
   title: string;
   description?: string;
-  file_name?: string;
-  file_url?: string;
+  file_url?: string | null;
   file_size?: number;
-  uploaded_at?: string;
+  file_type?: string;
+  created_at?: string;
   uploaded_by?: string;
 }
 
@@ -91,7 +91,7 @@ export interface CourseAnnouncement {
   title: string;
   body: string;
   is_pinned?: boolean;
-  published_at: string;
+  created_at: string;
   author?: string;
 }
 

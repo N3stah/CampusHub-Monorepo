@@ -2,6 +2,7 @@
 
 import MyCourses from '@/components/MyCourses';
 import PortalShell from '@/components/PortalShell';
+import CourseCatalog from '@/components/CourseCatalog';
 
 export default function CoursesPage() {
   return (
@@ -13,6 +14,7 @@ export default function CoursesPage() {
           <p className="mt-2 text-sm leading-6 text-slate-600">Open a course to view its lecturer, notes, learning resources, and lecturer updates.</p>
         </div>
         <MyCourses />
+        <CourseCatalog />
       </section>
     </PortalShell>
   );
