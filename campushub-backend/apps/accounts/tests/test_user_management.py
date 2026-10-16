@@ -1,9 +1,5 @@
-from io import StringIO
-from unittest.mock import patch
-
 import pytest
 from django.contrib.auth import get_user_model
-from django.core.management import call_command
 from django.test import Client
 from apps.accounts.jwt_utils import make_pair
 
@@ -220,28 +216,18 @@ def test_invalid_user_data_returns_validation_errors(client):
     assert 'valid email' in response.json()['error']
 
 
-def test_create_admin_command_creates_secure_superuser():
-    output = StringIO()
-    with (
-        patch('builtins.input', side_effect=[
-            'admin@example.test',
-            'campus-admin',
-            'Admin',
-            'One',
-        ]),
-        patch('apps.accounts.management.commands.create_admin.getpass', side_effect=[
-            'T0ugh-Campus-Password!82',
-            'T0ugh-Campus-Password!82',
-        ]),
-    ):
-        call_command('create_admin', stdout=output)
-
-    admin = User.objects.get(email='admin@example.test')
+def test_superuser_defaults_to_admin_role():
+    admin = User.objects.create_superuser(
+        email='admin@example.test',
+        username='campus-admin',
+        first_name='Admin',
+        last_name='One',
+        password='T0ugh-Campus-Password!82',
+    )
     assert admin.role == 'admin'
     assert admin.is_staff
     assert admin.is_superuser
     assert admin.check_password('T0ugh-Campus-Password!82')
-    assert 'CampusHub admin account ready' in output.getvalue()
 
     login = Client().post(
         '/api/auth/token/',

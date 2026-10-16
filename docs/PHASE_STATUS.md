@@ -190,7 +190,7 @@
 **Updated:** 2026-10-16
 
 **Implemented in the current backend MVP branch:**
-- `python manage.py create_admin` interactively bootstraps a CampusHub admin without storing a password in source or shell history. It creates an active Django superuser with the application `admin` role, or asks before promoting an existing account.
+- The local-only `campushub-backend/create_admin.py` script interactively bootstraps a CampusHub admin without storing a password in source or shell history. It is intentionally git-ignored; on a clean clone, use `python manage.py createsuperuser` to create the initial admin account. The standalone script also supports promoting an existing account.
 - Admin-only `GET/POST /api/users/` and `GET/PATCH/DELETE /api/users/<id>/` support user account search, role assignment (`student`, `lecturer`, `officer`, `admin`), profile updates, password changes, and soft deactivation. Delete does not cascade-delete user data.
 - Placement officers can read student accounts only. Only admins can create or modify accounts.
 - Lecturer directory APIs support list, detail, admin create/update/deactivation, department, course list, title, bio, and office-hours fields.
@@ -201,7 +201,7 @@
 
 **Setup and smoke test:**
 1. From `campushub-backend`, run `python manage.py migrate`.
-2. Run `python manage.py create_admin` and follow the prompts.
+2. If the local standalone script is present, run `python create_admin.py` and follow the prompts. Otherwise run `python manage.py createsuperuser`.
 3. Start Django, then sign in through `/login` with the bootstrapped email/password.
 4. Open **User accounts** and create student, lecturer, placement-officer, and admin-role accounts. The initial bootstrap admin is the only one with Django superuser access; role-created admins have CampusHub admin access only.
 5. Verify the account roles by logging in as each user; deactivate/reactivate accounts from the admin user directory as needed.
