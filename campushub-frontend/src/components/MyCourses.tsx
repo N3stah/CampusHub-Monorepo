@@ -14,6 +14,8 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [droppingId, setDroppingId] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const loadCourses = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -27,6 +29,22 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
       if (!signal?.aborted) setLoading(false);
     }
   }, []);
+
+  async function dropCourse(enrollment: Enrollment) {
+    if (!window.confirm(`Drop ${enrollment.course_code} — ${enrollment.course_title}?`)) return;
+    setDroppingId(enrollment.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.delete(`/academics/enrollments/${enrollment.id}/`);
+      setNotice(`${enrollment.course_code} has been dropped.`);
+      await loadCourses();
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError));
+    } finally {
+      setDroppingId(null);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -43,6 +61,7 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
           <h2 id="my-courses-heading" className="font-semibold">My courses</h2>
           <p className="mt-1 text-xs text-slate-500">Courses you are currently taking</p>
         </div>
+        {notice && <p role="status" className="border-b border-emerald-100 bg-emerald-50 px-5 py-3 text-sm text-emerald-800">{notice}</p>}
         {courses.length > 0 && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{courses.length}</span>}
       </div>
       {loading ? (
@@ -56,16 +75,21 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
         <ul className={compact ? 'divide-y divide-slate-100' : 'grid gap-3 p-4 sm:grid-cols-2'}>
           {courses.map((enrollment) => (
             <li key={enrollment.id}>
-              <Link
-                href={`/courses/${enrollment.course_id}`}
-                className={`block rounded-xl transition hover:border-blue-300 hover:bg-blue-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-700 ${
-                  compact ? 'px-1 py-4 first:pt-1 last:pb-1' : 'h-full border border-slate-200 p-4'
-                }`}
-              >
-                <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{enrollment.course_code}</p>
-                <p className="mt-1 font-semibold text-slate-900">{enrollment.course_title}</p>
-                <span className="mt-3 inline-flex text-sm font-semibold text-blue-700">Open course →</span>
-              </Link>
+              <div className={`flex items-center justify-between gap-3 ${compact ? 'py-4 first:pt-1 last:pb-1' : 'h-full rounded-xl border border-slate-200 p-4'}`}>
+                <Link href={`/courses/${enrollment.course_id}`} className="min-w-0 flex-1 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-700">
+                  <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{enrollment.course_code}</p>
+                  <p className="mt-1 font-semibold text-slate-900">{enrollment.course_title}</p>
+                  <span className="mt-3 inline-flex text-sm font-semibold text-blue-700">Open course →</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void dropCourse(enrollment)}
+                  disabled={droppingId !== null}
+                  className="shrink-0 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {droppingId === enrollment.id ? 'Dropping…' : 'Drop'}
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -79,7 +103,7 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
   );
 }
 
-export function DownloadResourceButton({ resourceId, resourceTitle }: { resourceId: number; resourceTitle: string }) {
+export function DownloadResourceButton({ courseId, resourceId, resourceTitle }: { courseId: number; resourceId: number; resourceTitle: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,20 +111,17 @@ export function DownloadResourceButton({ resourceId, resourceTitle }: { resource
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get<{ file_url?: string; url?: string } | string>(
-        `/resources/${resourceId}/download/`,
+      const response = await api.get<{ file_url?: string | null }>(
+        `/resources/courses/${courseId}/resources/${resourceId}/`,
       );
-      const fileUrl = typeof response.data === 'string'
-        ? response.data
-        : response.data.file_url ?? response.data.url;
+      const fileUrl = response.data.file_url;
 
       if (!fileUrl) {
         throw new Error('The download response did not include a file URL.');
       }
 
-      const apiRoot = new URL('../', api.defaults.baseURL);
       const downloadLink = document.createElement('a');
-      downloadLink.href = new URL(fileUrl, apiRoot).toString();
+      downloadLink.href = new URL(fileUrl, api.defaults.baseURL).toString();
       downloadLink.target = '_blank';
       downloadLink.rel = 'noopener noreferrer';
       downloadLink.click();

@@ -8,8 +8,8 @@
 | 0 | Config & Setup | `[x]` | `[x]` | `[x]` |  
 | 1A | Auth Backend | `[x]` | `[ ]` | `[x]` |
 | 1B | Auth Frontend | `[x]` | `[x]` | `[x]` |
-| 2A/B | Academics | `[x]` | `[ ]` | `[ ]` |
-| 3A/B | Resources | `[x]` | `[ ]` | `[ ]` |
+| 2A/B | Academics | `[x]` | `[-]` | `[ ]` |
+| 3A/B | Resources | `[x]` | `[-]` | `[ ]` |
 | 4A/B | Placements | `[ ]` | `[ ]` | `[ ]` |
 | 5A/B | Applications | `[ ]` | `[ ]` | `[ ]` |
 | 6A/B | Polish & Deploy | `[ ]` | `[ ]` | `[ ]` |
@@ -158,7 +158,8 @@ feature/frontend-student-and-staff-pages
 
 **Remaining work / integration blockers:**
 - Frontend changes are pushed to `feature/frontend-student-and-staff-pages`; they are not yet merged to `main`.
-- Academics backend currently supports enrollment and course detail, but resource and announcement endpoints are not implemented.
+- Added a department-filtered student course catalog with enrollment and drop actions.
+- Corrected course resource/announcement URLs and response field names; resource download now reads the file URL from the implemented resource detail endpoint.
 - Lecturer directory CRUD, placement CRUD, and application review endpoints are not yet implemented in the backend.
 - Add and verify server-side role and ownership permissions for management, downloads, and application status changes. Frontend role checks only control the UI.
 - Test the complete student and staff workflows against the backend once the remaining endpoints are available.
@@ -179,6 +180,46 @@ feature/frontend-student-and-staff-pages
 - Wired up resources URLs in config/urls.py under /api/resources/
 - Applied migrations and registered models in admin
 - All endpoints tested successfully with curl (upload, list, delete)
+
+## Backend work still pending for frontend integration
+
+**Updated:** 2026-10-16
+
+The frontend currently references several APIs that are not present in the Django URL configuration. These features will show an API-unavailable error until the corresponding backend work is completed.
+
+### Already implemented and now wired to the frontend
+
+| Endpoint | Frontend use | Contract notes |
+|----------|--------------|----------------|
+| `GET /api/auth/me/` and `PATCH /api/auth/me/` | Authenticated profile; PATCH permits `first_name`, `last_name`, and `phone_number` | GET currently omits department name, GPA, active state, and phone number. |
+| `GET /api/academics/departments/` | Department filter in the student course catalog | Returns an array of department objects. |
+| `GET /api/academics/courses/` and `GET /api/academics/courses/<id>/` | Course catalog and detail | List supports `?department=<id>`; catalog contains active courses only. |
+| `GET/POST /api/academics/enrollments/` and `DELETE /api/academics/enrollments/<id>/` | Student course list, enroll, and drop | GET/POST are JWT-protected. A dropped enrollment cannot currently be reactivated through POST. |
+| `GET /api/resources/courses/<course_id>/resources/` and `GET /api/resources/courses/<course_id>/resources/<id>/` | Course resources and download URL resolution | JWT-protected; the resource detail response supplies `file_url`. |
+| `GET /api/resources/courses/<course_id>/announcements/` | Course announcements and student dashboard updates | Response timestamp field is `created_at`. |
+
+### Backend endpoints/features still required
+
+| Priority | Frontend feature waiting on backend | Suggested API contract |
+|----------|-------------------------------------|------------------------|
+| High | Lecturer directory and lecturer detail | `GET /api/lecturers/`, `GET /api/lecturers/<id>/`; support search/filter and return profile fields plus taught courses. |
+| High | Lecturer account management | Admin-only `POST /api/lecturers/`, `PATCH /api/lecturers/<id>/` for profile/active state; validate department and securely create accounts. |
+| High | Placement listing and management | `GET/POST /api/placements/`, `GET/PATCH/DELETE /api/placements/<id>/`; enforce officer/admin write permissions and expose active opportunities to students. |
+| High | Student placement application submission | `POST /api/placements/<id>/apply/` multipart contract for `cover_note` and optional `cv_file`; enforce student identity, deadline, duplicate-application, and file validation rules. |
+| High | Student application history and staff review | `GET /api/applications/` (student sees own applications; officer/admin sees reviewable records), plus officer/admin-only `PATCH /api/applications/<id>/status/` validating pending/shortlisted/accepted/rejected transitions. |
+| Medium | Admin overview | `GET /api/admin/stats/` and `GET /api/admin/logs/`; define and document response schemas, pagination, and audit-log visibility. |
+| Medium | Student directory currently at `/users/` | `GET /api/users/` with role/search filtering; restrict to admin/officer and avoid exposing sensitive fields unnecessarily. |
+| Medium | Profile completeness and ownership | Return the user fields consumed by directory/profile UI where permitted, and enforce ownership/role checks on every management endpoint (not just frontend navigation). |
+| Medium | Enrollment recovery | Define whether students may re-enroll after dropping; if yes, update an existing dropped enrollment to active instead of returning a duplicate-enrollment error. |
+| Medium | Secure resource delivery | Confirm whether direct `MEDIA_URL` URLs may be public. If resources must be private, provide an authenticated download response/stream or short-lived download URL. |
+
+### Backend verification still required
+
+- Add automated tests for auth, academics, resource/announcement access control, and all new management/application endpoints; the phase entries above only record manual smoke tests where noted.
+- Exercise success and failure cases for JWT expiry/refresh, invalid input, wrong-role access, ownership boundaries, duplicate enrollment/application, deadlines, and missing resources.
+- Confirm API fields and status codes against the contracts above, particularly error payloads (`error` versus `detail`), and document pagination behavior.
+- Run the integrated frontend against a migrated backend with representative student, lecturer, officer, and admin accounts; do not treat UI role checks as authorization.
+- Frontend validation on 2026-10-16: `npx tsc --noEmit` and `npm run build` passed; `npm run lint` completed with zero errors and two pre-existing warnings.
 
 
 ---

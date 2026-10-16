@@ -34,7 +34,10 @@ export async function getApiPage<T>(
 
 export function getApiErrorMessage(error: unknown): string {
   if (isAxiosError(error)) {
-    const detail = error.response?.data?.detail;
+    const responseData: unknown = error.response?.data;
+    const detail = typeof responseData === 'object' && responseData !== null
+      ? ('detail' in responseData ? responseData.detail : 'error' in responseData ? responseData.error : undefined)
+      : undefined;
     if (typeof detail === 'string') return detail;
 
     if (error.response?.status === 404) {
