@@ -57,7 +57,7 @@ def mark_notification_read(request, pk):
 def mark_all_notifications_read(request):
     user = request.user
     # Update all unread notifications for this user in a single query
-    count, _ = Notification.objects.filter(recipient=user, is_read=False).update(is_read=True)
+    count = Notification.objects.filter(recipient=user, is_read=False).update(is_read=True)
     return JsonResponse({"message": f"Marked {count} notifications as read"})
 
 @csrf_exempt
