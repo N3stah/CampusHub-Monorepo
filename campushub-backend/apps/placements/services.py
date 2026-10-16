@@ -51,7 +51,7 @@ class ApplicationService:
     @staticmethod
     @transaction.atomic
     def update_status(user, application_id: int, new_status: str) -> Application:
-        valid_statuses = ['shortlisted', 'accepted', 'rejected']
+        valid_statuses = ['pending', 'shortlisted', 'accepted', 'rejected']
         if new_status not in valid_statuses:
             raise ValueError(f"Invalid status. Must be one of: {valid_statuses}")
 

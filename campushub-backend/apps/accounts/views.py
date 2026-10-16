@@ -28,6 +28,11 @@ def _user_dict(user):
         'last_name': user.last_name,
         'role': user.role,
         'department': user.department_id,
+        'gpa': str(user.gpa) if user.gpa is not None else None,
+        'phone_number': user.phone_number,
+        'title': user.title,
+        'bio': user.bio,
+        'office_hours': user.office_hours,
         'date_joined': user.date_joined.isoformat(),
     }
 
@@ -127,7 +132,10 @@ def me_view(request):
         return err
 
     model_fields = {f.name for f in User._meta.get_fields()}
-    allowed = [f for f in ('first_name', 'last_name', 'phone_number') if f in model_fields]
+    allowed = [
+        f for f in ('first_name', 'last_name', 'phone_number', 'title', 'bio', 'office_hours')
+        if f in model_fields
+    ]
     changed = [f for f in allowed if f in data]
     for f in changed:
         setattr(user, f, data[f])
