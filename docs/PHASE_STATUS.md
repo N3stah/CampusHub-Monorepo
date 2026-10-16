@@ -185,6 +185,32 @@
 
 ---
 
+## MVP — Role-based Accounts and Core Workflows
+
+**Updated:** 2026-10-16
+
+**Implemented in the current backend MVP branch:**
+- `python manage.py create_admin` interactively bootstraps a CampusHub admin without storing a password in source or shell history. It creates an active Django superuser with the application `admin` role, or asks before promoting an existing account.
+- Admin-only `GET/POST /api/users/` and `GET/PATCH/DELETE /api/users/<id>/` support user account search, role assignment (`student`, `lecturer`, `officer`, `admin`), profile updates, password changes, and soft deactivation. Delete does not cascade-delete user data.
+- Placement officers can read student accounts only. Only admins can create or modify accounts.
+- Lecturer directory APIs support list, detail, admin create/update/deactivation, department, course list, title, bio, and office-hours fields.
+- Admin overview statistics and recent activity are available from `GET /api/admin/stats/` and `GET /api/admin/logs/`. Account, lecturer, placement, and application mutations write audit events.
+- Placement create/update now accepts the frontend's actual model fields (`requirements`, `slots_available`); application submissions accept multipart cover-note/CV requests.
+- Tests use a separate SQLite in-memory test settings module (`pytest.ini`).
+- Validation: all 35 backend tests pass; Django system/migration checks and SQLite migration application pass; frontend type-check and production build pass. Lint has one pre-existing Next.js navigation warning.
+
+**Setup and smoke test:**
+1. From `campushub-backend`, run `python manage.py migrate`.
+2. Run `python manage.py create_admin` and follow the prompts.
+3. Start Django, then sign in through `/login` with the bootstrapped email/password.
+4. Open **User accounts** and create student, lecturer, placement-officer, and admin-role accounts. The initial bootstrap admin is the only one with Django superuser access; role-created admins have CampusHub admin access only.
+5. Verify the account roles by logging in as each user; deactivate/reactivate accounts from the admin user directory as needed.
+6. Run `pytest` for the isolated backend test suite.
+
+**Remaining beyond the MVP:**
+- Run migrations and role/login tests against the team's actual PostgreSQL database, then verify the full student/lecturer/officer/admin workflows with seeded test accounts.
+- Add pagination, richer audit events, and password reset/email invitation flows before production use.
+
 ## Blocker Log
 
 | Date | Blocker | Resolution |

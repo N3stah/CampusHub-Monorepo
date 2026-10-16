@@ -42,6 +42,14 @@ function CourseDetailContent() {
       setCourse(response.data);
       setCourseError(null);
       setLecturer(response.data.lecturer ?? null);
+      if (!response.data.lecturer && response.data.lecturer_id) {
+        try {
+          const lecturerResponse = await api.get<LecturerProfile>(`/lecturers/${response.data.lecturer_id}/`, { signal });
+          if (!signal?.aborted) setLecturer(lecturerResponse.data);
+        } catch (requestError) {
+          if (!signal?.aborted) setCourseError(getApiErrorMessage(requestError));
+        }
+      }
     } catch (requestError) {
       if (!signal?.aborted) setCourseError(getApiErrorMessage(requestError));
     } finally {

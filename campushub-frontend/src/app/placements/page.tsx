@@ -14,9 +14,9 @@ interface PlacementForm {
   company: string;
   location: string;
   description: string;
+  requirements: string;
   deadline: string;
-  placement_type: string;
-  is_remote: boolean;
+  slots_available: string;
 }
 
 const blankPlacement: PlacementForm = {
@@ -24,9 +24,9 @@ const blankPlacement: PlacementForm = {
   company: '',
   location: '',
   description: '',
+  requirements: '',
   deadline: '',
-  placement_type: 'Internship',
-  is_remote: false,
+  slots_available: '1',
 };
 
 export default function PlacementsPage() {
@@ -81,9 +81,9 @@ export default function PlacementsPage() {
       company: placement.company,
       location: placement.location ?? '',
       description: placement.description ?? '',
+      requirements: placement.requirements ?? '',
       deadline: placement.deadline?.slice(0, 10) ?? '',
-      placement_type: placement.placement_type ?? 'Internship',
-      is_remote: placement.is_remote ?? false,
+      slots_available: String(placement.slots_available ?? 1),
     });
     setFormError(null);
     setShowCreateForm(true);
@@ -95,10 +95,16 @@ export default function PlacementsPage() {
     setFormError(null);
     try {
       if (editingPlacement) {
-        await api.patch(`/placements/${editingPlacement.id}/`, placementForm);
+        await api.patch(`/placements/${editingPlacement.id}/`, {
+          ...placementForm,
+          slots_available: Number(placementForm.slots_available),
+        });
         setNotice('Placement listing updated.');
       } else {
-        await api.post('/placements/', placementForm);
+        await api.post('/placements/', {
+          ...placementForm,
+          slots_available: Number(placementForm.slots_available),
+        });
         setNotice('The placement opportunity has been created.');
       }
       setShowCreateForm(false);
@@ -196,8 +202,8 @@ export default function PlacementsPage() {
                 </div>
               ),
             },
-            { label: 'Location', render: (placement) => <span className="text-slate-600">{placement.is_remote ? 'Remote' : placement.location}</span> },
-            { label: 'Type', render: (placement) => <span className="text-slate-600">{placement.placement_type ?? 'Placement'}</span> },
+            { label: 'Location', render: (placement) => <span className="text-slate-600">{placement.location}</span> },
+            { label: 'Slots', render: (placement) => <span className="text-slate-600">{placement.slots_available}</span> },
             {
               label: 'Deadline',
               render: (placement) => (
@@ -209,8 +215,8 @@ export default function PlacementsPage() {
             {
               label: 'Status',
               render: (placement) => (
-                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold capitalize text-emerald-700">
-                  {placement.status || 'Open'}
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${placement.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                  {placement.is_active ? 'Open' : 'Closed'}
                 </span>
               ),
             },
@@ -294,10 +300,8 @@ export default function PlacementsPage() {
                   <label className="text-sm font-medium text-slate-700">Location
                     <input required value={placementForm.location} onChange={(event) => setPlacementForm({ ...placementForm, location: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
                   </label>
-                  <label className="text-sm font-medium text-slate-700">Type
-                    <select value={placementForm.placement_type} onChange={(event) => setPlacementForm({ ...placementForm, placement_type: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100">
-                      <option>Internship</option><option>Placement</option><option>Graduate job</option>
-                    </select>
+                  <label className="text-sm font-medium text-slate-700">Available places
+                    <input required type="number" min="1" step="1" value={placementForm.slots_available} onChange={(event) => setPlacementForm({ ...placementForm, slots_available: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
                   </label>
                 </div>
                 <label className="block text-sm font-medium text-slate-700">Application deadline
@@ -306,9 +310,8 @@ export default function PlacementsPage() {
                 <label className="block text-sm font-medium text-slate-700">Description
                   <textarea required rows={4} value={placementForm.description} onChange={(event) => setPlacementForm({ ...placementForm, description: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
                 </label>
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                  <input type="checkbox" checked={placementForm.is_remote} onChange={(event) => setPlacementForm({ ...placementForm, is_remote: event.target.checked })} className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600" />
-                  Remote opportunity
+                <label className="block text-sm font-medium text-slate-700">Requirements
+                  <textarea required rows={3} value={placementForm.requirements} onChange={(event) => setPlacementForm({ ...placementForm, requirements: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
                 </label>
                 <button disabled={submitting} type="submit" className="w-full rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
                   {submitting ? 'Saving…' : editingPlacement ? 'Save changes' : 'Create opportunity'}
