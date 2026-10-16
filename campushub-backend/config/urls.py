@@ -8,4 +8,5 @@ urlpatterns = [
     path('api/auth/', include('apps.accounts.urls')),
     path('api/academics/', include('apps.academics.urls')),
     path('api/resources/', include('apps.resources.urls')),
+    path('api/', include('apps.placements.urls')), # Placements mounted under /api/
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

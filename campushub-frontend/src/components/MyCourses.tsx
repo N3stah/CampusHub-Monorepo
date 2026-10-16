@@ -120,8 +120,19 @@ export function DownloadResourceButton({ courseId, resourceId, resourceTitle }: 
         throw new Error('The download response did not include a file URL.');
       }
 
+      const apiRoot = new URL('../', api.defaults.baseURL);
+      const downloadUrl = new URL(fileUrl, apiRoot);
+      if (
+        !['http:', 'https:'].includes(downloadUrl.protocol) ||
+        downloadUrl.origin !== apiRoot.origin ||
+        downloadUrl.username ||
+        downloadUrl.password
+      ) {
+        throw new Error('The API returned an unsafe download URL.');
+      }
+
       const downloadLink = document.createElement('a');
-      downloadLink.href = new URL(fileUrl, api.defaults.baseURL).toString();
+      downloadLink.href = downloadUrl.toString();
       downloadLink.target = '_blank';
       downloadLink.rel = 'noopener noreferrer';
       downloadLink.click();
