@@ -223,6 +223,23 @@
 5. Verify the account roles by logging in as each user; deactivate/reactivate accounts from the admin user directory as needed.
 6. Run `pytest` for the isolated backend test suite.
 
+## What Should Be Implemented — Backend Endpoints for Frontend CRUD
+
+The endpoints below are the next backend API work needed to give future management screens complete CRUD support. Existing endpoints are listed to show what the frontend can already call; **Pending** marks work not currently provided by the backend on `development_branch`. Keep the existing `/api/` route prefix and plain Django/PyJWT conventions.
+
+| Feature / frontend workflow | Existing backend endpoints | Pending backend endpoints |
+|---|---|---|
+| Departments — admin department management | `GET /api/academics/departments/` | `POST /api/academics/departments/`, `GET/PATCH/DELETE /api/academics/departments/<id>/`. Restrict writes/deactivation to admins and validate unique department codes and department-head references. |
+| Courses — admin/lecturer course management | `GET /api/academics/courses/`, `GET /api/academics/courses/<id>/` | `POST /api/academics/courses/`, `PATCH/DELETE /api/academics/courses/<id>/`. Restrict writes to admins (and lecturer assignment/update only if explicitly allowed); validate department and lecturer references. Prefer deactivation over hard deletion when courses have enrollments or resources. |
+| Course enrollments — student enrollment and course rosters | `GET/POST /api/academics/enrollments/`, `DELETE /api/academics/enrollments/<id>/` (student's own enrollments; delete marks dropped) | For staff roster screens, add a permission-checked `GET /api/academics/courses/<id>/enrollments/` for the assigned lecturer/admin. Add staff enrollment status changes only if the frontend requires them; students must not read or change another student's enrollment. |
+| Course resources — lecturer/admin content management | `GET/POST /api/resources/courses/<course_id>/resources/`, `GET/DELETE /api/resources/courses/<course_id>/resources/<id>/` | Add `PATCH /api/resources/courses/<course_id>/resources/<id>/` to edit title/description and optionally replace the uploaded file. Preserve upload validation, delete the replaced stored file safely, and allow changes only to the uploader/assigned lecturer or admin. |
+| Announcements — lecturer/admin content management | `GET/POST /api/resources/courses/<course_id>/announcements/`, `GET /api/resources/courses/<course_id>/announcements/<id>/` | Add `PATCH/DELETE /api/resources/courses/<course_id>/announcements/<id>/`. Allow changes only to the author/assigned lecturer or admin; keep enrolled-student read access. |
+| Placements — officer/admin opportunity management | `GET/POST /api/placements/`, `GET/PATCH/DELETE /api/placements/<id>/` | Core CRUD is present. Before adding more routes, verify the existing role checks, field validation, and soft-delete behavior against all frontend create/edit/remove forms. |
+| Applications — student application tracking and staff review | `GET /api/applications/`, `POST /api/placements/<id>/apply/`, `PATCH /api/applications/<id>/status/` | Add `GET /api/applications/<id>/` with student-owner and assigned officer/admin checks. If students can withdraw applications in the UI, add `DELETE /api/applications/<id>/` as a controlled withdrawal (not a hard delete); retain the audit trail and slot-count rules. |
+| User accounts and lecturers — admin account management | `GET/POST /api/users/`, `GET/PATCH/DELETE /api/users/<id>/`, `GET/POST /api/lecturers/`, `GET/PATCH /api/lecturers/<id>/` | Core account workflows exist. Confirm lecturer deactivation via `PATCH is_active`; keep user deactivation soft and protect the last active superuser. Do not expose public role assignment. |
+
+For each pending endpoint, implement request/response validation, authentication and role/object-level authorization, consistent JSON errors, audit events for writes, and focused tests for allowed and denied roles. Add the endpoint to its app URL config and update the matching frontend form/query only when that frontend workflow is in scope. Hard deletion should not remove records that are referenced by enrollments, applications, uploaded files, or audit events.
+
 **Remaining beyond the MVP:**
 - Run migrations and role/login tests against the team's actual PostgreSQL database, then verify student, lecturer, officer, and admin workflows with seeded accounts in a live browser.
 - Add pagination, password reset/email invitation flows, and production hardening for audit events before production use.
