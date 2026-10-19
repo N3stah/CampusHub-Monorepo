@@ -49,6 +49,16 @@ export interface AdminStats {
   pending_applications: number;
 }
 
+export interface Notification {
+  id: number;
+  verb: string;
+  message: string;
+  link: string | null;
+  is_read: boolean;
+  created_at: string;
+  actor: { id: number; name: string } | null;
+}
+
 export interface Enrollment {
   id: number;
   course_id: number;

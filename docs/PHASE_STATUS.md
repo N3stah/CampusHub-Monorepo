@@ -1,4 +1,4 @@
-# CampusHub — Phase Progress Tracker
+﻿# CampusHub — Phase Progress Tracker
 
 > Update this file at the end of every work session.  
 > Format: `[x]` = complete · `[-]` = in progress · `[ ]` = not started
@@ -302,6 +302,13 @@ The following safe `GET` requests returned `404` from the live API, while the ro
 | `GET /api/admin/logs/` | `GET /api/admin/logs/` |
 
 **Follow-up:** identify which process/revision serves port `8000`, confirm its URL configuration, and repeat the GET checks against that running version. Do not add duplicate routes until the discrepancy is resolved.
+
+## Frontend Notifications — Completed — 2026-10-19
+
+- Added a signed-in notifications page wired to the existing notification list, unread-count, mark-read, and mark-all-read endpoints.
+- Added notification navigation for student, lecturer, officer, and admin roles, with unread counts, loading/error/retry states, and safe internal links.
+- No backend changes were made.
+- Validation: `npx tsc --noEmit` and `npm run build` passed; `npm run lint` passed with one existing warning in `src/lib/api.ts`.
 
 ### Not verified end-to-end
 
