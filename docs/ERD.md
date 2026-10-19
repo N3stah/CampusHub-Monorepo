@@ -24,7 +24,7 @@
 
 | # | Table | Purpose | Key Relationships |
 |---|-------|---------|-------------------|
-| 1 | `users_user` | Custom Django user (4 roles) | Central node — links to everything |
+| 1 | `accounts_user` | Custom Django user (4 roles) | Central node — links to everything |
 | 2 | `academics_department` | Academic departments (CS, EE, …) | 1:N to Course, 1:N to User |
 | 3 | `academics_course` | Courses offered per department | 1:N from Dept, N:M to User via Enrollment |
 | 4 | `academics_enrollment` | N:M bridge: Student ↔ Course | FK to User + Course |
@@ -32,8 +32,9 @@
 | 6 | `resources_announcement` | Announcements pinned to courses | FK to Course + author User |
 | 7 | `placements_placement` | Internship/job listings | FK to posting officer User |
 | 8 | `placements_application` | Student submissions to placements | FK to Student User + Placement |
+| 9 | `accounts_auditevent` | Admin activity history | FK to actor User (nullable) |
 
-**Total tables: 8 (minimum requirement met)**  
+**Total tables: 9 (minimum requirement met)**
 **Relationship types exercised:** 1:N (Dept→Course), N:M (Student↔Course via Enrollment), self-referential role field on User
 
 ---
@@ -62,7 +63,10 @@ erDiagram
         string   role           "student|lecturer|officer|admin"
         bigint   department_id  FK "→ DEPARTMENT (nullable)"
         decimal  gpa            "nullable, students only, 2dp"
-        string   phone_number   "nullable"
+        string   phone_number   "blank allowed"
+        string   title          "blank allowed, lecturer profile"
+        text     bio            "blank allowed, lecturer profile"
+        string   office_hours   "blank allowed, lecturer profile"
         boolean  is_active      "default true"
         datetime date_joined
         datetime last_login     "nullable"
@@ -138,6 +142,14 @@ erDiagram
         bigint   reviewed_by_id FK "→ USER SET_NULL (nullable)"
     }
 
+    AUDIT_EVENT {
+        bigint   id             PK
+        bigint   actor_id       FK "→ USER SET_NULL (nullable)"
+        string   action
+        text     description
+        datetime created_at
+    }
+
     %% Relationships
     DEPARTMENT ||--o{ USER         : "belongs to"
     DEPARTMENT ||--o{ COURSE       : "offers"
@@ -153,13 +165,14 @@ erDiagram
     USER       ||--o{ APPLICATION  : "student applies"
     PLACEMENT  ||--o{ APPLICATION  : "receives applications"
     USER       ||--o{ APPLICATION  : "officer reviews"
+    USER       ||--o{ AUDIT_EVENT  : "performs"
 ```
 
 ---
 
 ## 3. Table Definitions
 
-### 3.1 `users_user` — Custom User Model
+### 3.1 `accounts_user` — Custom User Model
 
 > Extends `AbstractBaseUser` + `PermissionsMixin`. Must be declared **before** the first migration via `AUTH_USER_MODEL = 'users.User'` in settings.
 
@@ -174,6 +187,9 @@ erDiagram
 | `department_id` | `ForeignKey(Department)` | BIGINT | FK, NULL | NULL for admins/officers with no dept |
 | `gpa` | `DecimalField(3,2)` | DECIMAL(3,2) | NULL, blank | Students only; range 0.00–4.00 |
 | `phone_number` | `CharField(20)` | VARCHAR(20) | NULL, blank | Optional contact |
+| `title` | `CharField(100)` | VARCHAR(100) | blank | Lecturer title |
+| `bio` | `TextField` | TEXT | blank | Lecturer biography |
+| `office_hours` | `CharField(200)` | VARCHAR(200) | blank | Lecturer contact hours |
 | `is_active` | `BooleanField` | BOOLEAN | DEFAULT TRUE | Controls login access |
 | `date_joined` | `DateTimeField` | TIMESTAMPTZ | auto_now_add | |
 | `last_login` | `DateTimeField` | TIMESTAMPTZ | NULL | Updated by Django auth |
@@ -306,6 +322,18 @@ CHECK(status IN ('pending', 'shortlisted', 'accepted', 'rejected'))
 
 ---
 
+### 3.9 `accounts_auditevent`
+
+| Column | Django Field | Type | Constraints | Notes |
+|--------|-------------|------|-------------|-------|
+| `id` | `BigAutoField` | BIGINT | PK | |
+| `actor_id` | `ForeignKey(User)` | BIGINT | FK, NULL, SET_NULL | User who performed the action |
+| `action` | `CharField(80)` | VARCHAR(80) | NOT NULL | e.g. `user.created`, `placement.updated` |
+| `description` | `TextField` | TEXT | NOT NULL | Human-readable activity summary |
+| `created_at` | `DateTimeField` | TIMESTAMPTZ | auto_now_add | |
+
+---
+
 ## 4. Relationship Summary
 
 | Relationship | Type | From | To | On Delete |
@@ -324,6 +352,7 @@ CHECK(status IN ('pending', 'shortlisted', 'accepted', 'rejected'))
 | User (Student) → Application | 1:N | Application.student_id | User | CASCADE |
 | Placement → Application | 1:N | Application.placement_id | Placement | CASCADE |
 | User (Officer) → Application (reviewer) | 1:N | Application.reviewed_by_id | User | SET_NULL |
+| User → AuditEvent (actor) | 1:N | AuditEvent.actor_id | User | SET_NULL |
 
 **Why SET_NULL instead of CASCADE for User FK on Resources/Announcements/Placements?**  
 If a lecturer account is deleted, their course content (resources, announcements) must survive — those belong to the course, not the person. SET_NULL preserves the data while marking the author as unknown. Student cascade deletes (Enrollment, Application) are intentional: when a student leaves, their participation records are meaningless without the student.
@@ -340,7 +369,7 @@ All tables comply:
 - `Enrollment` bridges the N:M relationship between students and courses rather than storing a repeating `courses` array on `User`.
 - `Placement.requirements` is a single text block. If we needed individual skills as filterable tags, we would add a `Skill` table and a `PlacementSkill` bridge — that is an optional stretch goal.
 
-**Status: ✅ All 8 tables are in 1NF**
+**Status: ✅ All 9 tables are in 1NF**
 
 ---
 
@@ -355,7 +384,7 @@ The only table with a meaningful composite uniqueness constraint is `Enrollment(
 
 `Enrollment` uses a surrogate PK (`id`) to simplify FK references. No partial dependency violations exist.
 
-**Status: ✅ All tables are in 2NF**
+**Status: ✅ All 9 tables are in 2NF**
 
 ---
 
@@ -371,7 +400,7 @@ The only table with a meaningful composite uniqueness constraint is `Enrollment(
 **Potential violation — `User.gpa`:**  
 GPA is a property of the student, not of any other entity. It does not depend on `department_id` or `role`. An argument could be made that GPA belongs in a `StudentProfile` table to avoid NULL columns on non-student users. We chose to keep it on `User` for simplicity at this stage; a `StudentProfile` extension table is documented as a stretch goal.
 
-**Status: ✅ All 8 tables are in 3NF. One acknowledged design choice (gpa on User) documented.**
+**Status: ✅ All 9 tables are in 3NF. One acknowledged design choice (gpa on User) documented.**
 
 ---
 

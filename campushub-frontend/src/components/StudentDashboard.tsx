@@ -42,7 +42,7 @@ export default function StudentDashboard() {
       const updateResults = await Promise.allSettled(
         activeCourses.map(async (enrollment) => {
           const page = await getApiPage<CourseAnnouncement>(
-            `/courses/${enrollment.course_id}/announcements/`,
+            `/resources/courses/${enrollment.course_id}/announcements/`,
             {},
             signal,
           );
@@ -58,7 +58,7 @@ export default function StudentDashboard() {
       const updates = updateResults.flatMap((result) => result.status === 'fulfilled' ? result.value : []);
       updates.sort((left, right) => {
         if (left.is_pinned !== right.is_pinned) return left.is_pinned ? -1 : 1;
-        return new Date(right.published_at).getTime() - new Date(left.published_at).getTime();
+        return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
       });
       setAnnouncements(updates.slice(0, 5));
       const failedRequests = updateResults.some((result) => result.status === 'rejected');
@@ -188,7 +188,7 @@ export default function StudentDashboard() {
                   </div>
                   <p className="mt-1 line-clamp-2 text-sm text-slate-600">{announcement.body}</p>
                   <p className="mt-2 text-xs text-slate-500">
-                    {announcement.course_code} · {announcement.published_at ? new Date(announcement.published_at).toLocaleString() : ''}
+                    {announcement.course_code} · {announcement.created_at ? new Date(announcement.created_at).toLocaleString() : ''}
                   </p>
                 </li>
               ))}
@@ -218,7 +218,8 @@ export default function StudentDashboard() {
               {placements.map((placement) => (
                 <li key={placement.id} className="px-5 py-4">
                   <p className="font-semibold text-slate-900">{placement.title}</p>
-                  <p className="mt-1 text-sm text-slate-600">{placement.company} · {placement.is_remote ? 'Remote' : placement.location}</p>
+                  <p className="mt-1 text-sm text-slate-600">{placement.company} · {placement.location}</p>
+                  <p className="mt-1 text-xs text-slate-500">{placement.slots_available} places available</p>
                   <p className="mt-1 text-xs text-slate-500">Deadline: {placement.deadline ? new Date(placement.deadline).toLocaleDateString() : 'Not specified'}</p>
                 </li>
               ))}

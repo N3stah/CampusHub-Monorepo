@@ -41,12 +41,11 @@ function CourseDetailContent() {
       const response = await api.get<Course>(`/academics/courses/${courseId}/`, { signal });
       setCourse(response.data);
       setCourseError(null);
-      if (response.data.lecturer) {
-        setLecturer(response.data.lecturer);
-      } else if (response.data.lecturer_id) {
+      setLecturer(response.data.lecturer ?? null);
+      if (!response.data.lecturer && response.data.lecturer_id) {
         try {
           const lecturerResponse = await api.get<LecturerProfile>(`/lecturers/${response.data.lecturer_id}/`, { signal });
-          setLecturer(lecturerResponse.data);
+          if (!signal?.aborted) setLecturer(lecturerResponse.data);
         } catch (requestError) {
           if (!signal?.aborted) setCourseError(getApiErrorMessage(requestError));
         }
@@ -60,7 +59,7 @@ function CourseDetailContent() {
 
   const loadResources = useCallback(async (signal?: AbortSignal) => {
     try {
-      const result = await getApiPage<CourseResource>(`/courses/${courseId}/resources/`, {}, signal);
+      const result = await getApiPage<CourseResource>(`/resources/courses/${courseId}/resources/`, {}, signal);
       setResources(result.results);
       setResourcesError(null);
     } catch (requestError) {
@@ -72,7 +71,7 @@ function CourseDetailContent() {
 
   const loadAnnouncements = useCallback(async (signal?: AbortSignal) => {
     try {
-      const result = await getApiPage<CourseAnnouncement>(`/courses/${courseId}/announcements/`, {}, signal);
+      const result = await getApiPage<CourseAnnouncement>(`/resources/courses/${courseId}/announcements/`, {}, signal);
       setAnnouncements(result.results);
       setAnnouncementsError(null);
     } catch (requestError) {
@@ -137,10 +136,10 @@ function CourseDetailContent() {
                         <p className="font-medium text-slate-900">{resource.title}</p>
                         {resource.description && <p className="mt-1 text-sm text-slate-600">{resource.description}</p>}
                         <p className="mt-1 text-xs text-slate-500">
-                          {[resource.file_name, resource.uploaded_by, resource.uploaded_at && new Date(resource.uploaded_at).toLocaleDateString()].filter(Boolean).join(' · ') || 'Course file'}
+                          {[resource.file_type?.toUpperCase(), resource.uploaded_by, resource.created_at && new Date(resource.created_at).toLocaleDateString()].filter(Boolean).join(' · ') || 'Course file'}
                         </p>
                       </div>
-                      <DownloadResourceButton resourceId={resource.id} resourceTitle={resource.title} />
+                      <DownloadResourceButton courseId={Number(courseId)} resourceId={resource.id} resourceTitle={resource.title} />
                     </li>
                   ))}
                 </ul>
@@ -168,7 +167,7 @@ function CourseDetailContent() {
                       </div>
                       <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{announcement.body}</p>
                       <p className="mt-2 text-xs text-slate-500">
-                        {[announcement.author, announcement.published_at && new Date(announcement.published_at).toLocaleString()].filter(Boolean).join(' · ')}
+                        {[announcement.author, announcement.created_at && new Date(announcement.created_at).toLocaleString()].filter(Boolean).join(' · ')}
                       </p>
                     </li>
                   ))}

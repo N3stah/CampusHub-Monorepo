@@ -158,31 +158,6 @@
 
 ## Phase 4A — Completed ✅
 
-**Date:** 2026-10-15
-
-**What was done:**
-- Created `Placement` and `Application` models in `apps/placements/models.py`
-- Added `deadline_must_be_future` custom validator in `apps/placements/validators.py`
-- Implemented `ApplicationService` with `@transaction.atomic` + `select_for_update()` to prevent race conditions during concurrent application submission
-- Active applications (pending/shortlisted/accepted) counted against `slots_available` — rejected applications free up slots automatically
-- Implemented 8 plain Django endpoints:
-  - `GET/POST /api/placements/` (officer/admin create)
-  - `GET/PATCH/DELETE /api/placements/<id>/` (officer/admin update/soft-delete)
-  - `POST /api/placements/<id>/apply/` (student only, calls `ApplicationService.submit`)
-  - `GET /api/applications/` (students see own; officers see their placements'; admins see all)
-  - `PATCH /api/applications/<id>/status/` (officer/admin, calls `ApplicationService.update_status`)
-- Complex business rules enforced:
-  - `slots_available` cannot be reduced below active application count during `PATCH`
-  - `UNIQUE(student, placement)` constraint at DB level prevents duplicate applications
-  - Officers can only update applications for placements they personally posted
-- All 12 curl smoke tests passed (create, apply, duplicate prevention, status update, role enforcement)
-- Committed and merged to main
-
-**Files changed:**
-- `apps/placements/models.py`, `apps/placements/validators.py`, `apps/placements/services.py`
-- `apps/placements/views.py`, `apps/placements/urls.py`, `apps/placements/admin.py`
-- `apps/placements/migrations/0001_initial.py`
-- `config/urls.py`
 
 ---
 
@@ -266,3 +241,45 @@ For each pending endpoint, implement request/response validation, authentication
 |--------|-------|--------|------|
 | `main` | Both | `4b134d8` — last integrated base; role-based MVP awaits merge | — |
 | `development_branch` | Both | `d69be6c` — role-based MVP and standalone-bootstrap documentation pushed; ready to merge | — |
+---
+
+## Testing Architecture Note
+
+**Date:** 2026-10-15
+
+Tests run against in-memory SQLite (`config.settings.test`), not the dev
+PostgreSQL database. Run `python manage.py test` against real Postgres
+(after `ALTER USER campushub_user CREATEDB;`) only if you need to verify
+Postgres-specific behavior (e.g. a raw SQL query, a DB-level constraint).
+
+## Frontend/backend endpoint verification — 2026-10-19
+
+Compared frontend API calls and backend URL configuration with safe requests to `http://127.0.0.1:8000`. The live API responded during initial probes but was unavailable on a later check. No valid bearer token was available, and no application data was created or changed.
+
+### 🟢 Responses observed
+
+- `GET /api/academics/departments/`, `GET /api/academics/courses/`, and `GET /api/academics/courses/1/` returned `200` with JSON data.
+- Empty-payload validation probes to `POST /api/auth/register/`, `POST /api/auth/token/`, and `POST /api/auth/token/refresh/` returned `400`; these did not create records.
+- Unauthenticated requests to `GET /api/auth/me/`, `GET /api/academics/enrollments/`, and registered resource/announcement list routes returned `401 Authentication required`. This confirms the authentication guard responded, not that authenticated access or successful operations work.
+
+### <span style="color: #d1242f">🔴 Live API route mismatches to investigate</span>
+
+The following safe `GET` requests returned `404` from the live API, while the routes were present in the development-branch source inspected at the time. This indicates a mismatch between the running service and source branch/revision; it does **not** establish that the endpoints need to be implemented again.
+
+| Live request | Route registered in development-branch source |
+|---|---|
+| `GET /api/placements/` | `GET/POST /api/placements/` |
+| `GET /api/users/` | `GET/POST /api/users/` |
+| `GET /api/lecturers/` | `GET/POST /api/lecturers/` |
+| `GET /api/lecturers/1/` | `GET/PATCH /api/lecturers/<id>/` |
+| `GET /api/applications/` | `GET /api/applications/` |
+| `GET /api/admin/stats/` | `GET /api/admin/stats/` |
+| `GET /api/admin/logs/` | `GET /api/admin/logs/` |
+
+**Follow-up:** identify which process/revision serves port `8000`, confirm its URL configuration, and repeat the GET checks against that running version. Do not add duplicate routes until the discrepancy is resolved.
+
+### Not verified end-to-end
+
+- Authenticated success responses, object/role permissions, and writes were not tested.
+- `PATCH /api/applications/<id>/status/` is registered in the development-branch source but was not called because it changes data.
+- The API later refused connections. Backend tests and `manage.py check` could not run in the available Python environment because Django was not installed.
