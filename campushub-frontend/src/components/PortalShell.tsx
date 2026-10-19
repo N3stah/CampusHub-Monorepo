@@ -17,6 +17,7 @@ const navigation: { label: string; href: string; roles: User['role'][] }[] = [
   { label: 'Students', href: '/users', roles: ['admin', 'officer'] },
   { label: 'Lecturers', href: '/lecturers', roles: ['admin', 'officer', 'lecturer'] },
   { label: 'Placements', href: '/placements', roles: ['student', 'lecturer', 'officer', 'admin'] },
+  { label: 'Notifications', href: '/notifications', roles: ['student', 'lecturer', 'officer', 'admin'] },
   { label: 'Administration', href: '/admin', roles: ['admin'] },
 ];
 
