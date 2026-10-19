@@ -266,3 +266,35 @@ For each pending endpoint, implement request/response validation, authentication
 |--------|-------|--------|------|
 | `main` | Both | `4b134d8` — last integrated base; role-based MVP awaits merge | — |
 | `development_branch` | Both | `d69be6c` — role-based MVP and standalone-bootstrap documentation pushed; ready to merge | — |
+
+## Frontend/backend endpoint verification — 2026-10-19
+
+Compared the frontend calls and backend URL configuration on `development_branch` with safe requests to `http://127.0.0.1:8000`. The live API responded during the initial probes, but was unavailable on a subsequent check. No valid bearer token was available, and no application data was created or changed.
+
+### 🟢 Responses observed
+
+- `GET /api/academics/departments/`, `GET /api/academics/courses/`, and `GET /api/academics/courses/1/` returned `200` with JSON data.
+- Empty-payload validation probes to `POST /api/auth/register/`, `POST /api/auth/token/`, and `POST /api/auth/token/refresh/` returned `400`, confirming those routes responded without creating records.
+- Unauthenticated requests to `GET /api/auth/me/`, `GET /api/academics/enrollments/`, and registered resource/announcement list routes returned `401 Authentication required`. This confirms the authentication guard responds; it does not verify authenticated access or successful data operations.
+
+### <span style="color: #d1242f">🔴 Live API route mismatches to investigate</span>
+
+The following safe `GET` requests to the live API returned `404`, although their routes are registered on `development_branch`. This points to a mismatch between the running API at `127.0.0.1:8000` and the checked-out development-branch source (for example, a stale server process, different deployed revision, or URL configuration); it does **not** mean these routes are absent from `development_branch`.
+
+| Live request | Development-branch route |
+|---|---|
+| `GET /api/placements/` | `GET/POST /api/placements/` |
+| `GET /api/users/` | `GET/POST /api/users/` |
+| `GET /api/lecturers/` | `GET/POST /api/lecturers/` |
+| `GET /api/lecturers/1/` | `GET/PATCH /api/lecturers/<id>/` |
+| `GET /api/applications/` | `GET /api/applications/` |
+| `GET /api/admin/stats/` | `GET /api/admin/stats/` |
+| `GET /api/admin/logs/` | `GET /api/admin/logs/` |
+
+**Follow-up:** restart or identify the API process serving port `8000`, confirm its code revision and `ROOT_URLCONF`, then repeat these safe GET checks against the development-branch server. Do not add duplicate backend routes until this deployment/source mismatch is resolved.
+
+### Not verified end-to-end
+
+- Authenticated success responses, role/ownership permissions, and writes (including placement/application submissions and status updates) were not tested.
+- The frontend uses `PATCH /api/applications/<id>/status/`; the development-branch URL configuration registers that method. It was not called because it changes data.
+- The live API later refused connections. Backend tests and `manage.py check` could not run in the available Python environment because Django is not installed there.
