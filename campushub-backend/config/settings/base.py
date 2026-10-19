@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     'apps.academics',
     'apps.resources',
     'apps.placements',
+    'apps.notifications',
     'apps.common',
 ]
 

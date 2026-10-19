@@ -12,6 +12,13 @@ class UserAdmin(BaseUserAdmin):
     fieldsets = BaseUserAdmin.fieldsets + (
         ('CampusHub', {'fields': ('role', 'department', 'gpa', 'phone_number', 'title', 'bio', 'office_hours')}),
     )
+    # Custom add form to include required fields for our custom User model
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('email', 'username', 'first_name', 'last_name', 'role', 'password1', 'password2'),
+        }),
+    )
 
 
 @admin.register(AuditEvent)

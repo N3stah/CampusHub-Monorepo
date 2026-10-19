@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from datetime import date
 
+from apps.notifications.services import NotificationService
 from .models import Placement, Application
 
 class ApplicationService:
@@ -68,5 +69,14 @@ class ApplicationService:
         application.reviewed_by = user
         application.reviewed_at = timezone.now()
         application.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
+        
+        # --- Notification Hook ---
+        NotificationService.notify(
+            recipient=application.student,
+            actor=user,
+            verb='application_status_changed',
+            message=f"Your application for {application.placement.title} is now {new_status}",
+            link=f"/placements/{application.placement.id}/applications/{application.id}/"
+        )
         
         return application

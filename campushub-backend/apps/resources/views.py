@@ -8,6 +8,7 @@ from django.conf import settings
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.academics.models import Course, Enrollment
+from apps.notifications.services import NotificationService
 from .models import Resource, Announcement
 
 User = get_user_model()
@@ -90,6 +91,20 @@ def resource_list_create(request, course_id):
             file_type=ext,
             file_size=uploaded_file.size
         )
+        
+        # --- Notification Hook ---
+        enrolled_students = Enrollment.objects.filter(
+            course=course, status='active'
+        ).values_list('student', flat=True)
+        
+        NotificationService.notify_bulk(
+            recipients=list(enrolled_students),
+            verb='resource_added',
+            message=f'New resource "{resource.title}" added to {course.code}',
+            actor=user,
+            link=f'/courses/{course.id}/'
+        )
+
         return JsonResponse({
             'id': resource.id,
             'title': resource.title,
@@ -187,6 +202,20 @@ def announcement_list_create(request, course_id):
             title=title,
             body=body
         )
+        
+        # --- Notification Hook ---
+        enrolled_students = Enrollment.objects.filter(
+            course=course, status='active'
+        ).values_list('student', flat=True)
+        
+        NotificationService.notify_bulk(
+            recipients=list(enrolled_students),
+            verb='announcement_added',
+            message=f'New announcement "{announcement.title}" posted to {course.code}',
+            actor=user,
+            link=f'/courses/{course.id}/'
+        )
+
         return JsonResponse({
             'id': announcement.id,
             'title': announcement.title,
