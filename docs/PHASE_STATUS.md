@@ -6,7 +6,7 @@
 | Phase | Slice | Backend (Mark) | Frontend (Titus) | Merged to main |
 |-------|-------|---------------|-------------------|----------------|
 | 0 | Config & Setup | `[x]` | `[x]` | `[x]` |
-| 1A | Auth Backend | `[x]` | `[ X]` | `[x]` |
+| 1A | Auth Backend | `[x]` | `[ ]` | `[x]` |
 | 1B | Auth Frontend | `[x]` | `[x]` | `[x]` |
 | 2A/B | Academics | `[x]` | `[x]` | `[x]` |
 | 3A/B | Resources | `[x]` | `[x]` | `[x]` |
@@ -158,6 +158,31 @@
 
 ## Phase 4A — Completed ✅
 
+**Date:** 2026-10-15
+
+**What was done:**
+- Created `Placement` and `Application` models in `apps/placements/models.py`
+- Added `deadline_must_be_future` custom validator in `apps/placements/validators.py`
+- Implemented `ApplicationService` with `@transaction.atomic` + `select_for_update()` to prevent race conditions during concurrent application submission
+- Active applications (pending/shortlisted/accepted) counted against `slots_available` — rejected applications free up slots automatically
+- Implemented 8 plain Django endpoints:
+  - `GET/POST /api/placements/` (officer/admin create)
+  - `GET/PATCH/DELETE /api/placements/<id>/` (officer/admin update/soft-delete)
+  - `POST /api/placements/<id>/apply/` (student only, calls `ApplicationService.submit`)
+  - `GET /api/applications/` (students see own; officers see their placements'; admins see all)
+  - `PATCH /api/applications/<id>/status/` (officer/admin, calls `ApplicationService.update_status`)
+- Complex business rules enforced:
+  - `slots_available` cannot be reduced below active application count during `PATCH`
+  - `UNIQUE(student, placement)` constraint at DB level prevents duplicate applications
+  - Officers can only update applications for placements they personally posted
+- All 12 curl smoke tests passed (create, apply, duplicate prevention, status update, role enforcement)
+- Committed and merged to main
+
+**Files changed:**
+- `apps/placements/models.py`, `apps/placements/validators.py`, `apps/placements/services.py`
+- `apps/placements/views.py`, `apps/placements/urls.py`, `apps/placements/admin.py`
+- `apps/placements/migrations/0001_initial.py`
+- `config/urls.py`
 
 ---
 
