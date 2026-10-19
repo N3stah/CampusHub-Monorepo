@@ -18,6 +18,7 @@ def test_all_api_routes_are_reachable():
     headers = {'HTTP_AUTHORIZATION': f'Bearer {access_token}'}
     
     endpoints = [
+        '/api/health/',
         '/api/auth/me/',
         '/api/users/',
         '/api/academics/departments/',

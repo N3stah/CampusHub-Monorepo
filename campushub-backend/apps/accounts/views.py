@@ -5,6 +5,7 @@ from django.db import IntegrityError
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django_ratelimit.decorators import ratelimit
 import jwt
 
 from .jwt_utils import make_pair, make_token, decode_token, jwt_required
@@ -39,6 +40,7 @@ def _user_dict(user):
 
 @csrf_exempt
 @require_http_methods(['POST'])
+@ratelimit(key='ip', rate='10/m', block=True)
 def register_view(request):
     data, err = _json_body(request)
     if err:
@@ -73,6 +75,7 @@ def register_view(request):
 
 @csrf_exempt
 @require_http_methods(['POST'])
+@ratelimit(key='ip', rate='10/m', block=True)
 def token_view(request):
     data, err = _json_body(request)
     if err:
