@@ -276,3 +276,35 @@ Tests run against in-memory SQLite (`config.settings.test`), not the dev
 PostgreSQL database. Run `python manage.py test` against real Postgres
 (after `ALTER USER campushub_user CREATEDB;`) only if you need to verify
 Postgres-specific behavior (e.g. a raw SQL query, a DB-level constraint).
+
+## Frontend/backend endpoint verification — 2026-10-19
+
+Compared frontend API calls and backend URL configuration with safe requests to `http://127.0.0.1:8000`. The live API responded during initial probes but was unavailable on a later check. No valid bearer token was available, and no application data was created or changed.
+
+### 🟢 Responses observed
+
+- `GET /api/academics/departments/`, `GET /api/academics/courses/`, and `GET /api/academics/courses/1/` returned `200` with JSON data.
+- Empty-payload validation probes to `POST /api/auth/register/`, `POST /api/auth/token/`, and `POST /api/auth/token/refresh/` returned `400`; these did not create records.
+- Unauthenticated requests to `GET /api/auth/me/`, `GET /api/academics/enrollments/`, and registered resource/announcement list routes returned `401 Authentication required`. This confirms the authentication guard responded, not that authenticated access or successful operations work.
+
+### <span style="color: #d1242f">🔴 Live API route mismatches to investigate</span>
+
+The following safe `GET` requests returned `404` from the live API, while the routes were present in the development-branch source inspected at the time. This indicates a mismatch between the running service and source branch/revision; it does **not** establish that the endpoints need to be implemented again.
+
+| Live request | Route registered in development-branch source |
+|---|---|
+| `GET /api/placements/` | `GET/POST /api/placements/` |
+| `GET /api/users/` | `GET/POST /api/users/` |
+| `GET /api/lecturers/` | `GET/POST /api/lecturers/` |
+| `GET /api/lecturers/1/` | `GET/PATCH /api/lecturers/<id>/` |
+| `GET /api/applications/` | `GET /api/applications/` |
+| `GET /api/admin/stats/` | `GET /api/admin/stats/` |
+| `GET /api/admin/logs/` | `GET /api/admin/logs/` |
+
+**Follow-up:** identify which process/revision serves port `8000`, confirm its URL configuration, and repeat the GET checks against that running version. Do not add duplicate routes until the discrepancy is resolved.
+
+### Not verified end-to-end
+
+- Authenticated success responses, object/role permissions, and writes were not tested.
+- `PATCH /api/applications/<id>/status/` is registered in the development-branch source but was not called because it changes data.
+- The API later refused connections. Backend tests and `manage.py check` could not run in the available Python environment because Django was not installed.
