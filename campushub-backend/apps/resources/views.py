@@ -49,7 +49,7 @@ def resource_list_create(request, course_id):
         if not has_course_view_permission(user, course):
             return JsonResponse({'error': 'Permission denied'}, status=403)
         
-        resources = Resource.objects.filter(course=course)
+        resources = Resource.objects.filter(course=course).select_related('uploaded_by')
         data = [
             {
                 'id': r.id,
@@ -169,7 +169,7 @@ def announcement_list_create(request, course_id):
         if not has_course_view_permission(user, course):
             return JsonResponse({'error': 'Permission denied'}, status=403)
         
-        announcements = Announcement.objects.filter(course=course)
+        announcements = Announcement.objects.filter(course=course).select_related('author')
         data = [
             {
                 'id': a.id,
