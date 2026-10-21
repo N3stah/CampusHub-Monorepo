@@ -3,6 +3,8 @@
 > Update this file at the end of every work session.  
 > Format: `[x]` = complete · `[-]` = in progress · `[ ]` = not started
 
+**Last updated:** 2026-10-21 · **Backend:** complete and deployed to Render · **Frontend (Titus):** in progress
+
 | Phase | Slice | Backend (Mark) | Frontend (Titus) | Merged to main |
 |-------|-------|---------------|-------------------|----------------|
 | 0 | Config & Setup | `[x]` | `[x]` | `[x]` |
@@ -10,11 +12,18 @@
 | 1B | Auth Frontend | `[x]` | `[x]` | `[x]` |
 | 2A/B | Academics | `[x]` | `[x]` | `[x]` |
 | 3A/B | Resources | `[x]` | `[x]` | `[x]` |
-| 4A/B | Placements | `[x]` | `[x]` | `[x]` |
-| 5A/B | Applications | `[x]` | `[x]` | `[x]` |
-| 6A/B | Polish & Deploy | `[ ]` | `[ ]` | `[ ]` |
+| 4A/B | Placements & Applications | `[x]` | `[x]` | `[x]` |
+| 5A/B | Notifications | `[x]` | `[x]` | `[x]` |
 | Test | Auth Tests | `[x]` | `[ ]` | `[x]` |
-| MVP | Role-based accounts & endpoint integration | `[x]` | `[x]` | `[ ]` (`development_branch`) |
+| MVP | Role-based accounts & endpoint integration | `[x]` | `[x]` | `[x]` |
+| Fix | Fix & Review (post-MVP cleanup) | `[x]` | n/a | `[x]` |
+| Hotfix | Restore dropped `user_urls` include | `[x]` | n/a | `[x]` |
+| Deploy-prep | Pre-deploy hardening | `[x]` | n/a | `[x]` |
+| Completion | Backend completion (Groups A–D) | `[-]` Groups A, C, D done · Group B partial | n/a | `[x]` |
+| 6A | Deploy backend to Render | `[x]` | n/a | `[x]` |
+| 6B | Frontend polish & deploy to Vercel | n/a | `[-]` | `[ ]` |
+
+---
 
 ---
 
@@ -223,26 +232,97 @@
 5. Verify the account roles by logging in as each user; deactivate/reactivate accounts from the admin user directory as needed.
 6. Run `pytest` for the isolated backend test suite.
 
-## What Should Be Implemented — Backend Endpoints for Frontend CRUD
+---
 
-The endpoints below are the next backend API work needed to give future management screens complete CRUD support. Existing endpoints are listed to show what the frontend can already call; **Pending** marks work not currently provided by the backend on `development_branch`. Keep the existing `/api/` route prefix and plain Django/PyJWT conventions.
+## Post-MVP Fix & Review — Completed ✅
 
-| Feature / frontend workflow | Existing backend endpoints | Pending backend endpoints |
-|---|---|---|
-| Departments — admin department management | `GET /api/academics/departments/` | `POST /api/academics/departments/`, `GET/PATCH/DELETE /api/academics/departments/<id>/`. Restrict writes/deactivation to admins and validate unique department codes and department-head references. |
-| Courses — admin/lecturer course management | `GET /api/academics/courses/`, `GET /api/academics/courses/<id>/` | `POST /api/academics/courses/`, `PATCH/DELETE /api/academics/courses/<id>/`. Restrict writes to admins (and lecturer assignment/update only if explicitly allowed); validate department and lecturer references. Prefer deactivation over hard deletion when courses have enrollments or resources. |
-| Course enrollments — student enrollment and course rosters | `GET/POST /api/academics/enrollments/`, `DELETE /api/academics/enrollments/<id>/` (student's own enrollments; delete marks dropped) | For staff roster screens, add a permission-checked `GET /api/academics/courses/<id>/enrollments/` for the assigned lecturer/admin. Add staff enrollment status changes only if the frontend requires them; students must not read or change another student's enrollment. |
-| Course resources — lecturer/admin content management | `GET/POST /api/resources/courses/<course_id>/resources/`, `GET/DELETE /api/resources/courses/<course_id>/resources/<id>/` | Add `PATCH /api/resources/courses/<course_id>/resources/<id>/` to edit title/description and optionally replace the uploaded file. Preserve upload validation, delete the replaced stored file safely, and allow changes only to the uploader/assigned lecturer or admin. |
-| Announcements — lecturer/admin content management | `GET/POST /api/resources/courses/<course_id>/announcements/`, `GET /api/resources/courses/<course_id>/announcements/<id>/` | Add `PATCH/DELETE /api/resources/courses/<course_id>/announcements/<id>/`. Allow changes only to the author/assigned lecturer or admin; keep enrolled-student read access. |
-| Placements — officer/admin opportunity management | `GET/POST /api/placements/`, `GET/PATCH/DELETE /api/placements/<id>/` | Core CRUD is present. Before adding more routes, verify the existing role checks, field validation, and soft-delete behavior against all frontend create/edit/remove forms. |
-| Applications — student application tracking and staff review | `GET /api/applications/`, `POST /api/placements/<id>/apply/`, `PATCH /api/applications/<id>/status/` | Add `GET /api/applications/<id>/` with student-owner and assigned officer/admin checks. If students can withdraw applications in the UI, add `DELETE /api/applications/<id>/` as a controlled withdrawal (not a hard delete); retain the audit trail and slot-count rules. |
-| User accounts and lecturers — admin account management | `GET/POST /api/users/`, `GET/PATCH/DELETE /api/users/<id>/`, `GET/POST /api/lecturers/`, `GET/PATCH /api/lecturers/<id>/` | Core account workflows exist. Confirm lecturer deactivation via `PATCH is_active`; keep user deactivation soft and protect the last active superuser. Do not expose public role assignment. |
+**Date:** 2026-10-18 to 2026-10-19
 
-For each pending endpoint, implement request/response validation, authentication and role/object-level authorization, consistent JSON errors, audit events for writes, and focused tests for allowed and denied roles. Add the endpoint to its app URL config and update the matching frontend form/query only when that frontend workflow is in scope. Hard deletion should not remove records that are referenced by enrollments, applications, uploaded files, or audit events.
+- Reviewed the frontend-driven backend changes and cleaned up the issues found (duplicate test modules, an unreachable `except json.JSONDecodeError` that was shadowed by `except ValueError` in `update_application_status`, and an empty-body crash, now `json.loads(request.body or b'{}')`).
+- Notifications `mark_all_read` raised a `TypeError` by unpacking the integer returned by `.update()`. Fixed in `6ba6e62`.
 
-**Remaining beyond the MVP:**
-- Run migrations and role/login tests against the team's actual PostgreSQL database, then verify student, lecturer, officer, and admin workflows with seeded accounts in a live browser.
-- Add pagination, password reset/email invitation flows, and production hardening for audit events before production use.
+## Phase 5A — Notifications — Completed ✅
+
+- `Notification` model (recipient CASCADE, actor SET_NULL, verb, message, link, is_read, created_at) with the composite index `(recipient, is_read, -created_at)`.
+- `NotificationService.notify()` with a 5-minute dedupe window, and `notify_bulk()` using `bulk_create`.
+- Hooks on resource creation, announcement creation and application status changes.
+- Endpoints: list (`?unread=true`), unread count, mark one read, mark all read.
+
+## Hotfix — dropped `user_urls` include — Completed ✅
+
+Phase 5A commit `9dbea41` removed the `user_urls` include from `config/urls.py`, so `/api/users/`, `/api/lecturers/` and `/api/admin/stats|logs/` returned 404 on `main`. Restored in `57cd8f9`. `apps/common/tests/test_reachability.py` now hits every mounted route group so this class of regression fails the test suite.
+
+## Pre-Deploy Hardening — Completed ✅
+
+- `apps/common/api_root.py`: single `API_URL_GROUPS` list (plus `/api/health/` and the status-code constants). `config/urls.py` consumes it.
+- Custom JSON `handler500/404/403` in `apps/common/error_views.py` (no HTML error pages).
+- `django-ratelimit` on `register` and `token` (10/min per IP) with JSON 429.
+- Console `LOGGING`, WhiteNoise placed directly after `SecurityMiddleware`, `CSRF_TRUSTED_ORIGINS` and CORS configured from environment variables in `prod.py`.
+- N+1 queries removed from the resource and announcement lists (`select_related`).
+- Production: `DEBUG=False`, HSTS (1 year), SSL redirect, secure cookies.
+
+## Backend Completion — Groups A–D
+
+**Group A — missing features: done**
+- `GET /api/resources/courses/<course_id>/resources/<id>/download/` with an atomic `F('download_count') + 1` (new `download_count` column and migration).
+- `Announcement.is_pinned` with `ordering = ['-is_pinned', '-created_at']`.
+- `GET /api/applications/<id>/` and `DELETE /api/applications/<id>/withdraw/` (owning student, pending only), which sets the new `withdrawn` status. Withdrawn applications do not count against the slot total.
+- CRUD added: departments (list/create, detail/update/delete), courses (list/create, detail/update/delete), `courses/<id>/roster/`, resource update, announcement update/delete, and head-of-department assignment.
+- `/api/auth/me/` deliberately does **not** accept `gpa`. GPA is admin-editable only, to prevent falsified shortlisting data.
+
+**Group C — integrity: done**
+- DB constraints: `user_gpa_range`, `user_valid_role`, `placement_slots_gte_1`, `unique_student_placement`, `application_valid_status`.
+- Indexes: Enrollment(course, status), Resource(course, -created_at), Application(placement, status), Application(student, -applied_at), Notification(recipient, is_read, -created_at).
+- Empty `tests.py` stubs removed (they conflicted with the `tests/` packages).
+
+**Group D — documentation: done**
+- `docs/ERD.md` v2.1 matches the real models (real table names, `head_id`, `status`, `created_at`, notifications and audit tables, fenced Mermaid diagram, SQL embedded from the verified files).
+- `docs/sql/01..04_*.sql` execute against a seeded database.
+- `docs/openapi.json` is hand-written and lists all 34 paths (no DRF).
+
+**Group B — partial**
+- Done: `import_students`, `cleanup_notifications --days N`, `seed_data` (idempotent), `docs/openapi.json`.
+- **Not done:** the SOLID service layer from the capstone brief. Only `ApplicationService` and `NotificationService` exist. There is no `BaseService`, `ResourceService`, `EnrollmentService` or `Notifier` interface, so resource and enrollment logic still lives in the views.
+- **Not done:** pagination and `?search=` filtering. `apps/common/pagination.py` defines `paginate_queryset`, but no view calls it. Lists return `{"count", "results"}` unpaged.
+- Coverage is below the target (see Testing results).
+
+## Phase 6A — Deploy Backend — Completed ✅
+
+**Date:** 2026-10-21
+
+- Backend deployed to Render: `https://campushub-backend-nbgc.onrender.com`.
+- Verified: `curl https://campushub-backend-nbgc.onrender.com/api/health/` returns `{"status": "ok"}`.
+- Gunicorn + Procfile, WhiteNoise for static files, a PostgreSQL database, secrets supplied only through Render environment variables (`.env` is never committed).
+- Required environment variables: `SECRET_KEY`, `JWT_SECRET`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, `DB_*`.
+- Frontend (Titus) deploys to Vercel and must point `NEXT_PUBLIC_API_URL` at the Render URL. Add the Vercel domain to `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` on Render.
+
+## Testing results — 2026-10-21
+
+- `python manage.py check`: 0 issues. `makemigrations --check --dry-run`: no changes.
+- `pytest`: **37 passed**, total coverage **63%** (the capstone brief requires 60% or more).
+- Weak spots: `academics/views` 18%, `resources/views` 20%, the three management commands, `pagination.py` and `error_views.py` at 0%. The Group A endpoints have no tests yet.
+- `check --deploy`: only the two optional HSTS warnings (`SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD`).
+
+## Known limitations
+
+- Uploads are validated by extension and size only (no MIME sniffing).
+- Uploaded media is stored on the local filesystem. Render's disk is ephemeral, so uploaded files are lost on redeploy until object storage (S3/Cloudinary) is configured.
+- Rate limits are per worker process (default local-memory cache). The django-ratelimit cache checks are silenced in settings.
+- `seed_data` creates accounts with hard-coded passwords, including a superuser, and has no production guard. Do not run it on Render, or delete those accounts afterwards.
+- Tokens are stored in `localStorage` on the frontend (HttpOnly cookies would need a coordinated change).
+- Enrollment has no `semester`, so re-enrolling in a later term is not supported.
+- The Postman collection covers Auth only.
+
+## Next steps
+
+1. Titus: finish frontend polish and deploy to Vercel; set the CORS and CSRF origins on Render.
+2. Mark: raise coverage (academics, resources, placements, commands, Group A endpoints) toward 80%.
+3. Mark: guard `seed_data` (refuse when `DEBUG` is false unless `--force`, passwords from environment variables).
+4. Mark: add persistent media storage, or document the limitation in the demo.
+5. Mark (optional): apply pagination/search to the list views and extract `ResourceService` and `EnrollmentService`.
+6. Both: run a full browser walkthrough of all four roles against the deployed stack, then the final demo.
+
+---
 
 ## Blocker Log
 
@@ -257,6 +337,12 @@ For each pending endpoint, implement request/response validation, authentication
 | 2026-10-15 | `pytest` failed: `permission denied to create database` | Fix: `sudo -u postgres psql -p 5434 -c "ALTER USER campushub_user CREATEDB;"` |
 | 2026-10-15 | Postman `Register User` returning 400 Bad Request | User already existed from curl tests. Fix: Used a fresh email in the Postman collection JSON |
 | 2026-10-15 | Frontend branch had `ImportError: cannot import name 'Resource'` | Phase 3A commit missed `apps/resources/models.py`. Fix: Created `fix/resources-models-and-requirements` branch, added file, merged to main |
+| 2026-10-18 | Claimed deletion of `apps/accounts/tests.py` in commit `97504a0` never happened (diffing the commit showed it) | Deleted the stubs properly in a later fix pass; `find apps -name tests.py` is now empty |
+| 2026-10-19 | Phase 5A commit `9dbea41` dropped the `user_urls` include; user-management API returned 404 | Restored in `57cd8f9`; added `test_reachability.py` covering every mounted route group |
+| 2026-10-19 | `mark_all_read` `TypeError` (unpacked the int returned by `.update()`) | Fixed in `6ba6e62` |
+| 2026-10-20 | An external audit claimed `Resource.download_count` already existed | It did not. Added the field plus a migration in the completion pass |
+| 2026-10-20 | Audit called the missing `gpa` whitelist on `/api/auth/me/` a bug | Rejected: GPA stays admin-editable only to prevent falsification; a test asserts it |
+| 2026-10-21 | Render's disk is ephemeral, so uploaded media is lost on redeploy | Documented under Known limitations; persistent object storage is a next step |
 
 ---
 
@@ -264,8 +350,8 @@ For each pending endpoint, implement request/response validation, authentication
 
 | Branch | Owner | Status | PR # |
 |--------|-------|--------|------|
-| `main` | Both | `4b134d8` — last integrated base; role-based MVP awaits merge | — |
-| `development_branch` | Both | `d69be6c` — role-based MVP and standalone-bootstrap documentation pushed; ready to merge | — |
+| `main` | Both | `acb601e` — backend complete and deployed to Render | — |
+
 ---
 
 ## Testing Architecture Note
