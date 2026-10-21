@@ -19,6 +19,8 @@ const navigation: { label: string; href: string; roles: User['role'][] }[] = [
   { label: 'Placements', href: '/placements', roles: ['student', 'lecturer', 'officer', 'admin'] },
   { label: 'Notifications', href: '/notifications', roles: ['student', 'lecturer', 'officer', 'admin'] },
   { label: 'Administration', href: '/admin', roles: ['admin'] },
+  { label: 'Departments', href: '/admin/departments', roles: ['admin'] },
+  { label: 'Course management', href: '/admin/courses', roles: ['admin'] },
 ];
 
 export default function PortalShell({ children, roles }: PortalShellProps) {

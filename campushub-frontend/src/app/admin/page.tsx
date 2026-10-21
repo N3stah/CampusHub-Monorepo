@@ -97,8 +97,10 @@ export default function AdminPage() {
             <h2 id="management-heading" className="font-semibold">Management</h2>
             <p className="mt-1 text-sm text-slate-500">Quick links for the most-used admin tasks.</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {[
+              { title: 'Departments', detail: 'Manage department details, students, lecturers, and courses.', href: '/admin/departments' },
+              { title: 'Courses', detail: 'Create and manage courses, and assign lecturers to one or more courses.', href: '/admin/courses' },
               { title: 'Student accounts', detail: 'Review student directory and account status.', href: '/users' },
               { title: 'Lecturer directory', detail: 'Browse lecturer accounts and departments.', href: '/lecturers' },
               { title: 'Placement listings', detail: 'Create and review current opportunities.', href: '/placements' },
