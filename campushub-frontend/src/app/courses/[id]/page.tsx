@@ -4,11 +4,16 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
+import type { FormEvent } from 'react';
 import PortalShell from '@/components/PortalShell';
 import { DownloadResourceButton } from '@/components/MyCourses';
 import api from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
 import type { Course, CourseAnnouncement, CourseResource, LecturerProfile } from '@/types/portal';
+
+const allowedResourceExtensions = new Set(['pdf', 'docx', 'pptx', 'xlsx', 'png', 'jpg']);
+const maxResourceSize = 10 * 1024 * 1024;
 
 export default function CourseDetailPage() {
   return (
@@ -24,6 +29,7 @@ export default function CourseDetailPage() {
 
 function CourseDetailContent() {
   const params = useParams<{ id: string }>();
+  const { user } = useAuth();
   const courseId = params.id;
   const [course, setCourse] = useState<Course | null>(null);
   const [lecturer, setLecturer] = useState<LecturerProfile | null>(null);
@@ -35,6 +41,18 @@ function CourseDetailContent() {
   const [courseError, setCourseError] = useState<string | null>(null);
   const [resourcesError, setResourcesError] = useState<string | null>(null);
   const [announcementsError, setAnnouncementsError] = useState<string | null>(null);
+  const [resourceTitle, setResourceTitle] = useState('');
+  const [resourceDescription, setResourceDescription] = useState('');
+  const [resourceFile, setResourceFile] = useState<File | null>(null);
+  const [uploadingResource, setUploadingResource] = useState(false);
+  const [resourceFormError, setResourceFormError] = useState<string | null>(null);
+  const [resourceNotice, setResourceNotice] = useState<string | null>(null);
+  const [announcementTitle, setAnnouncementTitle] = useState('');
+  const [announcementBody, setAnnouncementBody] = useState('');
+  const [publishingAnnouncement, setPublishingAnnouncement] = useState(false);
+  const [announcementFormError, setAnnouncementFormError] = useState<string | null>(null);
+  const [announcementNotice, setAnnouncementNotice] = useState<string | null>(null);
+  const canManageCourse = user?.role === 'lecturer' && course?.lecturer_id === user.id;
 
   const loadCourse = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -82,6 +100,77 @@ function CourseDetailContent() {
     }
   }, [courseId]);
 
+  async function uploadResource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!resourceTitle.trim()) {
+      setResourceFormError('Enter a resource title.');
+      return;
+    }
+    if (!resourceFile) {
+      setResourceFormError('Choose a file to upload.');
+      return;
+    }
+
+    const extension = resourceFile.name.split('.').pop()?.toLowerCase() ?? '';
+    if (!allowedResourceExtensions.has(extension)) {
+      setResourceFormError('Allowed file types: PDF, DOCX, PPTX, XLSX, PNG, and JPG.');
+      return;
+    }
+    if (resourceFile.size > maxResourceSize) {
+      setResourceFormError('Files must be 10 MB or smaller.');
+      return;
+    }
+
+    setUploadingResource(true);
+    setResourceFormError(null);
+    setResourceNotice(null);
+    try {
+      const formData = new FormData();
+      formData.append('title', resourceTitle.trim());
+      formData.append('description', resourceDescription.trim());
+      formData.append('file', resourceFile);
+      await api.post(`/resources/courses/${courseId}/resources/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setResourceTitle('');
+      setResourceDescription('');
+      setResourceFile(null);
+      form.reset();
+      setResourceNotice('Resource uploaded and students enrolled in this course have been notified.');
+      await loadResources();
+    } catch (requestError) {
+      setResourceFormError(getApiErrorMessage(requestError));
+    } finally {
+      setUploadingResource(false);
+    }
+  }
+
+  async function publishAnnouncement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!announcementTitle.trim() || !announcementBody.trim()) {
+      setAnnouncementFormError('Enter both an announcement title and message.');
+      return;
+    }
+    setPublishingAnnouncement(true);
+    setAnnouncementFormError(null);
+    setAnnouncementNotice(null);
+    try {
+      await api.post(`/resources/courses/${courseId}/announcements/`, {
+        title: announcementTitle.trim(),
+        body: announcementBody.trim(),
+      });
+      setAnnouncementTitle('');
+      setAnnouncementBody('');
+      setAnnouncementNotice('Announcement posted and students enrolled in this course have been notified.');
+      await loadAnnouncements();
+    } catch (requestError) {
+      setAnnouncementFormError(getApiErrorMessage(requestError));
+    } finally {
+      setPublishingAnnouncement(false);
+    }
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     void Promise.resolve().then(() => {
@@ -93,9 +182,14 @@ function CourseDetailContent() {
   }, [loadCourse, loadResources, loadAnnouncements]);
 
   return (
-    <PortalShell roles={['student']}>
+    <PortalShell roles={['student', 'lecturer']}>
       <section className="space-y-6">
-        <Link href="/courses" className="text-sm font-semibold text-blue-700 hover:underline">← Back to my courses</Link>
+      <Link
+        href={user?.role === 'lecturer' ? '/dashboard' : '/courses'}
+        className="text-sm font-semibold text-blue-700 hover:underline"
+      >
+        {user?.role === 'lecturer' ? '← Back to teaching dashboard' : '← Back to my courses'}
+      </Link>
         {courseLoading ? (
           <p role="status" className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading course…</p>
         ) : courseError && !course ? (
@@ -119,6 +213,91 @@ function CourseDetailContent() {
               </div>
               {courseError && <p role="status" className="mt-3 text-xs text-amber-700">Course data loaded, but additional lecturer details are unavailable: {courseError}</p>}
             </header>
+
+            {canManageCourse && (
+              <section aria-label="Course teaching tools" className="grid gap-4 xl:grid-cols-2">
+                <form onSubmit={uploadResource} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div>
+                    <h2 className="font-semibold">Upload a course resource</h2>
+                    <p className="mt-1 text-xs text-slate-500">PDF, DOCX, PPTX, XLSX, PNG, or JPG up to 10 MB.</p>
+                  </div>
+                  {resourceNotice && <p role="status" className="text-sm text-emerald-700">{resourceNotice}</p>}
+                  {resourceFormError && <p role="alert" className="text-sm text-red-700">{resourceFormError}</p>}
+                  <label className="block text-sm font-medium text-slate-700">
+                    Title
+                    <input
+                      required
+                      maxLength={200}
+                      value={resourceTitle}
+                      onChange={(event) => setResourceTitle(event.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Description <span className="font-normal text-slate-500">(optional)</span>
+                    <textarea
+                      value={resourceDescription}
+                      onChange={(event) => setResourceDescription(event.target.value)}
+                      rows={2}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    File
+                    <input
+                      required
+                      type="file"
+                      accept=".pdf,.docx,.pptx,.xlsx,.png,.jpg"
+                      onChange={(event) => setResourceFile(event.target.files?.[0] ?? null)}
+                      className="mt-1 block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:font-semibold file:text-blue-700"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={uploadingResource}
+                    className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
+                  >
+                    {uploadingResource ? 'Uploading…' : 'Upload resource'}
+                  </button>
+                </form>
+
+                <form onSubmit={publishAnnouncement} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div>
+                    <h2 className="font-semibold">Post a course announcement</h2>
+                    <p className="mt-1 text-xs text-slate-500">Enrolled students will receive a notification.</p>
+                  </div>
+                  {announcementNotice && <p role="status" className="text-sm text-emerald-700">{announcementNotice}</p>}
+                  {announcementFormError && <p role="alert" className="text-sm text-red-700">{announcementFormError}</p>}
+                  <label className="block text-sm font-medium text-slate-700">
+                    Title
+                    <input
+                      required
+                      maxLength={200}
+                      value={announcementTitle}
+                      onChange={(event) => setAnnouncementTitle(event.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Announcement
+                    <textarea
+                      required
+                      value={announcementBody}
+                      onChange={(event) => setAnnouncementBody(event.target.value)}
+                      rows={5}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={publishingAnnouncement}
+                    className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
+                  >
+                    {publishingAnnouncement ? 'Posting…' : 'Post announcement'}
+                  </button>
+                </form>
+              </section>
+            )}
 
             <section aria-labelledby="resources-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">

@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import PortalShell from '@/components/PortalShell';
+import LecturerDashboard from '@/components/LecturerDashboard';
 import StudentDashboard from '@/components/StudentDashboard';
+import PlacementOverview from '@/components/PlacementOverview';
 import { useAuth } from '@/context/AuthContext';
 
 export default function DashboardPage() {
@@ -10,7 +12,7 @@ export default function DashboardPage() {
 
   return (
     <PortalShell>
-      {user?.role === 'student' ? <StudentDashboard /> : (
+      {user?.role === 'student' ? <StudentDashboard /> : user?.role === 'lecturer' ? <LecturerDashboard /> : (
       <section className="space-y-6">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Your campus, connected</p>
@@ -19,6 +21,8 @@ export default function DashboardPage() {
           </h1>
           <p className="mt-2 text-sm leading-6 text-slate-600">Your CampusHub account and a quick route to the resources you need.</p>
         </div>
+
+        <PlacementOverview />
 
         <section aria-labelledby="profile-heading" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
@@ -50,15 +54,17 @@ export default function DashboardPage() {
         <section aria-labelledby="quick-links-heading">
           <h2 id="quick-links-heading" className="mb-3 font-semibold">Quick links</h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Link href="/lecturers" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300">
-              <p className="font-semibold">Lecturer directory</p>
-              <p className="mt-1 text-sm text-slate-500">Find lecturers and their departments.</p>
-            </Link>
+            {user?.role === 'admin' && (
+              <Link href="/lecturers" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300">
+                <p className="font-semibold">Lecturer directory</p>
+                <p className="mt-1 text-sm text-slate-500">Find lecturers and their departments.</p>
+              </Link>
+            )}
             <Link href="/placements" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300">
               <p className="font-semibold">Placements</p>
               <p className="mt-1 text-sm text-slate-500">Explore opportunities and follow application steps.</p>
             </Link>
-            {(user?.role === 'admin' || user?.role === 'officer') && (
+            {user?.role === 'admin' && (
               <Link href="/users" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300">
                 <p className="font-semibold">Student accounts</p>
                 <p className="mt-1 text-sm text-slate-500">Search student accounts and check their status.</p>

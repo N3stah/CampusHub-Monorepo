@@ -22,6 +22,7 @@ export default function StudentDashboard() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [announcements, setAnnouncements] = useState<StudentAnnouncement[]>([]);
   const [placements, setPlacements] = useState<Placement[]>([]);
+  const [activePlacementCount, setActivePlacementCount] = useState<number | null>(null);
   const [applications, setApplications] = useState<StudentApplication[]>([]);
   const [courseError, setCourseError] = useState<string | null>(null);
   const [updatesError, setUpdatesError] = useState<string | null>(null);
@@ -77,6 +78,7 @@ export default function StudentDashboard() {
     try {
       const page = await getApiPage<Placement>('/placements/', { is_active: 'true' }, signal);
       setPlacements(page.results.slice(0, 3));
+      setActivePlacementCount(page.count);
       setPlacementsError(null);
     } catch (requestError) {
       if (!signal?.aborted) setPlacementsError(getApiErrorMessage(requestError));
@@ -121,11 +123,22 @@ export default function StudentDashboard() {
         {[
           { label: 'Active courses', value: loadingCourses ? null : activeCourses.length, href: '/courses' },
           { label: 'Applications', value: loadingApplications ? null : applications.length, href: '/placements' },
-          { label: 'New opportunities', value: loadingPlacements ? null : placements.length, href: '/placements' },
+          { label: 'Active placements', value: loadingPlacements ? null : activePlacementCount, href: '/placements' },
+          ...(['pending', 'shortlisted', 'accepted', 'rejected'] as const).map((status) => ({
+            label: `${status[0].toUpperCase()}${status.slice(1)} applications`,
+            value: loadingApplications ? null : applications.filter((application) => application.status === status).length,
+            href: '/placements',
+          })),
         ].map((item) => (
           <Link key={item.label} href={item.href} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300">
             <p className="text-sm font-medium text-slate-500">{item.label}</p>
-            <p className="mt-2 text-3xl font-bold">{item.value ?? <span className="text-lg text-slate-400">Loading…</span>}</p>
+            <p className="mt-2 text-3xl font-bold">
+              {item.label === 'Active placements' && placementsError
+                ? '—'
+                : item.label.toLowerCase().includes('application') && applicationsError
+                  ? '—'
+                  : item.value ?? <span className="text-lg text-slate-400">Loading…</span>}
+            </p>
             <p className="mt-1 text-xs font-semibold text-blue-700">View details →</p>
           </Link>
         ))}
