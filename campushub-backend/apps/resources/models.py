@@ -18,6 +18,7 @@ class Resource(models.Model):
     file = models.FileField(upload_to='resources/%Y/%m/')
     file_type = models.CharField(max_length=10)
     file_size = models.PositiveIntegerField()
+    download_count = models.PositiveIntegerField(default=0)  # Added in A1
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -40,11 +41,12 @@ class Announcement(models.Model):
     )
     title = models.CharField(max_length=200)
     body = models.TextField()
+    is_pinned = models.BooleanField(default=False)  # Added in A2
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-is_pinned', '-created_at']  # Pinned first, per ERD
 
     def __str__(self):
         return f"{self.title} ({self.course.code})"

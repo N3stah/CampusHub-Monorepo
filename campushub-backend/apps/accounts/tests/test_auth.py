@@ -134,3 +134,20 @@ def test_me_patch_update(client, existing_user):
     assert response.status_code == 200
     data = response.json()
     assert data['first_name'] == "UpdatedName"
+
+# 17. Me PATCH — cannot update GPA (security: GPA feeds officer shortlisting)
+def test_me_patch_cannot_update_gpa(client, existing_user, user_data):
+    access_token, _ = make_pair(existing_user)
+    original_gpa = existing_user.gpa
+    
+    response = client.patch(
+        '/api/auth/me/', 
+        data={"gpa": "4.00"}, 
+        content_type='application/json',
+        HTTP_AUTHORIZATION=f'Bearer {access_token}'
+    )
+    
+    # The request should succeed (200), but GPA must remain unchanged
+    assert response.status_code == 200
+    existing_user.refresh_from_db()
+    assert existing_user.gpa == original_gpa

@@ -32,6 +32,7 @@ class Application(models.Model):
         ('shortlisted', 'Shortlisted'),
         ('accepted', 'Accepted'),
         ('rejected', 'Rejected'),
+        ('withdrawn', 'Withdrawn'),
     ]
 
     student = models.ForeignKey(
