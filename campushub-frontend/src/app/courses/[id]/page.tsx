@@ -10,7 +10,7 @@ import { DownloadResourceButton } from '@/components/MyCourses';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
-import type { Course, CourseAnnouncement, CourseResource, LecturerProfile } from '@/types/portal';
+import type { Course, CourseAnnouncement, CourseResource } from '@/types/portal';
 
 const allowedResourceExtensions = new Set(['pdf', 'docx', 'pptx', 'xlsx', 'png', 'jpg']);
 const maxResourceSize = 10 * 1024 * 1024;
@@ -32,7 +32,6 @@ function CourseDetailContent() {
   const { user } = useAuth();
   const courseId = params.id;
   const [course, setCourse] = useState<Course | null>(null);
-  const [lecturer, setLecturer] = useState<LecturerProfile | null>(null);
   const [resources, setResources] = useState<CourseResource[]>([]);
   const [announcements, setAnnouncements] = useState<CourseAnnouncement[]>([]);
   const [courseLoading, setCourseLoading] = useState(true);
@@ -44,11 +43,13 @@ function CourseDetailContent() {
   const [resourceTitle, setResourceTitle] = useState('');
   const [resourceDescription, setResourceDescription] = useState('');
   const [resourceFile, setResourceFile] = useState<File | null>(null);
+  const [editingResourceId, setEditingResourceId] = useState<number | null>(null);
   const [uploadingResource, setUploadingResource] = useState(false);
   const [resourceFormError, setResourceFormError] = useState<string | null>(null);
   const [resourceNotice, setResourceNotice] = useState<string | null>(null);
   const [announcementTitle, setAnnouncementTitle] = useState('');
   const [announcementBody, setAnnouncementBody] = useState('');
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState<number | null>(null);
   const [publishingAnnouncement, setPublishingAnnouncement] = useState(false);
   const [announcementFormError, setAnnouncementFormError] = useState<string | null>(null);
   const [announcementNotice, setAnnouncementNotice] = useState<string | null>(null);
@@ -106,19 +107,21 @@ function CourseDetailContent() {
       setResourceFormError('Enter a resource title.');
       return;
     }
-    if (!resourceFile) {
+    if (!resourceFile && editingResourceId === null) {
       setResourceFormError('Choose a file to upload.');
       return;
     }
 
-    const extension = resourceFile.name.split('.').pop()?.toLowerCase() ?? '';
-    if (!allowedResourceExtensions.has(extension)) {
-      setResourceFormError('Allowed file types: PDF, DOCX, PPTX, XLSX, PNG, and JPG.');
-      return;
-    }
-    if (resourceFile.size > maxResourceSize) {
-      setResourceFormError('Files must be 10 MB or smaller.');
-      return;
+    if (resourceFile) {
+      const extension = resourceFile.name.split('.').pop()?.toLowerCase() ?? '';
+      if (!allowedResourceExtensions.has(extension)) {
+        setResourceFormError('Allowed file types: PDF, DOCX, PPTX, XLSX, PNG, and JPG.');
+        return;
+      }
+      if (resourceFile.size > maxResourceSize) {
+        setResourceFormError('Files must be 10 MB or smaller.');
+        return;
+      }
     }
 
     setUploadingResource(true);
@@ -128,15 +131,23 @@ function CourseDetailContent() {
       const formData = new FormData();
       formData.append('title', resourceTitle.trim());
       formData.append('description', resourceDescription.trim());
-      formData.append('file', resourceFile);
-      await api.post(`/resources/courses/${courseId}/resources/`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      if (resourceFile) formData.append('file', resourceFile);
+      const resourceEndpoint = `/resources/courses/${courseId}/resources/`;
+      if (editingResourceId !== null) {
+        await api.patch(`${resourceEndpoint}${editingResourceId}/`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        await api.post(resourceEndpoint, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
       setResourceTitle('');
       setResourceDescription('');
       setResourceFile(null);
+      setEditingResourceId(null);
       form.reset();
-      setResourceNotice('Resource uploaded and students enrolled in this course have been notified.');
+      setResourceNotice(editingResourceId !== null ? 'Resource updated.' : 'Resource uploaded successfully.');
       await loadResources();
     } catch (requestError) {
       setResourceFormError(getApiErrorMessage(requestError));
@@ -155,18 +166,66 @@ function CourseDetailContent() {
     setAnnouncementFormError(null);
     setAnnouncementNotice(null);
     try {
-      await api.post(`/resources/courses/${courseId}/announcements/`, {
+      const announcementPayload = {
         title: announcementTitle.trim(),
         body: announcementBody.trim(),
-      });
+      };
+      const announcementEndpoint = `/resources/courses/${courseId}/announcements/`;
+      if (editingAnnouncementId !== null) {
+        await api.patch(`${announcementEndpoint}${editingAnnouncementId}/`, announcementPayload);
+      } else {
+        await api.post(announcementEndpoint, announcementPayload);
+      }
       setAnnouncementTitle('');
       setAnnouncementBody('');
-      setAnnouncementNotice('Announcement posted and students enrolled in this course have been notified.');
+      setEditingAnnouncementId(null);
+      setAnnouncementNotice(editingAnnouncementId !== null ? 'Announcement updated.' : 'Announcement posted successfully.');
       await loadAnnouncements();
     } catch (requestError) {
       setAnnouncementFormError(getApiErrorMessage(requestError));
     } finally {
       setPublishingAnnouncement(false);
+    }
+  }
+
+  function editResource(resource: CourseResource) {
+    setEditingResourceId(resource.id);
+    setResourceTitle(resource.title);
+    setResourceDescription(resource.description ?? '');
+    setResourceFile(null);
+    setResourceFormError(null);
+    setResourceNotice(null);
+  }
+
+  async function deleteResource(resource: CourseResource) {
+    if (!window.confirm(`Delete resource "${resource.title}"?`)) return;
+    setResourceFormError(null);
+    try {
+      await api.delete(`/resources/courses/${courseId}/resources/${resource.id}/`);
+      setResourceNotice('Resource deleted.');
+      await loadResources();
+    } catch (requestError) {
+      setResourceFormError(getApiErrorMessage(requestError));
+    }
+  }
+
+  function editAnnouncement(announcement: CourseAnnouncement) {
+    setEditingAnnouncementId(announcement.id);
+    setAnnouncementTitle(announcement.title);
+    setAnnouncementBody(announcement.body);
+    setAnnouncementFormError(null);
+    setAnnouncementNotice(null);
+  }
+
+  async function deleteAnnouncement(announcement: CourseAnnouncement) {
+    if (!window.confirm(`Delete announcement "${announcement.title}"?`)) return;
+    setAnnouncementFormError(null);
+    try {
+      await api.delete(`/resources/courses/${courseId}/announcements/${announcement.id}/`);
+      setAnnouncementNotice('Announcement deleted.');
+      await loadAnnouncements();
+    } catch (requestError) {
+      setAnnouncementFormError(getApiErrorMessage(requestError));
     }
   }
 
@@ -202,13 +261,12 @@ function CourseDetailContent() {
               <div className="mt-5 flex flex-wrap gap-3 text-sm">
                 <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700">{course.credits} credits</span>
                 <span className="rounded-full bg-blue-50 px-3 py-1.5 text-blue-800">
-                  {lecturer
-                    ? `${lecturer.first_name} ${lecturer.last_name}`
+                  {user?.role === 'lecturer' && course.lecturer_id === user.id
+                    ? `${user.first_name} ${user.last_name}`
                     : course.lecturer_id
                       ? `Lecturer #${course.lecturer_id}`
                       : 'Lecturer not assigned'}
                 </span>
-                {lecturer?.email && <a className="rounded-full bg-blue-50 px-3 py-1.5 font-medium text-blue-800 hover:underline" href={`mailto:${lecturer.email}`}>{lecturer.email}</a>}
               </div>
               {courseError && <p role="status" className="mt-3 text-xs text-amber-700">Course data loaded, but additional lecturer details are unavailable: {courseError}</p>}
             </header>
@@ -217,8 +275,8 @@ function CourseDetailContent() {
               <section aria-label="Course teaching tools" className="grid gap-4 xl:grid-cols-2">
                 <form onSubmit={uploadResource} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div>
-                    <h2 className="font-semibold">Upload a course resource</h2>
-                    <p className="mt-1 text-xs text-slate-500">PDF, DOCX, PPTX, XLSX, PNG, or JPG up to 10 MB.</p>
+                    <h2 className="font-semibold">{editingResourceId !== null ? 'Edit course resource' : 'Upload a course resource'}</h2>
+                    <p className="mt-1 text-xs text-slate-500">PDF, DOCX, PPTX, XLSX, PNG, or JPG up to 10 MB. When editing, choosing a file replaces the current one.</p>
                   </div>
                   {resourceNotice && <p role="status" className="text-sm text-emerald-700">{resourceNotice}</p>}
                   {resourceFormError && <p role="alert" className="text-sm text-red-700">{resourceFormError}</p>}
@@ -242,9 +300,9 @@ function CourseDetailContent() {
                     />
                   </label>
                   <label className="block text-sm font-medium text-slate-700">
-                    File
+                    File {editingResourceId !== null && <span className="font-normal text-slate-500">(optional when editing)</span>}
                     <input
-                      required
+                      required={editingResourceId === null}
                       type="file"
                       accept=".pdf,.docx,.pptx,.xlsx,.png,.jpg"
                       onChange={(event) => setResourceFile(event.target.files?.[0] ?? null)}
@@ -256,14 +314,19 @@ function CourseDetailContent() {
                     disabled={uploadingResource}
                     className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
                   >
-                    {uploadingResource ? 'Uploading…' : 'Upload resource'}
+                    {uploadingResource ? 'Saving…' : editingResourceId !== null ? 'Save resource' : 'Upload resource'}
                   </button>
+                  {editingResourceId !== null && (
+                    <button type="button" onClick={() => { setEditingResourceId(null); setResourceTitle(''); setResourceDescription(''); setResourceFile(null); setResourceFormError(null); }} className="ml-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold">
+                      Cancel edit
+                    </button>
+                  )}
                 </form>
 
                 <form onSubmit={publishAnnouncement} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div>
-                    <h2 className="font-semibold">Post a course announcement</h2>
-                    <p className="mt-1 text-xs text-slate-500">Enrolled students will receive a notification.</p>
+                    <h2 className="font-semibold">{editingAnnouncementId !== null ? 'Edit course announcement' : 'Post a course announcement'}</h2>
+                    <p className="mt-1 text-xs text-slate-500">Visible to students enrolled in this course.</p>
                   </div>
                   {announcementNotice && <p role="status" className="text-sm text-emerald-700">{announcementNotice}</p>}
                   {announcementFormError && <p role="alert" className="text-sm text-red-700">{announcementFormError}</p>}
@@ -292,8 +355,13 @@ function CourseDetailContent() {
                     disabled={publishingAnnouncement}
                     className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
                   >
-                    {publishingAnnouncement ? 'Posting…' : 'Post announcement'}
+                    {publishingAnnouncement ? 'Saving…' : editingAnnouncementId !== null ? 'Save announcement' : 'Post announcement'}
                   </button>
+                  {editingAnnouncementId !== null && (
+                    <button type="button" onClick={() => { setEditingAnnouncementId(null); setAnnouncementTitle(''); setAnnouncementBody(''); setAnnouncementFormError(null); }} className="ml-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold">
+                      Cancel edit
+                    </button>
+                  )}
                 </form>
               </section>
             )}
@@ -348,6 +416,12 @@ function CourseDetailContent() {
                       <p className="mt-2 text-xs text-slate-500">
                         {[announcement.author, announcement.created_at && new Date(announcement.created_at).toLocaleString()].filter(Boolean).join(' · ')}
                       </p>
+                      {canManageCourse && (
+                        <div className="mt-3 flex gap-2">
+                          <button type="button" onClick={() => editAnnouncement(announcement)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
+                          <button type="button" onClick={() => void deleteAnnouncement(announcement)} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">Delete</button>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>

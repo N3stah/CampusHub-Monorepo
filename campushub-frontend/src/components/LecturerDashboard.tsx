@@ -2,14 +2,12 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
-import type { Course, LecturerProfile } from '@/types/portal';
+import type { Course } from '@/types/portal';
 
 export default function LecturerDashboard() {
   const { user } = useAuth();
-  const [profile, setProfile] = useState<LecturerProfile | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,12 +16,8 @@ export default function LecturerDashboard() {
     if (!user) return;
 
     try {
-      const [profileResponse, coursePage] = await Promise.all([
-        api.get<LecturerProfile>(`/lecturers/${user.id}/`, { signal }),
-        getApiPage<Course>('/academics/courses/', {}, signal),
-      ]);
+      const coursePage = await getApiPage<Course>('/academics/courses/', {}, signal);
       if (signal?.aborted) return;
-      setProfile(profileResponse.data);
       setCourses(coursePage.results.filter((course) => course.lecturer_id === user.id));
       setError(null);
     } catch (requestError) {
@@ -64,21 +58,15 @@ export default function LecturerDashboard() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 id="teaching-profile-heading" className="text-lg font-semibold">Teaching profile</h2>
-            {profile?.title && <p className="mt-1 text-sm text-slate-600">{profile.title}</p>}
           </div>
           <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold capitalize text-blue-700">Lecturer</span>
         </div>
         <dl className="mt-5 grid gap-4 sm:grid-cols-2">
           <div>
             <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</dt>
-            <dd className="mt-1 text-sm font-medium text-slate-900">{profile?.email ?? user?.email}</dd>
-          </div>
-          <div>
-            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Office hours</dt>
-            <dd className="mt-1 text-sm font-medium text-slate-900">{profile?.office_hours || 'Not provided'}</dd>
+            <dd className="mt-1 text-sm font-medium text-slate-900">{user?.email}</dd>
           </div>
         </dl>
-        {profile?.bio && <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-600">{profile.bio}</p>}
       </section>
 
       <section aria-labelledby="assigned-courses-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
