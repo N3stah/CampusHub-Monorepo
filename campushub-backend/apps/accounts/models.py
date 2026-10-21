@@ -66,6 +66,16 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Meta:
         db_table = 'accounts_user'
         ordering = ['-date_joined']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(gpa__gte=0) & (models.Q(gpa__lte=4) | models.Q(gpa__isnull=True)),
+                name='user_gpa_range'
+            ),
+            models.CheckConstraint(
+                condition=models.Q(role__in=['student', 'lecturer', 'officer', 'admin']),
+                name='user_valid_role'
+            ),
+        ]
 
     def __str__(self):
         return f'{self.first_name} {self.last_name} ({self.email})'

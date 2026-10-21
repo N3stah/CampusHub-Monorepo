@@ -22,6 +22,9 @@ class Placement(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(condition=models.Q(slots_available__gte=1), name='placement_slots_gte_1'),
+        ]
 
     def __str__(self):
         return f"{self.title} at {self.company}"
@@ -32,6 +35,7 @@ class Application(models.Model):
         ('shortlisted', 'Shortlisted'),
         ('accepted', 'Accepted'),
         ('rejected', 'Rejected'),
+        ('withdrawn', 'Withdrawn'),
     ]
 
     student = models.ForeignKey(
@@ -57,8 +61,18 @@ class Application(models.Model):
     )
 
     class Meta:
-        unique_together = ['student', 'placement']
         ordering = ['-applied_at']
+        constraints = [
+            models.UniqueConstraint(fields=['student', 'placement'], name='unique_student_placement'),
+            models.CheckConstraint(
+                condition=models.Q(status__in=['pending', 'shortlisted', 'accepted', 'rejected', 'withdrawn']),
+                name='application_valid_status'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['placement', 'status']),
+            models.Index(fields=['student', '-applied_at']),
+        ]
 
     def __str__(self):
         return f"{self.student.email} - {self.placement.title}"

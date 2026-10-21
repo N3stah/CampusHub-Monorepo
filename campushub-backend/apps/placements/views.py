@@ -253,3 +253,49 @@ def update_application_status(request, pk):
     except Exception:
         logger.exception("Unexpected error updating application %s", pk)
         return JsonResponse({"error": "Internal server error"}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def application_detail(request, pk):
+    user = request.user
+    try:
+        application = Application.objects.select_related('placement', 'student', 'reviewed_by').get(pk=pk)
+    except Application.DoesNotExist:
+        return JsonResponse({"error": "Application not found"}, status=404)
+
+    # Permission: owner student, officer who posted placement, or admin
+    if user.role != 'admin' and application.student_id != user.id and application.placement.posted_by_id != user.id:
+        return JsonResponse({"error": "Application not found"}, status=404) # 404 not 403 to avoid leaking
+
+    return JsonResponse(format_application(application, request))
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@jwt_required
+def application_withdraw(request, pk):
+    user = request.user
+    try:
+        application = Application.objects.select_related('placement').get(pk=pk)
+    except Application.DoesNotExist:
+        return JsonResponse({"error": "Application not found"}, status=404)
+
+    # Only the owning student can withdraw
+    if application.student_id != user.id:
+        return JsonResponse({"error": "Application not found"}, status=404) # 404 not 403
+
+    if application.status != 'pending':
+        return JsonResponse({"error": "Can only withdraw pending applications"}, status=400)
+
+    application.status = 'withdrawn'
+    application.save(update_fields=['status'])
+    
+    AuditEvent.objects.create(
+        actor=user,
+        action='application.withdrawn',
+        description=f'Application #{application.id} withdrawn.'
+    )
+    
+    return JsonResponse({"message": "Application withdrawn successfully"})

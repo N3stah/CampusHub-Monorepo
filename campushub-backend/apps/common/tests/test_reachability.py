@@ -5,10 +5,6 @@ from apps.accounts.jwt_utils import make_pair
 
 @pytest.mark.django_db
 def test_all_api_routes_are_reachable():
-    """
-    Ensure that all main API prefixes are mounted and do not return 404.
-    This prevents regressions where an include() is accidentally dropped from config/urls.py.
-    """
     admin = User.objects.create_user(
         email='admin@test.com', username='admin', password='pass',
         first_name='Admin', last_name='User', role='admin'
