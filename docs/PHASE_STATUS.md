@@ -208,3 +208,64 @@ feature/frontend-student-and-staff-pages
 | `main` | Both | HEAD at `27e8dac` — Phase 1A + 1B complete | — |
 | `phase-2a-academics-backend` | Titus | Next — not started | — |
 | `phase-2b-academics-frontend` | Mark | Blocked on 2A | — |
+
+## Updated Backend Compatibility Check — 2026-10-21
+
+- Checked the pulled workspace at `d60fe70` (`feature/frontend-security-basics`) against Django's resolved URL configuration.
+- Registered API routes currently cover auth (`/api/auth/`), academics (`/api/academics/`), and course resources/announcements (`/api/resources/`).
+- Corrected frontend GET paths for course resources and announcements to use the registered `/resources/courses/<id>/...` prefix, and aligned announcement timestamps with the backend's `created_at` response field.
+- Removed lecturer dashboard/course-detail calls to the unregistered `/lecturers/<id>/` profile endpoint; the lecturer dashboard uses `/academics/courses/` and the authenticated user's profile instead.
+- Removed success claims that course upload/announcement sends notifications; this backend revision has no notification endpoint or notification hooks.
+- Not present in the resolved API routes: placement/application workflows, notifications, users/lecturers management, admin stats/logs. Their frontend screens cannot successfully integrate against this pulled backend until the matching routes are included. Course/department CRUD and lecturer rosters are also absent.
+- Validation: Django system check passed; migration check reports no changes; 16 auth tests passed. Full pytest collection currently fails with an import-file mismatch between `apps/accounts/tests.py` and the `apps/accounts/tests` package. Frontend TypeScript check and production build passed; lint passed with the existing warning in `src/lib/api.ts`.
+
+## Admin Academics and Lecturer Course CRUD — Frontend/Backend Contract
+
+The frontend now includes an admin workspace for department/course management and lecturer assignment, plus lecturer controls for creating, editing, and deleting course resources and announcements. The admin department/course mutations, lecturer directory/account APIs, resource updates, and announcement updates/deletes are not available in the currently pulled backend. The UI reports API errors rather than treating unsupported operations as successful.
+
+### Admin departments and courses
+
+- Keep `GET /api/academics/departments/` and `GET /api/academics/courses/`; return JSON arrays (or the standard paginated `{count, results}` shape) including the IDs and fields used by the admin selectors.
+- Implement admin-only department endpoints:
+  - `POST /api/academics/departments/` with `{name, code, head_id}` (`head_id` nullable).
+  - `GET`, `PATCH`, and `DELETE /api/academics/departments/<id>/`.
+  - Validate unique department codes and that a non-null `head_id` refers to an active lecturer. Make DELETE a safe deactivation operation; preserve departments referenced by courses/enrollments/resources, and add an `is_active` field/migration if required.
+- Implement admin-only course mutations:
+  - `POST /api/academics/courses/` with `{title, code, department_id, lecturer_id, credits, description}` (`lecturer_id` nullable).
+  - `PATCH` and `DELETE /api/academics/courses/<id>/` alongside the existing GET detail.
+  - Validate unique course codes, positive/valid credits, active department and lecturer references. DELETE should deactivate rather than cascade-delete courses and their enrollments/resources.
+- All endpoints must authorize by role server-side and return field-specific JSON validation errors suitable for the frontend.
+
+### Lecturer directory and account administration
+
+- Implement admin-only `GET /api/lecturers/` with `{id, first_name, last_name, email, username, department, title, bio, office_hours, is_active}` for the directory and course/department assignment selectors.
+- Implement admin-only `POST /api/lecturers/` and `PATCH /api/lecturers/<id>/`. The create payload includes identity fields, `role: "lecturer"`, optional `department`, and required `password`; update accepts editable profile fields, optional replacement password, and `is_active` for deactivate/reactivate.
+- Validate email/username uniqueness, role constraints, password policy, and department references. Do not expose password hashes or allow non-admin account/role escalation.
+
+### Lecturer-owned course content CRUD
+
+- Keep existing resource `GET/POST /api/resources/courses/<course_id>/resources/` and `GET/DELETE /api/resources/courses/<course_id>/resources/<id>/`.
+- Add `PATCH /api/resources/courses/<course_id>/resources/<id>/` accepting multipart `title`, `description`, and optional replacement `file`. Retain the file-size/type checks for replacement uploads.
+- Keep existing announcement `GET/POST /api/resources/courses/<course_id>/announcements/` and GET detail. Add `PATCH` and `DELETE /api/resources/courses/<course_id>/announcements/<id>/`, accepting JSON `{title, body}` for PATCH.
+- Restrict mutations to the assigned course lecturer (for announcements and resource creation/update) and resource uploader where applicable, plus admins. Students retain read-only access only when enrolled; lecturers may read courses they teach. Return 403/404/400 responses consistently, and ensure failed mutations do not alter records/files.
+- The current resource DELETE permission checks uploader/admin, so the frontend surfaces permission failures for a lecturer attempting to delete another uploader's file. Decide whether assigned lecturers should also be allowed to delete course resources and align the backend policy and UI with that decision.
+- Do not promise notifications on announcement creation until a notification mechanism and corresponding backend contract are implemented.
+
+### Lecturer roster (separate endpoint required)
+
+- Add `GET /api/academics/courses/<course_id>/enrollments/`, restricted to the assigned lecturer or admin, returning enrolled students with stable IDs, names, email (if permitted), and enrollment status/date. The current enrollment list returns only the authenticated user's enrollments and cannot serve as a lecturer roster.
+
+### Admin department and multi-course assignment pages
+
+- The admin frontend now has dedicated `/admin/departments` and `/admin/courses` pages linked from the administration overview and admin navigation.
+- For department member lists, support `GET /api/users/?role=student&department_id=<id>` and `GET /api/lecturers/?department_id=<id>`. Responses should include the directory fields needed by the frontend and support pagination consistently.
+- Support admin-only `PATCH /api/users/<id>/` and `PATCH /api/lecturers/<id>/` department reassignment with `{department: <department_id>}`. Validate that the destination department exists and is active; return field-specific errors. The department page refreshes the selected department roster after a successful move.
+- The course page supports selecting several courses and assigning/unassigning the same lecturer in one operation. Add admin-only `POST /api/academics/courses/assign-lecturer/` accepting `{course_ids: number[], lecturer_id: number | null}`. Validate every course and lecturer before writing, apply the changes atomically (all-or-nothing), and return the updated course assignments. A lecturer must be active and eligible for the selected courses.
+- The page also uses the department/course mutation endpoints listed above for course creation, editing, and safe deactivation.
+
+### Verification required
+
+- Add API tests for allowed admin CRUD, assigned-lecturer content mutations, uploader restrictions, student read-only access, invalid references/duplicate codes, and role-denial cases.
+- Add tests for department-filtered rosters, student/lecturer department reassignment, atomic multi-course lecturer assignment, and rejection of mixed valid/invalid course IDs.
+- Verify safe deactivation and that related records/files remain intact.
+- Re-run Django checks/tests and frontend typecheck/build after backend implementation; the current frontend branch can only be fully exercised against a backend implementing these contracts.

@@ -43,7 +43,7 @@ export default function StudentDashboard() {
       const updateResults = await Promise.allSettled(
         activeCourses.map(async (enrollment) => {
           const page = await getApiPage<CourseAnnouncement>(
-            `/courses/${enrollment.course_id}/announcements/`,
+            `/resources/courses/${enrollment.course_id}/announcements/`,
             {},
             signal,
           );
@@ -59,7 +59,7 @@ export default function StudentDashboard() {
       const updates = updateResults.flatMap((result) => result.status === 'fulfilled' ? result.value : []);
       updates.sort((left, right) => {
         if (left.is_pinned !== right.is_pinned) return left.is_pinned ? -1 : 1;
-        return new Date(right.published_at).getTime() - new Date(left.published_at).getTime();
+        return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
       });
       setAnnouncements(updates.slice(0, 5));
       const failedRequests = updateResults.some((result) => result.status === 'rejected');
@@ -201,7 +201,7 @@ export default function StudentDashboard() {
                   </div>
                   <p className="mt-1 line-clamp-2 text-sm text-slate-600">{announcement.body}</p>
                   <p className="mt-2 text-xs text-slate-500">
-                    {announcement.course_code} · {announcement.published_at ? new Date(announcement.published_at).toLocaleString() : ''}
+                    {announcement.course_code} · {announcement.created_at ? new Date(announcement.created_at).toLocaleString() : ''}
                   </p>
                 </li>
               ))}

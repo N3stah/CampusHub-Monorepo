@@ -36,6 +36,8 @@ export interface Placement {
   is_active?: boolean;
   is_remote?: boolean;
   placement_type?: string;
+  requirements?: string;
+  posted_by?: { id: number; name: string } | null;
 }
 
 export interface AdminStats {
@@ -79,10 +81,10 @@ export interface CourseResource {
   id: number;
   title: string;
   description?: string;
-  file_name?: string;
   file_url?: string;
+  file_type?: string;
   file_size?: number;
-  uploaded_at?: string;
+  created_at?: string;
   uploaded_by?: string;
 }
 
@@ -91,7 +93,7 @@ export interface CourseAnnouncement {
   title: string;
   body: string;
   is_pinned?: boolean;
-  published_at: string;
+  created_at: string;
   author?: string;
 }
 
