@@ -15,6 +15,9 @@ __pycache__/
 # Django database
 db.sqlite3
 
+# Local one-off admin bootstrap script
+/create_admin.py
+
 # Test and coverage files
 .coverage
 htmlcov/

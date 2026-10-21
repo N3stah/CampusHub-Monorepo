@@ -30,6 +30,7 @@ class Course(models.Model):
     credits = models.IntegerField(default=3)
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['code']
@@ -59,6 +60,9 @@ class Enrollment(models.Model):
 
     class Meta:
         unique_together = ['student', 'course']
+        indexes = [
+            models.Index(fields=['course', 'status']),
+        ]
 
     def __str__(self):
         return f"{self.student.email} - {self.course.code}"

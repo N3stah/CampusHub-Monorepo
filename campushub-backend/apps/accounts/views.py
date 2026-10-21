@@ -5,6 +5,7 @@ from django.db import IntegrityError
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django_ratelimit.decorators import ratelimit
 import jwt
 
 from .jwt_utils import make_pair, make_token, decode_token, jwt_required
@@ -28,12 +29,18 @@ def _user_dict(user):
         'last_name': user.last_name,
         'role': user.role,
         'department': user.department_id,
+        'gpa': str(user.gpa) if user.gpa is not None else None,
+        'phone_number': user.phone_number,
+        'title': user.title,
+        'bio': user.bio,
+        'office_hours': user.office_hours,
         'date_joined': user.date_joined.isoformat(),
     }
 
 
 @csrf_exempt
 @require_http_methods(['POST'])
+@ratelimit(key='ip', rate='10/m', block=True)
 def register_view(request):
     data, err = _json_body(request)
     if err:
@@ -68,6 +75,7 @@ def register_view(request):
 
 @csrf_exempt
 @require_http_methods(['POST'])
+@ratelimit(key='ip', rate='10/m', block=True)
 def token_view(request):
     data, err = _json_body(request)
     if err:
@@ -127,7 +135,10 @@ def me_view(request):
         return err
 
     model_fields = {f.name for f in User._meta.get_fields()}
-    allowed = [f for f in ('first_name', 'last_name', 'phone_number') if f in model_fields]
+    allowed = [
+        f for f in ('first_name', 'last_name', 'phone_number', 'title', 'bio', 'office_hours')
+        if f in model_fields
+    ]
     changed = [f for f in allowed if f in data]
     for f in changed:
         setattr(user, f, data[f])

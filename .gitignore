@@ -11,3 +11,5 @@ campushub-frontend/.next/
 campushub-frontend/.env*.local
 .env
 .env
+media/
+*.pdf

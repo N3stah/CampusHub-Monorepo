@@ -14,6 +14,10 @@ export interface DirectoryUser {
   role: 'student' | 'lecturer' | 'officer' | 'admin';
   department: number | string | { name?: string } | null;
   gpa?: string | null;
+  phone_number?: string;
+  title?: string;
+  bio?: string;
+  office_hours?: string;
   is_active: boolean;
   date_joined: string;
 }
@@ -31,13 +35,11 @@ export interface Placement {
   company: string;
   location: string;
   description: string;
+  requirements: string;
   deadline: string;
-  status: string;
+  slots_available: number;
+  status?: string;
   is_active?: boolean;
-  is_remote?: boolean;
-  placement_type?: string;
-  requirements?: string;
-  posted_by?: { id: number; name: string } | null;
 }
 
 export interface AdminStats {
@@ -45,6 +47,16 @@ export interface AdminStats {
   lecturers: number;
   open_placements: number;
   pending_applications: number;
+}
+
+export interface Notification {
+  id: number;
+  verb: string;
+  message: string;
+  link: string | null;
+  is_read: boolean;
+  created_at: string;
+  actor: { id: number; name: string } | null;
 }
 
 export interface Enrollment {
@@ -81,9 +93,9 @@ export interface CourseResource {
   id: number;
   title: string;
   description?: string;
-  file_url?: string;
-  file_type?: string;
+  file_url?: string | null;
   file_size?: number;
+  file_type?: string;
   created_at?: string;
   uploaded_by?: string;
 }

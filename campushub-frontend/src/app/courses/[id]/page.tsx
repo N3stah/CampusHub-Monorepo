@@ -60,6 +60,15 @@ function CourseDetailContent() {
       const response = await api.get<Course>(`/academics/courses/${courseId}/`, { signal });
       setCourse(response.data);
       setCourseError(null);
+      setLecturer(response.data.lecturer ?? null);
+      if (!response.data.lecturer && response.data.lecturer_id) {
+        try {
+          const lecturerResponse = await api.get<LecturerProfile>(`/lecturers/${response.data.lecturer_id}/`, { signal });
+          if (!signal?.aborted) setLecturer(lecturerResponse.data);
+        } catch (requestError) {
+          if (!signal?.aborted) setCourseError(getApiErrorMessage(requestError));
+        }
+      }
     } catch (requestError) {
       if (!signal?.aborted) setCourseError(getApiErrorMessage(requestError));
     } finally {
@@ -377,15 +386,7 @@ function CourseDetailContent() {
                           {[resource.file_type?.toUpperCase(), resource.uploaded_by, resource.created_at && new Date(resource.created_at).toLocaleDateString()].filter(Boolean).join(' · ') || 'Course file'}
                         </p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <DownloadResourceButton resourceId={resource.id} resourceTitle={resource.title} />
-                        {canManageCourse && (
-                          <>
-                            <button type="button" onClick={() => editResource(resource)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
-                            <button type="button" onClick={() => void deleteResource(resource)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Delete</button>
-                          </>
-                        )}
-                      </div>
+                      <DownloadResourceButton courseId={Number(courseId)} resourceId={resource.id} resourceTitle={resource.title} />
                     </li>
                   ))}
                 </ul>

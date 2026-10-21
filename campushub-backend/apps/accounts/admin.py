@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User
+from .models import AuditEvent, User
 
 
 @admin.register(User)
@@ -10,5 +10,26 @@ class UserAdmin(BaseUserAdmin):
     search_fields = ['email', 'username', 'first_name', 'last_name']
     ordering = ['-date_joined']
     fieldsets = BaseUserAdmin.fieldsets + (
-        ('CampusHub', {'fields': ('role', 'department', 'gpa', 'phone_number')}),
+        ('CampusHub', {'fields': ('role', 'department', 'gpa', 'phone_number', 'title', 'bio', 'office_hours')}),
     )
+    # Custom add form to include required fields for our custom User model
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('email', 'username', 'first_name', 'last_name', 'role', 'password1', 'password2'),
+        }),
+    )
+
+
+@admin.register(AuditEvent)
+class AuditEventAdmin(admin.ModelAdmin):
+    list_display = ['action', 'actor', 'created_at']
+    list_filter = ['action', 'created_at']
+    search_fields = ['description', 'actor__email']
+    readonly_fields = ['actor', 'action', 'description', 'created_at']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

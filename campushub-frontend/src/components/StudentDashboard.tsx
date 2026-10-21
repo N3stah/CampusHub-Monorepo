@@ -231,7 +231,8 @@ export default function StudentDashboard() {
               {placements.map((placement) => (
                 <li key={placement.id} className="px-5 py-4">
                   <p className="font-semibold text-slate-900">{placement.title}</p>
-                  <p className="mt-1 text-sm text-slate-600">{placement.company} · {placement.is_remote ? 'Remote' : placement.location}</p>
+                  <p className="mt-1 text-sm text-slate-600">{placement.company} · {placement.location}</p>
+                  <p className="mt-1 text-xs text-slate-500">{placement.slots_available} places available</p>
                   <p className="mt-1 text-xs text-slate-500">Deadline: {placement.deadline ? new Date(placement.deadline).toLocaleDateString() : 'Not specified'}</p>
                 </li>
               ))}
