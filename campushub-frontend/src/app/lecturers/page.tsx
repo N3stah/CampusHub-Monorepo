@@ -122,7 +122,7 @@ export default function LecturersPage() {
   }
 
   return (
-    <PortalShell roles={['admin', 'officer', 'lecturer']}>
+    <PortalShell roles={['admin']}>
       <div className="space-y-4">
         {notice && (
           <div role="status" className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">

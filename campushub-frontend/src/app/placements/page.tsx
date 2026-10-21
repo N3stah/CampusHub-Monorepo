@@ -29,6 +29,10 @@ const blankPlacement: PlacementForm = {
   slots_available: '1',
 };
 
+function placementSearchText(placement: Placement): string {
+  return `${placement.title} ${placement.company} ${placement.location} ${placement.description} ${placement.requirements}`;
+}
+
 export default function PlacementsPage() {
   const { user } = useAuth();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -131,7 +135,7 @@ export default function PlacementsPage() {
   }
 
   return (
-    <PortalShell>
+    <PortalShell roles={['student', 'officer', 'admin']}>
       <div className="space-y-4">
         {notice && (
           <div role="status" className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
@@ -151,6 +155,7 @@ export default function PlacementsPage() {
           emptyMessage="No placement opportunities found."
           refreshKey={refreshKey}
           getKey={(placement) => placement.id}
+          clientSearch={placementSearchText}
           headerAction={canManage ? (
             <button
               type="button"
@@ -162,24 +167,27 @@ export default function PlacementsPage() {
           ) : undefined}
           actionColumn={canManage ? {
             label: 'Actions',
-            render: (placement) => (
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => openEditForm(placement)}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void deletePlacement(placement)}
-                  className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
-                >
-                  Remove
-                </button>
-              </div>
-            ),
+            render: (placement) => {
+              const canManageListing = user?.role === 'admin' || placement.posted_by?.id === user?.id;
+              return canManageListing ? (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openEditForm(placement)}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deletePlacement(placement)}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : <span className="text-xs text-slate-500">View only</span>;
+            },
           } : user?.role === 'student' ? {
             label: 'Action',
             render: (placement) => (

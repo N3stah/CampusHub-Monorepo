@@ -23,6 +23,7 @@ interface DirectoryPageProps<T> {
   headerAction?: ReactNode;
   actionColumn?: DirectoryColumn<T>;
   filters?: Record<string, string>;
+  clientSearch?: (item: T) => string;
 }
 
 export default function DirectoryPage<T>({
@@ -37,6 +38,7 @@ export default function DirectoryPage<T>({
   headerAction,
   actionColumn,
   filters = EMPTY_FILTERS,
+  clientSearch,
 }: DirectoryPageProps<T>) {
   const [page, setPage] = useState<ApiPage<T> | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
@@ -46,12 +48,13 @@ export default function DirectoryPage<T>({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const visibleColumns = actionColumn ? [...columns, actionColumn] : columns;
+  const serverSearch = clientSearch ? '' : search;
 
   const loadPage = useCallback(async (signal?: AbortSignal) => {
     try {
       const nextPage = await getApiPage<T>(
         endpoint,
-        { ...filters, page: pageNumber, ...(search ? { search } : {}) },
+        { ...filters, page: pageNumber, ...(serverSearch ? { search: serverSearch } : {}) },
         signal,
       );
       setPage(nextPage);
@@ -62,7 +65,7 @@ export default function DirectoryPage<T>({
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [endpoint, filters, pageNumber, search]);
+  }, [endpoint, filters, pageNumber, serverSearch]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -78,6 +81,10 @@ export default function DirectoryPage<T>({
     setSearch(draftSearch.trim());
     setReloadKey((current) => current + 1);
   }
+
+  const visibleResults = page?.results.filter((item) => (
+    !clientSearch || clientSearch(item).toLocaleLowerCase().includes(search.toLocaleLowerCase())
+  )) ?? [];
 
   return (
     <section className="space-y-6">
@@ -123,11 +130,15 @@ export default function DirectoryPage<T>({
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <h2 className="font-semibold text-slate-900">{title}</h2>
-          {page && <p className="text-sm text-slate-500">{page.count} total</p>}
+          {page && (
+            <p className="text-sm text-slate-500">
+              {clientSearch && search ? `${visibleResults.length} matching` : `${page.count} total`}
+            </p>
+          )}
         </div>
         {loading ? (
           <p className="px-5 py-12 text-center text-sm text-slate-500" role="status">Loading {title.toLowerCase()}…</p>
-        ) : page?.results.length ? (
+        ) : page && visibleResults.length ? (
           <>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-left text-sm">
@@ -137,7 +148,7 @@ export default function DirectoryPage<T>({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {page.results.map((item) => (
+                  {visibleResults.map((item) => (
                     <tr key={getKey(item)} className="hover:bg-slate-50/70">
                       {visibleColumns.map((column) => <td key={column.label} className="px-5 py-4 align-middle">{column.render(item)}</td>)}
                     </tr>
@@ -166,7 +177,9 @@ export default function DirectoryPage<T>({
             </div>
           </>
         ) : (
-          <p className="px-5 py-12 text-center text-sm text-slate-500">{error ? 'Data could not be loaded.' : emptyMessage}</p>
+          <p className="px-5 py-12 text-center text-sm text-slate-500">
+            {error ? 'Data could not be loaded.' : clientSearch && search ? 'No results match your search.' : emptyMessage}
+          </p>
         )}
       </div>
     </section>
