@@ -23,6 +23,9 @@ class Resource(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['course', '-created_at']),
+        ]
 
     def __str__(self):
         return f"{self.title} ({self.course.code})"

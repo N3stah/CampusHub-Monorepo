@@ -59,6 +59,9 @@ class Enrollment(models.Model):
 
     class Meta:
         unique_together = ['student', 'course']
+        indexes = [
+            models.Index(fields=['course', 'status']),
+        ]
 
     def __str__(self):
         return f"{self.student.email} - {self.course.code}"
