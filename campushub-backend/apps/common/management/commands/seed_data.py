@@ -36,14 +36,14 @@ class Command(BaseCommand):
 
         student1, _ = User.objects.get_or_create(
             email='seed.mark@campushub.com',
-            defaults={'username': 'seed_mark', 'first_name': 'Mark', 'last_name': 'Student', 'role': 'student', 'gpa': 3.8}
+            defaults={'username': 'seed_mark', 'first_name': 'Mark', 'last_name': 'Student', 'role': 'student', 'gpa': '3.80'}
         )
         student1.set_password('StudentPass123!')
         student1.save()
 
         student2, _ = User.objects.get_or_create(
             email='seed.anna@campushub.com',
-            defaults={'username': 'seed_anna', 'first_name': 'Anna', 'last_name': 'Student', 'role': 'student', 'gpa': 3.9}
+            defaults={'username': 'seed_anna', 'first_name': 'Anna', 'last_name': 'Student', 'role': 'student', 'gpa': '3.90'}
         )
         student2.set_password('StudentPass123!')
         student2.save()

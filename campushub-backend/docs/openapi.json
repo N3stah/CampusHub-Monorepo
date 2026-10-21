@@ -1,0 +1,57 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "CampusHub API",
+    "version": "1.0.0",
+    "description": "University Departmental Resource & Placement Portal"
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:8000", "description": "Local dev server" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/api/auth/register/": { "post": { "summary": "Register a new user", "security": [] } },
+    "/api/auth/token/": { "post": { "summary": "Login (get JWT)", "security": [] } },
+    "/api/auth/token/refresh/": { "post": { "summary": "Refresh access token", "security": [] } },
+    "/api/auth/me/": { "get": { "summary": "Get current user profile" }, "patch": { "summary": "Update profile (no GPA/role)" } },
+    "/api/health/": { "get": { "summary": "Health check", "security": [] } },
+    "/api/users/": { "get": { "summary": "List users (admin/officer)" }, "post": { "summary": "Create user (admin)" } },
+    "/api/users/{id}/": { "get": { "summary": "User detail" }, "patch": { "summary": "Update user" }, "delete": { "summary": "Deactivate user" } },
+    "/api/lecturers/": { "get": { "summary": "List lecturers" }, "post": { "summary": "Create lecturer (admin)" } },
+    "/api/lecturers/{id}/": { "get": { "summary": "Lecturer detail" }, "patch": { "summary": "Update lecturer" }, "delete": { "summary": "Deactivate lecturer" } },
+    "/api/admin/stats/": { "get": { "summary": "Admin stats" } },
+    "/api/admin/logs/": { "get": { "summary": "Audit logs" } },
+    "/api/academics/departments/": { "get": { "summary": "List departments" }, "post": { "summary": "Create department (admin)" } },
+    "/api/academics/departments/{id}/": { "get": { "summary": "Department detail" }, "patch": { "summary": "Update department" }, "delete": { "summary": "Delete department" } },
+    "/api/academics/courses/": { "get": { "summary": "List courses" }, "post": { "summary": "Create course (admin)" } },
+    "/api/academics/courses/{id}/": { "get": { "summary": "Course detail" }, "patch": { "summary": "Update course" }, "delete": { "summary": "Deactivate course" } },
+    "/api/academics/courses/{id}/roster/": { "get": { "summary": "Course roster (lecturer/admin)" } },
+    "/api/academics/enrollments/": { "get": { "summary": "My enrollments" }, "post": { "summary": "Enroll (student)" } },
+    "/api/academics/enrollments/{id}/": { "delete": { "summary": "Drop enrollment" } },
+    "/api/resources/courses/{course_id}/resources/": { "get": { "summary": "List resources" }, "post": { "summary": "Upload resource (lecturer/admin)" } },
+    "/api/resources/courses/{course_id}/resources/{id}/": { "get": { "summary": "Resource detail" }, "patch": { "summary": "Update resource" }, "delete": { "summary": "Delete resource" } },
+    "/api/resources/courses/{course_id}/resources/{id}/download/": { "get": { "summary": "Download resource" } },
+    "/api/resources/courses/{course_id}/announcements/": { "get": { "summary": "List announcements" }, "post": { "summary": "Create announcement" } },
+    "/api/resources/courses/{course_id}/announcements/{id}/": { "get": { "summary": "Announcement detail" }, "patch": { "summary": "Update announcement" }, "delete": { "summary": "Delete announcement" } },
+    "/api/placements/": { "get": { "summary": "List placements" }, "post": { "summary": "Create placement (officer/admin)" } },
+    "/api/placements/{id}/": { "get": { "summary": "Placement detail" }, "patch": { "summary": "Update placement" }, "delete": { "summary": "Deactivate placement" } },
+    "/api/placements/{id}/apply/": { "post": { "summary": "Apply for placement (student)" } },
+    "/api/applications/": { "get": { "summary": "List applications" } },
+    "/api/applications/{id}/": { "get": { "summary": "Application detail" } },
+    "/api/applications/{id}/withdraw/": { "delete": { "summary": "Withdraw application (student)" } },
+    "/api/applications/{id}/status/": { "patch": { "summary": "Update application status (officer/admin)" } },
+    "/api/notifications/": { "get": { "summary": "List notifications" } },
+    "/api/notifications/read-all/": { "patch": { "summary": "Mark all as read" } },
+    "/api/notifications/unread-count/": { "get": { "summary": "Unread count" } },
+    "/api/notifications/{id}/read/": { "patch": { "summary": "Mark as read" } }
+  }
+}
