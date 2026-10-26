@@ -174,6 +174,14 @@ def _visible_users(request):
     else:
         raise PermissionError('Permission denied.')
 
+    department_id = request.GET.get('department_id')
+    if department_id:
+        try:
+            department_id = int(department_id)
+        except ValueError:
+            raise ValueError('department_id must be an integer.')
+        users = users.filter(department_id=department_id)
+
     search = request.GET.get('search', '').strip()
     if search:
         users = users.filter(
@@ -299,6 +307,13 @@ def lecturer_list_create(request):
                 | Q(email__icontains=search)
                 | Q(username__icontains=search)
             )
+        department_id = request.GET.get('department_id')
+        if department_id:
+            try:
+                department_id = int(department_id)
+            except ValueError:
+                return JsonResponse({'error': 'department_id must be an integer.'}, status=400)
+            lecturers = lecturers.filter(department_id=department_id)
         results = [_user_data(user) for user in lecturers]
         return JsonResponse({'count': len(results), 'next': None, 'previous': None, 'results': results})
 
