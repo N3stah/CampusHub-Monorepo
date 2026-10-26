@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
+import { downloadBlob, getDownloadFilename } from '@/lib/application-files';
 import type { Enrollment } from '@/types/portal';
 
 interface MyCoursesProps {
@@ -115,16 +116,10 @@ export function DownloadResourceButton({ courseId, resourceId, resourceTitle }: 
         `/resources/courses/${courseId}/resources/${resourceId}/download/`,
         { responseType: 'blob' },
       );
-      const url = URL.createObjectURL(response.data);
-      const downloadLink = document.createElement('a');
-      downloadLink.href = url;
-      const disposition = response.headers['content-disposition'];
-      const filename = typeof disposition === 'string'
-        ? disposition.match(/filename="?([^"]+)"?/i)?.[1]
-        : null;
-      downloadLink.download = filename ?? `${resourceTitle}`;
-      downloadLink.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadBlob(
+        response.data,
+        getDownloadFilename(response.headers['content-disposition'], resourceTitle),
+      );
     } catch (downloadError) {
       setError(getApiErrorMessage(downloadError));
     } finally {

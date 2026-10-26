@@ -396,8 +396,37 @@ The following safe `GET` requests returned `404` from the live API, while the ro
 - No backend changes were made.
 - Validation: `npx tsc --noEmit` and `npm run build` passed; `npm run lint` passed with one existing warning in `src/lib/api.ts`.
 
+## Frontend workflow completion — 2026-10-26
+
+- Added placement detail and dedicated application-form pages, closing the frontend route gaps for `/placements/<id>/` and `/placements/<id>/apply/`.
+- Added a student applications page for tracking decisions and withdrawing pending applications, plus an application detail page for reviewing submission details.
+- Added placement-staff application navigation and CV download controls using the existing `cv_file` URL returned by the API. No backend changes were made.
+- Updated student course-resource downloads to use the existing authenticated resource download endpoint.
+- Connected placement and application links in lists, dashboards, and notification messages; updated role-based navigation.
+- The follow-up added self-service profile editing through `/api/auth/me/`, a lecturer/admin roster view using `/api/academics/courses/<id>/roster/`, and lecturer directory access consistent with the API's read permissions.
+- Added course catalog search and pagination; directory listings now handle numeric API page links, client-side pagination for full-list endpoints, and mobile card layouts.
+- Added Vitest/Testing Library coverage for role policies, profile edits, student withdrawal, staff status updates, multipart application submission, file validation/download safety, and list pagination.
+- Cherry-picked the verified Next.js security upgrade into the current branch as `2c07e17` (Next.js 16.4.0 → 16.4.3).
+- Validation on the current checkout: `npm run test` passed (15 tests); `npx tsc --noEmit` passed; `npm run build` passed; `npm audit` reported zero vulnerabilities. ESLint reports no errors and one existing navigation warning in `src/lib/api.ts`.
+
 ### Not verified end-to-end
 
-- Authenticated success responses, object/role permissions, and writes were not tested.
-- `PATCH /api/applications/<id>/status/` is registered in the development-branch source but was not called because it changes data.
-- The API later refused connections. Backend tests and `manage.py check` could not run in the available Python environment because Django was not installed.
+- Browser integration tests use mocked API responses; successful authenticated workflows have not been exercised against the running PostgreSQL-backed API with real accounts for each role.
+- The earlier live API probe found route mismatches between the running service and the inspected source. Confirm the deployed process/revision before repeating role-by-role smoke tests.
+
+## Backend follow-up after frontend workflow work — 2026-10-26
+
+The frontend now consumes the existing profile, roster, application, resource, and placement routes. The following items are backend work or API verification; the endpoints marked **existing** should be tested/fixed rather than re-created.
+
+| Priority | Backend follow-up | Current source evidence / expected contract |
+|---|---|---|
+| P0 | Protect applicant CVs | `GET /api/applications/` returns an absolute `cv_file` media URL. Add an authenticated download endpoint or private storage authorization so only the applicant, the officer who owns the placement, and admins can download. Ensure a direct `/media/cvs/...` URL cannot bypass these checks; test allowed and denied roles. |
+| P0 | Verify live deployment route/revision | The 2026-10-19 probe observed 404s for registered source routes. Identify the running process/revision and repeat authenticated role tests against it before assuming routes are missing. |
+| P1 | Enforce current enrollment on course files | Resource view/download permission currently checks whether an enrollment record exists. Confirm dropped enrollments should lose access, and restrict reads/downloads to active enrollments if required by school policy. Add tests for active, dropped, unrelated student, assigned lecturer, and admin. |
+| P1 | Restore/manage closed placements | Placement list currently returns active listings only, while delete deactivates a listing. Provide an officer/admin way to retrieve their own/all inactive listings and reactivate them (with scope checks), or document that deactivation is irreversible. |
+| P1 | Add server-side pagination | The common pagination helper exists, but core list handlers currently materialize and return full result sets or have `next: null`. Apply bounded pagination to users, lecturers, courses, placements, applications, and other growing lists; preserve search/filter parameters in page links. |
+| P1 | Validate uploaded application CVs | Add server-side file size/type validation and safe filenames for CV uploads. Frontend checks improve UX but must not be trusted as enforcement. |
+| P2 | Verify/test roster and profile permissions | Existing `GET /api/academics/courses/<id>/roster/` is restricted to the assigned lecturer/admin; `/api/auth/me/` supports GET/PATCH. Add or confirm tests that other lecturers/students cannot view another course's roster and users can only update the documented self-service fields. |
+| P2 | Expand endpoint integration tests | Cover application detail/withdrawal/status changes, protected resource downloads, file replacement/deletion cleanup, placement close/reactivation, role/object authorization, and error response shapes. Exercise these with the configured isolated backend test settings, then run seeded-account smoke tests against PostgreSQL. |
+
+No backend code was changed in this frontend implementation. Keep backend changes and any required API-contract updates in the backend follow-up work.*** End Patch

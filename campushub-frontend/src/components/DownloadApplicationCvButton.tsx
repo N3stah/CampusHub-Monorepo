@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import api from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/portal';
+import { downloadBlob, getDownloadFilename, resolveSameOriginFileUrl } from '@/lib/application-files';
 
 export default function DownloadApplicationCvButton({ applicationId, cvUrl }: { applicationId: number; cvUrl: string }) {
   const [loading, setLoading] = useState(false);
@@ -12,24 +13,16 @@ export default function DownloadApplicationCvButton({ applicationId, cvUrl }: { 
     setLoading(true);
     setError(null);
     try {
-      const apiBase = new URL(api.defaults.baseURL ?? window.location.origin, window.location.origin);
-      const downloadUrl = new URL(cvUrl, apiBase);
-      if (!['http:', 'https:'].includes(downloadUrl.protocol) || downloadUrl.origin !== apiBase.origin) {
-        throw new Error('The application returned an unsafe CV URL.');
-      }
-      const response = await api.get<Blob>(downloadUrl.toString(), {
+      const downloadUrl = resolveSameOriginFileUrl(
+        cvUrl,
+        api.defaults.baseURL ?? window.location.origin,
+        window.location.origin,
+      );
+      const response = await api.get<Blob>(downloadUrl, {
         responseType: 'blob',
       });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement('a');
-      link.href = url;
-      const disposition = response.headers['content-disposition'];
-      const filename = typeof disposition === 'string'
-        ? disposition.match(/filename="?([^"]+)"?/i)?.[1]
-        : null;
-      link.download = filename ?? `application-${applicationId}-cv`;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const filename = getDownloadFilename(response.headers['content-disposition'], `application-${applicationId}-cv`);
+      downloadBlob(response.data, filename);
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
     } finally {
