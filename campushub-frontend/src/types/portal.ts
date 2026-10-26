@@ -40,6 +40,7 @@ export interface Placement {
   slots_available: number;
   status?: string;
   is_active?: boolean;
+  posted_by?: { id: number; name: string } | null;
 }
 
 export interface AdminStats {
@@ -113,6 +114,8 @@ export interface StudentApplication {
   id: number;
   status: 'pending' | 'shortlisted' | 'accepted' | 'rejected' | string;
   applied_at: string;
+  cover_note?: string;
+  cv_file?: string | null;
   student?: { id: number; first_name: string; last_name: string; email?: string };
   placement?: Pick<Placement, 'id' | 'title' | 'company'>;
   placement_title?: string;

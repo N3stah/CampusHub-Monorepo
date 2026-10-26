@@ -10,6 +10,9 @@ import type { Notification } from '@/types/portal';
 function getInternalHref(link: string | null): string | null {
   if (!link?.startsWith('/') || link.startsWith('//')) return null;
 
+  const applicationLink = link.match(/^\/placements\/\d+\/applications\/(\d+)\/?$/);
+  if (applicationLink) return `/applications/${applicationLink[1]}`;
+
   const baseUrl = 'https://campushub.invalid';
   const target = new URL(link, baseUrl);
   if (target.origin !== baseUrl) return null;
