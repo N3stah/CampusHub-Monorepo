@@ -86,7 +86,7 @@ export default function PlacementOverview() {
         {cards.map((card) => (
           <Link
             key={card.label}
-            href="/placements"
+            href={card.label.toLowerCase().includes('application') ? '/applications' : '/placements'}
             className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300"
           >
             <p className="text-sm font-medium text-slate-500">{card.label}</p>

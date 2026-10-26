@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
+import DownloadApplicationCvButton from '@/components/DownloadApplicationCvButton';
 import type { ApiPage, StudentApplication } from '@/types/portal';
 
 const statuses = ['pending', 'shortlisted', 'accepted', 'rejected'] as const;
@@ -82,12 +83,18 @@ export default function ApplicationReviewPanel() {
                   <th scope="col" className="px-5 py-3 font-semibold">Placement</th>
                   <th scope="col" className="px-5 py-3 font-semibold">Applied</th>
                   <th scope="col" className="px-5 py-3 font-semibold">Status</th>
+                  <th scope="col" className="px-5 py-3 font-semibold">CV</th>
                   <th scope="col" className="px-5 py-3 font-semibold">Update status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {page.results.map((application) => (
                   <tr key={application.id}>
+                    <td className="px-5 py-4">
+                      {application.cv_file
+                        ? <DownloadApplicationCvButton applicationId={application.id} cvUrl={application.cv_file} />
+                        : <span className="text-xs text-slate-500">Not provided</span>}
+                    </td>
                     <td className="px-5 py-4">
                       <p className="font-semibold text-slate-900">
                         {application.student

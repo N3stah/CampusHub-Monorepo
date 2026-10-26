@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import api from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/portal';
 import ApplicationReviewPanel from '@/components/ApplicationReviewPanel';
@@ -135,7 +136,7 @@ export default function PlacementsPage() {
   }
 
   return (
-    <PortalShell roles={['student', 'officer', 'admin']}>
+    <PortalShell roles={['student', 'lecturer', 'officer', 'admin']}>
       <div className="space-y-4">
         {notice && (
           <div role="status" className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
@@ -205,7 +206,7 @@ export default function PlacementsPage() {
               label: 'Opportunity',
               render: (placement) => (
                 <div className="max-w-xs">
-                  <p className="font-semibold text-slate-900">{placement.title}</p>
+                  <Link href={`/placements/${placement.id}`} className="font-semibold text-blue-700 hover:underline">{placement.title}</Link>
                   <p className="mt-1 text-xs text-slate-500">{placement.company}</p>
                 </div>
               ),

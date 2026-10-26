@@ -111,31 +111,20 @@ export function DownloadResourceButton({ courseId, resourceId, resourceTitle }: 
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get<{ file_url?: string | null }>(
-        `/resources/courses/${courseId}/resources/${resourceId}/`,
+      const response = await api.get<Blob>(
+        `/resources/courses/${courseId}/resources/${resourceId}/download/`,
+        { responseType: 'blob' },
       );
-      const fileUrl = response.data.file_url;
-
-      if (!fileUrl) {
-        throw new Error('The download response did not include a file URL.');
-      }
-
-      const apiRoot = new URL('../', api.defaults.baseURL);
-      const downloadUrl = new URL(fileUrl, apiRoot);
-      if (
-        !['http:', 'https:'].includes(downloadUrl.protocol) ||
-        downloadUrl.origin !== apiRoot.origin ||
-        downloadUrl.username ||
-        downloadUrl.password
-      ) {
-        throw new Error('The API returned an unsafe download URL.');
-      }
-
+      const url = URL.createObjectURL(response.data);
       const downloadLink = document.createElement('a');
-      downloadLink.href = downloadUrl.toString();
-      downloadLink.target = '_blank';
-      downloadLink.rel = 'noopener noreferrer';
+      downloadLink.href = url;
+      const disposition = response.headers['content-disposition'];
+      const filename = typeof disposition === 'string'
+        ? disposition.match(/filename="?([^"]+)"?/i)?.[1]
+        : null;
+      downloadLink.download = filename ?? `${resourceTitle}`;
       downloadLink.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (downloadError) {
       setError(getApiErrorMessage(downloadError));
     } finally {

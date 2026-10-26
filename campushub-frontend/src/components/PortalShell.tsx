@@ -17,6 +17,7 @@ const navigation: { label: string; href: string; roles: User['role'][] }[] = [
   { label: 'Students', href: '/users', roles: ['admin', 'officer'] },
   { label: 'Lecturers', href: '/lecturers', roles: ['admin', 'officer', 'lecturer'] },
   { label: 'Placements', href: '/placements', roles: ['student', 'lecturer', 'officer', 'admin'] },
+  { label: 'Applications', href: '/applications', roles: ['student', 'officer', 'admin'] },
   { label: 'Notifications', href: '/notifications', roles: ['student', 'lecturer', 'officer', 'admin'] },
   { label: 'Administration', href: '/admin', roles: ['admin'] },
   { label: 'Departments', href: '/admin/departments', roles: ['admin'] },
@@ -67,7 +68,7 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
       <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[210px_minmax(0,1fr)] lg:py-8">
         <nav aria-label="Main navigation" className="flex gap-2 overflow-x-auto lg:flex-col">
           {navigation.filter((item) => item.roles.includes(user.role)).map((item) => {
-            const active = pathname === item.href;
+            const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`));
             return (
               <Link
                 key={item.href}

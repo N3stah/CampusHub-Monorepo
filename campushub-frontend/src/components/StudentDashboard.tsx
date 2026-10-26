@@ -127,7 +127,7 @@ export default function StudentDashboard() {
           ...(['pending', 'shortlisted', 'accepted', 'rejected'] as const).map((status) => ({
             label: `${status[0].toUpperCase()}${status.slice(1)} applications`,
             value: loadingApplications ? null : applications.filter((application) => application.status === status).length,
-            href: '/placements',
+            href: '/applications',
           })),
         ].map((item) => (
           <Link key={item.label} href={item.href} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300">

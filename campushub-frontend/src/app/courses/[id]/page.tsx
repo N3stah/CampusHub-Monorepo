@@ -10,7 +10,7 @@ import { DownloadResourceButton } from '@/components/MyCourses';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
-import type { Course, CourseAnnouncement, CourseResource } from '@/types/portal';
+import type { Course, CourseAnnouncement, CourseResource, LecturerProfile } from '@/types/portal';
 
 const allowedResourceExtensions = new Set(['pdf', 'docx', 'pptx', 'xlsx', 'png', 'jpg']);
 const maxResourceSize = 10 * 1024 * 1024;
@@ -32,6 +32,7 @@ function CourseDetailContent() {
   const { user } = useAuth();
   const courseId = params.id;
   const [course, setCourse] = useState<Course | null>(null);
+  const [lecturer, setLecturer] = useState<LecturerProfile | null>(null);
   const [resources, setResources] = useState<CourseResource[]>([]);
   const [announcements, setAnnouncements] = useState<CourseAnnouncement[]>([]);
   const [courseLoading, setCourseLoading] = useState(true);
@@ -263,8 +264,10 @@ function CourseDetailContent() {
                 <span className="rounded-full bg-blue-50 px-3 py-1.5 text-blue-800">
                   {user?.role === 'lecturer' && course.lecturer_id === user.id
                     ? `${user.first_name} ${user.last_name}`
-                    : course.lecturer_id
-                      ? `Lecturer #${course.lecturer_id}`
+                    : lecturer
+                      ? `${lecturer.first_name} ${lecturer.last_name}`
+                      : course.lecturer_id
+                        ? `Lecturer #${course.lecturer_id}`
                       : 'Lecturer not assigned'}
                 </span>
               </div>
