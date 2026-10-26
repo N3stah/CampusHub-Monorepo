@@ -1,4 +1,5 @@
 import json
+from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -316,3 +317,44 @@ def enrollment_drop(request, pk):
     enrollment.save()
     
     return JsonResponse({'message': 'Enrollment dropped successfully'})
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+@jwt_required
+def course_bulk_assign_lecturer(request):
+    if request.user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can assign lecturers.'}, status=403)
+        
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        
+    course_ids = data.get('course_ids')
+    if not isinstance(course_ids, list) or not course_ids:
+        return JsonResponse({'error': 'course_ids must be a non-empty list.'}, status=400)
+        
+    lecturer_id = data.get('lecturer_id')
+    lecturer = None
+    if lecturer_id:
+        lecturer = User.objects.filter(pk=lecturer_id, role='lecturer').first()
+        if lecturer is None:
+            return JsonResponse({'error': 'lecturer_id must reference an existing lecturer.'}, status=400)
+            
+    courses = list(Course.objects.filter(pk__in=course_ids))
+    found_ids = {c.id for c in courses}
+    missing = [cid for cid in course_ids if cid not in found_ids]
+    if missing:
+        return JsonResponse({'error': f'Unknown course id(s): {missing}'}, status=400)
+        
+    with transaction.atomic():
+        updated = Course.objects.filter(pk__in=course_ids).update(lecturer=lecturer)
+        AuditEvent.objects.create(
+            actor=request.user,
+            action='course.bulk_lecturer_assigned',
+            description=f'Assigned {"lecturer " + lecturer.get_full_name() if lecturer else "no lecturer"} '
+                        f'to {updated} course(s): {sorted(found_ids)}.',
+        )
+        
+    return JsonResponse({'updated': updated, 'lecturer_id': lecturer.id if lecturer else None})

@@ -18,6 +18,7 @@ def test_all_api_routes_are_reachable():
         '/api/auth/me/',
         '/api/users/',
         '/api/academics/departments/',
+        '/api/academics/courses/assign-lecturer/',
         '/api/placements/',
         '/api/notifications/',
     ]
