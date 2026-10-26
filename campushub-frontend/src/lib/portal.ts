@@ -23,8 +23,8 @@ export async function getApiPage<T>(
     const page = data as { count?: unknown; next?: unknown; previous?: unknown; results: T[] };
     return {
       count: typeof page.count === 'number' ? page.count : data.results.length,
-      next: typeof page.next === 'string' ? page.next : null,
-      previous: typeof page.previous === 'string' ? page.previous : null,
+      next: typeof page.next === 'string' || typeof page.next === 'number' ? page.next : null,
+      previous: typeof page.previous === 'string' || typeof page.previous === 'number' ? page.previous : null,
       results: page.results,
     };
   }

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import type { User } from '@/types';
+import { isRoleAllowed } from '@/lib/role-access';
 
 interface PortalShellProps {
   children: ReactNode;
@@ -13,6 +14,7 @@ interface PortalShellProps {
 
 const navigation: { label: string; href: string; roles: User['role'][] }[] = [
   { label: 'Overview', href: '/dashboard', roles: ['student', 'lecturer', 'officer', 'admin'] },
+  { label: 'My profile', href: '/profile', roles: ['student', 'lecturer', 'officer', 'admin'] },
   { label: 'My courses', href: '/courses', roles: ['student'] },
   { label: 'Students', href: '/users', roles: ['admin', 'officer'] },
   { label: 'Lecturers', href: '/lecturers', roles: ['admin', 'officer', 'lecturer'] },
@@ -28,7 +30,7 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const hasAccess = Boolean(user && (!roles || roles.includes(user.role)));
+  const hasAccess = isRoleAllowed(user?.role, roles);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');

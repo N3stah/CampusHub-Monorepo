@@ -16,6 +16,8 @@ export default function CourseCatalog() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [departmentId, setDepartmentId] = useState('');
+  const [search, setSearch] = useState('');
+  const [pageNumber, setPageNumber] = useState(1);
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +66,13 @@ export default function CourseCatalog() {
     return enrollments.find((enrollment) => enrollment.course_id === courseId);
   }
 
+  const filteredCourses = courses.filter((course) => (
+    `${course.code} ${course.title} ${course.description ?? ''}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
+  ));
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(filteredCourses.length / pageSize));
+  const visibleCourses = filteredCourses.slice((pageNumber - 1) * pageSize, pageNumber * pageSize);
+
   return (
     <section aria-labelledby="course-catalog-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center">
@@ -75,7 +84,7 @@ export default function CourseCatalog() {
           <span className="sr-only">Filter courses by department</span>
           <select
             value={departmentId}
-            onChange={(event) => { setLoading(true); setDepartmentId(event.target.value); }}
+            onChange={(event) => { setLoading(true); setPageNumber(1); setDepartmentId(event.target.value); }}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           >
             <option value="">All departments</option>
@@ -84,6 +93,18 @@ export default function CourseCatalog() {
             ))}
           </select>
         </label>
+      </div>
+
+      <div className="border-b border-slate-100 px-5 py-3">
+        <label htmlFor="course-catalog-search" className="sr-only">Search course catalog</label>
+        <input
+          id="course-catalog-search"
+          type="search"
+          value={search}
+          onChange={(event) => { setSearch(event.target.value); setPageNumber(1); }}
+          placeholder="Search course code, title, or description"
+          className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 sm:max-w-md"
+        />
       </div>
 
       {notice && <p role="status" className="border-b border-emerald-100 bg-emerald-50 px-5 py-3 text-sm text-emerald-800">{notice}</p>}
@@ -96,9 +117,10 @@ export default function CourseCatalog() {
 
       {loading ? (
         <p role="status" className="p-8 text-center text-sm text-slate-500">Loading course catalog…</p>
-      ) : courses.length ? (
-        <ul className="divide-y divide-slate-100">
-          {courses.map((course) => {
+      ) : visibleCourses.length ? (
+        <>
+          <ul className="divide-y divide-slate-100">
+          {visibleCourses.map((course) => {
             const enrollment = enrollmentFor(course.id);
             return (
               <li key={course.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -125,9 +147,31 @@ export default function CourseCatalog() {
               </li>
             );
           })}
-        </ul>
+          </ul>
+          <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3">
+            <button
+              type="button"
+              disabled={pageNumber === 1}
+              onClick={() => setPageNumber((current) => Math.max(1, current - 1))}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="text-xs text-slate-500">Page {pageNumber} of {pageCount} · {filteredCourses.length} courses</span>
+            <button
+              type="button"
+              disabled={pageNumber >= pageCount}
+              onClick={() => setPageNumber((current) => Math.min(pageCount, current + 1))}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </>
       ) : (
-        <p className="p-8 text-center text-sm text-slate-500">No active courses found for this department.</p>
+        <p className="p-8 text-center text-sm text-slate-500">
+          {search ? 'No courses match your search.' : 'No active courses found for this department.'}
+        </p>
       )}
     </section>
   );

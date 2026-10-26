@@ -5,6 +5,7 @@ import type { ApiPage } from '@/types/portal';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
 
 const EMPTY_FILTERS: Record<string, string> = {};
+const PAGE_SIZE = 20;
 
 export interface DirectoryColumn<T> {
   label: string;
@@ -54,7 +55,7 @@ export default function DirectoryPage<T>({
     try {
       const nextPage = await getApiPage<T>(
         endpoint,
-        { ...filters, page: pageNumber, ...(serverSearch ? { search: serverSearch } : {}) },
+        { ...filters, page: pageNumber, page_size: PAGE_SIZE, ...(serverSearch ? { search: serverSearch } : {}) },
         signal,
       );
       setPage(nextPage);
@@ -82,9 +83,19 @@ export default function DirectoryPage<T>({
     setReloadKey((current) => current + 1);
   }
 
-  const visibleResults = page?.results.filter((item) => (
+  const filteredResults = page?.results.filter((item) => (
     !clientSearch || clientSearch(item).toLocaleLowerCase().includes(search.toLocaleLowerCase())
   )) ?? [];
+  const completeList = Boolean(page && page.next === null && page.previous === null && page.results.length === page.count);
+  const clientPaginated = completeList && filteredResults.length > PAGE_SIZE;
+  const pageCount = clientPaginated
+    ? Math.ceil(filteredResults.length / PAGE_SIZE)
+    : Math.max(1, Math.ceil((page?.count ?? 0) / PAGE_SIZE));
+  const visibleResults = clientPaginated
+    ? filteredResults.slice((pageNumber - 1) * PAGE_SIZE, pageNumber * PAGE_SIZE)
+    : filteredResults;
+  const canGoPrevious = Boolean(page?.previous !== null && page?.previous !== undefined) || (completeList && pageNumber > 1);
+  const canGoNext = Boolean(page?.next !== null && page?.next !== undefined) || (completeList && pageNumber < pageCount);
 
   return (
     <section className="space-y-6">
@@ -132,7 +143,7 @@ export default function DirectoryPage<T>({
           <h2 className="font-semibold text-slate-900">{title}</h2>
           {page && (
             <p className="text-sm text-slate-500">
-              {clientSearch && search ? `${visibleResults.length} matching` : `${page.count} total`}
+              {clientSearch && search ? `${filteredResults.length} matching` : `${page.count} total`}
             </p>
           )}
         </div>
@@ -140,7 +151,19 @@ export default function DirectoryPage<T>({
           <p className="px-5 py-12 text-center text-sm text-slate-500" role="status">Loading {title.toLowerCase()}…</p>
         ) : page && visibleResults.length ? (
           <>
-            <div className="overflow-x-auto">
+            <ul className="divide-y divide-slate-100 sm:hidden">
+              {visibleResults.map((item) => (
+                <li key={getKey(item)} className="space-y-3 p-4">
+                  {visibleColumns.map((column) => (
+                    <div key={column.label} className="flex items-start justify-between gap-3">
+                      <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">{column.label}</span>
+                      <div className="min-w-0 text-right">{column.render(item)}</div>
+                    </div>
+                  ))}
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto sm:block">
               <table className="w-full min-w-[640px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
@@ -159,7 +182,7 @@ export default function DirectoryPage<T>({
             <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3">
               <button
                 type="button"
-                disabled={!page.previous || loading}
+                disabled={!canGoPrevious || loading}
                 onClick={() => { setLoading(true); setPageNumber((current) => Math.max(1, current - 1)); }}
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -168,7 +191,7 @@ export default function DirectoryPage<T>({
               <span className="text-xs text-slate-500">Page {pageNumber}</span>
               <button
                 type="button"
-                disabled={!page.next || loading}
+                disabled={!canGoNext || loading}
                 onClick={() => { setLoading(true); setPageNumber((current) => current + 1); }}
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
               >

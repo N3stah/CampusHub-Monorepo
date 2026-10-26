@@ -1,8 +1,17 @@
 export interface ApiPage<T> {
   count: number;
-  next: string | null;
-  previous: string | null;
+  next: string | number | null;
+  previous: string | number | null;
   results: T[];
+}
+
+export interface CourseRosterEntry {
+  id: number;
+  student_id: number;
+  student_name: string;
+  student_email: string;
+  status: string;
+  enrolled_at: string;
 }
 
 export interface DirectoryUser {

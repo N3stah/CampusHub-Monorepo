@@ -10,7 +10,7 @@ import { DownloadResourceButton } from '@/components/MyCourses';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
-import type { Course, CourseAnnouncement, CourseResource, LecturerProfile } from '@/types/portal';
+import type { Course, CourseAnnouncement, CourseResource, CourseRosterEntry, LecturerProfile } from '@/types/portal';
 
 const allowedResourceExtensions = new Set(['pdf', 'docx', 'pptx', 'xlsx', 'png', 'jpg']);
 const maxResourceSize = 10 * 1024 * 1024;
@@ -33,6 +33,9 @@ function CourseDetailContent() {
   const courseId = params.id;
   const [course, setCourse] = useState<Course | null>(null);
   const [lecturer, setLecturer] = useState<LecturerProfile | null>(null);
+  const [roster, setRoster] = useState<CourseRosterEntry[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterError, setRosterError] = useState<string | null>(null);
   const [resources, setResources] = useState<CourseResource[]>([]);
   const [announcements, setAnnouncements] = useState<CourseAnnouncement[]>([]);
   const [courseLoading, setCourseLoading] = useState(true);
@@ -54,7 +57,8 @@ function CourseDetailContent() {
   const [publishingAnnouncement, setPublishingAnnouncement] = useState(false);
   const [announcementFormError, setAnnouncementFormError] = useState<string | null>(null);
   const [announcementNotice, setAnnouncementNotice] = useState<string | null>(null);
-  const canManageCourse = user?.role === 'lecturer' && course?.lecturer_id === user.id;
+  const canManageCourse = user?.role === 'admin' || (user?.role === 'lecturer' && course?.lecturer_id === user.id);
+  const canViewRoster = canManageCourse;
 
   const loadCourse = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -98,6 +102,19 @@ function CourseDetailContent() {
       if (!signal?.aborted) setAnnouncementsError(getApiErrorMessage(requestError));
     } finally {
       if (!signal?.aborted) setAnnouncementsLoading(false);
+    }
+  }, [courseId]);
+
+  const loadRoster = useCallback(async (signal?: AbortSignal) => {
+    setRosterLoading(true);
+    try {
+      const response = await getApiPage<CourseRosterEntry>(`/academics/courses/${courseId}/roster/`, {}, signal);
+      setRoster(response.results);
+      setRosterError(null);
+    } catch (requestError) {
+      if (!signal?.aborted) setRosterError(getApiErrorMessage(requestError));
+    } finally {
+      if (!signal?.aborted) setRosterLoading(false);
     }
   }, [courseId]);
 
@@ -240,14 +257,21 @@ function CourseDetailContent() {
     return () => controller.abort();
   }, [loadCourse, loadResources, loadAnnouncements]);
 
+  useEffect(() => {
+    if (!canViewRoster) return;
+    const controller = new AbortController();
+    void Promise.resolve().then(() => loadRoster(controller.signal));
+    return () => controller.abort();
+  }, [canViewRoster, loadRoster]);
+
   return (
-    <PortalShell roles={['student', 'lecturer']}>
+    <PortalShell roles={['student', 'lecturer', 'admin']}>
       <section className="space-y-6">
       <Link
-        href={user?.role === 'lecturer' ? '/dashboard' : '/courses'}
+        href={user?.role === 'lecturer' ? '/dashboard' : user?.role === 'admin' ? '/admin/courses' : '/courses'}
         className="text-sm font-semibold text-blue-700 hover:underline"
       >
-        {user?.role === 'lecturer' ? '← Back to teaching dashboard' : '← Back to my courses'}
+        {user?.role === 'lecturer' ? '← Back to teaching dashboard' : user?.role === 'admin' ? '← Back to course management' : '← Back to my courses'}
       </Link>
         {courseLoading ? (
           <p role="status" className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading course…</p>
@@ -273,6 +297,54 @@ function CourseDetailContent() {
               </div>
               {courseError && <p role="status" className="mt-3 text-xs text-amber-700">Course data loaded, but additional lecturer details are unavailable: {courseError}</p>}
             </header>
+
+            {canViewRoster && (
+              <section aria-labelledby="course-roster-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                  <div>
+                    <h2 id="course-roster-heading" className="font-semibold">Enrolled students</h2>
+                    <p className="mt-1 text-xs text-slate-500">Student roster for this course</p>
+                  </div>
+                  {!rosterLoading && !rosterError && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{roster.length}</span>}
+                </div>
+                {rosterError && (
+                  <div role="alert" className="flex flex-col gap-2 border-b border-red-100 bg-red-50 px-5 py-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between">
+                    <p>{rosterError}</p>
+                    <button type="button" onClick={() => { setRosterLoading(true); void loadRoster(); }} className="self-start font-semibold underline">Retry</button>
+                  </div>
+                )}
+                {rosterLoading ? (
+                  <p role="status" className="px-5 py-8 text-center text-sm text-slate-500">Loading enrolled students…</p>
+                ) : rosterError ? (
+                  <p className="px-5 py-6 text-center text-sm text-slate-500">The roster could not be loaded.</p>
+                ) : roster.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[560px] text-left text-sm">
+                      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th scope="col" className="px-5 py-3 font-semibold">Student</th>
+                          <th scope="col" className="px-5 py-3 font-semibold">Email</th>
+                          <th scope="col" className="px-5 py-3 font-semibold">Enrollment status</th>
+                          <th scope="col" className="px-5 py-3 font-semibold">Enrolled</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {roster.map((entry) => (
+                          <tr key={entry.id}>
+                            <td className="px-5 py-3 font-medium">{entry.student_name}</td>
+                            <td className="px-5 py-3 text-slate-600">{entry.student_email}</td>
+                            <td className="px-5 py-3 capitalize text-slate-600">{entry.status}</td>
+                            <td className="px-5 py-3 text-slate-600">{new Date(entry.enrolled_at).toLocaleDateString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="px-5 py-8 text-center text-sm text-slate-500">No students are enrolled in this course yet.</p>
+                )}
+              </section>
+            )}
 
             {canManageCourse && (
               <section aria-label="Course teaching tools" className="grid gap-4 xl:grid-cols-2">
@@ -389,7 +461,15 @@ function CourseDetailContent() {
                           {[resource.file_type?.toUpperCase(), resource.uploaded_by, resource.created_at && new Date(resource.created_at).toLocaleDateString()].filter(Boolean).join(' · ') || 'Course file'}
                         </p>
                       </div>
-                      <DownloadResourceButton courseId={Number(courseId)} resourceId={resource.id} resourceTitle={resource.title} />
+                      <div className="flex flex-wrap items-center gap-2">
+                        {canManageCourse && (
+                          <>
+                            <button type="button" onClick={() => editResource(resource)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
+                            <button type="button" onClick={() => void deleteResource(resource)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50">Delete</button>
+                          </>
+                        )}
+                        <DownloadResourceButton courseId={Number(courseId)} resourceId={resource.id} resourceTitle={resource.title} />
+                      </div>
                     </li>
                   ))}
                 </ul>

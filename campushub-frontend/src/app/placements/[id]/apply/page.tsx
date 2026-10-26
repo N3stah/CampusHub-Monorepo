@@ -7,6 +7,7 @@ import { Suspense } from 'react';
 import PortalShell from '@/components/PortalShell';
 import api from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/portal';
+import { createApplicationFormData, validateCvFile } from '@/lib/application-files';
 import type { Placement, StudentApplication } from '@/types/portal';
 
 export default function PlacementApplicationPage() {
@@ -50,9 +51,7 @@ function PlacementApplicationContent() {
     setSubmitting(true);
     setError(null);
     try {
-      const formData = new FormData();
-      formData.append('cover_note', coverNote.trim());
-      if (cvFile) formData.append('cv_file', cvFile);
+      const formData = createApplicationFormData(coverNote, cvFile);
       const response = await api.post<StudentApplication>(`/placements/${id}/apply/`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -102,8 +101,9 @@ function PlacementApplicationContent() {
                 accept=".pdf,.doc,.docx"
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
-                  if (file && file.size > 10 * 1024 * 1024) {
-                    setError('Your CV must be 10 MB or smaller.');
+                  const validationError = file ? validateCvFile(file) : null;
+                  if (validationError) {
+                    setError(validationError);
                     event.target.value = '';
                     setCvFile(null);
                     return;

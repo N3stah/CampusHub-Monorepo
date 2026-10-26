@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/portal';
+import { createApplicationFormData, validateCvFile } from '@/lib/application-files';
 import ApplicationReviewPanel from '@/components/ApplicationReviewPanel';
 import DirectoryPage from '@/components/DirectoryPage';
 import PortalShell from '@/components/PortalShell';
@@ -51,12 +52,17 @@ export default function PlacementsPage() {
   async function applyToPlacement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedPlacement) return;
+    if (cvFile) {
+      const cvError = validateCvFile(cvFile);
+      if (cvError) {
+        setFormError(cvError);
+        return;
+      }
+    }
     setSubmitting(true);
     setFormError(null);
     try {
-      const formData = new FormData();
-      formData.append('cover_note', coverNote);
-      if (cvFile) formData.append('cv_file', cvFile);
+      const formData = createApplicationFormData(coverNote, cvFile);
       await api.post(`/placements/${selectedPlacement.id}/apply/`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
