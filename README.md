@@ -133,6 +133,14 @@ npm install
 npm run dev
 ```
 
+Run the frontend checks with:
+
+```bash
+npm run lint
+npm run test
+npm run build
+```
+
 ---
 
 ## Environment Variables
