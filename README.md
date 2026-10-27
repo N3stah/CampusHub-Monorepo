@@ -119,7 +119,9 @@ npm run dev
 1. Create a Web Service pointing to the `campushub-backend/` directory.
 2. Set the environment variables (see `config/settings/prod.py`).
 3. Render will automatically run `pip install`, `collectstatic`, and `migrate` on deploy.
-4. To seed the production database, use the Render Shell and run `python manage.py seed_data`.
+4. Do NOT run `seed_data` in production with default passwords. It will refuse to run unless `DEBUG=False` is bypassed with `--force` and `SEED_*_PASSWORD` environment variables are set.
+
+> **Security Note:** `seed_data` includes a production guard. It will refuse to run if `DEBUG=False` unless passed `--force`. If forced, it reads passwords from `SEED_*_PASSWORD` environment variables instead of hard-coded defaults. Demo accounts are for local/dev use only.
 
 ### Frontend (Vercel)
 1. Import the repository to Vercel.
