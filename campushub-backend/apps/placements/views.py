@@ -7,6 +7,7 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.auth import get_user_model
 
 from apps.accounts.jwt_utils import jwt_required
+from apps.common.pagination import paginate_queryset
 from apps.accounts.models import AuditEvent
 from .models import Placement, Application
 from .services import ApplicationService
@@ -70,8 +71,7 @@ def placement_list_create(request):
 
     if request.method == "GET":
         placements = Placement.objects.filter(is_active=True).select_related('posted_by')
-        results = [format_placement(p) for p in placements]
-        return JsonResponse({"count": len(results), "results": results})
+        return paginate_queryset(placements, request, format_placement)
 
     elif request.method == "POST":
         if user.role not in ['officer', 'admin']:
@@ -215,8 +215,7 @@ def application_list(request):
     else:
         return JsonResponse({"error": "Permission denied"}, status=403)
 
-    results = [format_application(a, request) for a in applications]
-    return JsonResponse({"count": len(results), "results": results})
+    return paginate_queryset(applications, request, lambda a: format_application(a, request))
 
 @csrf_exempt
 @require_http_methods(["PATCH"])
