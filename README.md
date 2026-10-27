@@ -8,7 +8,7 @@ A full-stack university student portal built as a capstone project at **The Nair
 
 ## What is CampusHub?
 
-CampusHub is a centralised web portal for university students, lecturers, and placement officers. It handles student authentication, academic records, resource management, and industrial attachment (placement) tracking — all in one place.
+CampusHub is a centralised web portal for university students, lecturers, and placement officers. It handles student authentication, academic records, resource management, industrial attachment (placement) tracking, and notifications — all in one place.
 
 ---
 
@@ -16,62 +16,29 @@ CampusHub is a centralised web portal for university students, lecturers, and pl
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Django 6.1 + Django REST Framework 3.18 |
-| Auth | SimpleJWT (access 30 min / refresh 7 days) |
+| Backend | Django 6.1 (Plain Django + PyJWT, no DRF) |
 | Database | PostgreSQL 18 |
 | Frontend | Next.js 16 + TypeScript + Tailwind CSS |
 | Architecture | Vertical Slice Architecture (VSA) |
-| Environment | python-decouple + `.env` |
-| Version Control | Git + GitHub (monorepo) |
+| Deployment | Render (Backend) + Vercel (Frontend) |
 
 ---
 
-## Project Structure
+## API Endpoints
 
-CampusHub-Monorepo/
-├── campushub-backend/ # Django REST API
-│ ├── apps/
-│ │ ├── accounts/ # Auth, User model, JWT
-│ │ ├── academics/ # Departments, courses
-│ │ ├── resources/ # Study materials
-│ │ ├── placements/ # Industrial attachment
-│ │ └── common/ # Shared utilities
-│ ├── config/
-│ │ ├── settings/
-│ │ │ ├── base.py
-│ │ │ ├── dev.py
-│ │ │ └── prod.py
-│ │ ├── urls.py
-│ │ ├── wsgi.py
-│ │ └── asgi.py
-│ ├── docs/
-│ │ ├── PHASE_STATUS.md
-│ │ └── DEVELOPMENT_GUIDE.md
-│ └── manage.py
-├── campushub-frontend/ # Next.js 16 App Router
-│ ├── src/
-│ │ ├── app/
-│ │ ├── components/
-│ │ ├── lib/
-│ │ └── types/
-│ └── package.json
-└── docs/
-├── ERD.md
-├── PHASE_STATUS.md
-└── sql/
+The API is fully documented in [`campushub-backend/docs/openapi.json`](campushub-backend/docs/openapi.json). All endpoints are JSON-only (`JsonResponse`), use Bearer JWT auth, and return standard error shapes `{"error": "..."}`.
 
-
----
-
-## API Endpoints (Phase 1A — Live)
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/api/auth/register/` | None | Create new user account |
-| POST | `/api/auth/token/` | None | Login — returns JWT pair |
-| POST | `/api/auth/token/refresh/` | Refresh token | Get new access token |
-| GET | `/api/auth/me/` | Bearer token | Get current user profile |
-| PUT/PATCH | `/api/auth/me/` | Bearer token | Update current user profile |
+| Group | Base Path | Description |
+|-------|-----------|-------------|
+| Auth | `/api/auth/` | Register, Login (token), Refresh, Me |
+| Users | `/api/users/` | Admin user management (CRUD, roles) |
+| Lecturers | `/api/lecturers/` | Lecturer directory management |
+| Admin | `/api/admin/` | Stats and audit logs |
+| Academics | `/api/academics/` | Departments, Courses, Enrollments, Bulk assign |
+| Resources | `/api/resources/` | File uploads, announcements, downloads |
+| Placements | `/api/placements/` | Job listings and applications |
+| Notifications | `/api/notifications/` | User notifications, unread counts |
+| Health | `/api/health/` | Render health check |
 
 ---
 
@@ -79,10 +46,10 @@ CampusHub-Monorepo/
 
 | Role | Description |
 |------|-------------|
-| `student` | Default role. Access to own records, resources, applications |
-| `lecturer` | Upload resources, view student records in their department |
-| `officer` | Manage placement listings and student applications |
-| `admin` | Full access via Django admin |
+| `student` | Access own records, resources, enroll, apply for placements |
+| `lecturer` | Upload resources, post announcements, view course rosters |
+| `officer` | Manage placement listings, review applications, post placements |
+| `admin` | Full CRUD on all entities, manage users and departments |
 
 ---
 
@@ -105,7 +72,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # 3. Install dependencies
-pip install -r requirements.txt --break-system-packages
+pip install -r requirements.txt
 
 # 4. Create .env file (copy from .env.example and fill in values)
 cp .env.example .env
@@ -119,7 +86,10 @@ sudo -u postgres psql -d campushub_db -c "GRANT ALL ON SCHEMA public TO campushu
 # 6. Run migrations
 python manage.py migrate
 
-# 7. Start development server
+# 7. (Optional) Seed demo data
+python manage.py seed_data
+
+# 8. Start development server
 python manage.py runserver
 ```
 
@@ -133,45 +103,37 @@ npm install
 npm run dev
 ```
 
-Run the frontend checks with:
+---
 
-```bash
-npm run lint
-npm run test
-npm run build
-```
+## Management Commands
+
+- `python manage.py seed_data`: Populates the DB with demo users (Admin, Officer, Lecturers, Students), departments, courses, and placements. Safe to run multiple times.
+- `python manage.py import_students path.csv`: Imports students from a CSV file with row-level validation.
+- `python manage.py cleanup_notifications --days 30`: Deletes read notifications older than N days.
 
 ---
 
-## Environment Variables
+## Deployment
 
-Copy `.env.example` to `.env` and fill in your values:
+### Backend (Render)
+1. Create a Web Service pointing to the `campushub-backend/` directory.
+2. Set the environment variables (see `config/settings/prod.py`).
+3. Render will automatically run `pip install`, `collectstatic`, and `migrate` on deploy.
+4. To seed the production database, use the Render Shell and run `python manage.py seed_data`.
 
-SECRET_KEY=your-django-secret-key
-DEBUG=True
-DB_NAME=campushub_db
-DB_USER=campushub_user
-DB_PASSWORD=your-password
-DB_HOST=127.0.0.1
-DB_PORT=5434
-
+### Frontend (Vercel)
+1. Import the repository to Vercel.
+2. Set the Root Directory to `campushub-frontend`.
+3. Set the `NEXT_PUBLIC_API_URL` environment variable to your live Render backend URL.
+4. Deploy.
 
 ---
 
-## Development Phases
+## Documentation
 
-| Phase | Feature | Backend | Frontend |
-|-------|---------|---------|---------|
-| 0 | Config & Setup | ✅ | ✅ |
-| 1A | Auth Backend | ✅ | — |
-| 1B | Auth Frontend | — | 🔄 |
-| 2 | Academics | ⏳ | ⏳ |
-| 3 | Resources | ⏳ | ⏳ |
-| 4 | Placements | ⏳ | ⏳ |
-| 5 | Applications | ⏳ | ⏳ |
-| 6 | Polish & Deploy | ⏳ | ⏳ |
-
-See [`docs/PHASE_STATUS.md`](docs/PHASE_STATUS.md) for detailed task tracking.
+- [`docs/ERD.md`](docs/ERD.md): Database design document with Mermaid ERD, normalization write-up, and raw SQL queries.
+- [`docs/PHASE_STATUS.md`](docs/PHASE_STATUS.md): Detailed phase tracker and blocker log.
+- [`campushub-backend/docs/openapi.json`](campushub-backend/docs/openapi.json): Minimal OpenAPI 3 spec.
 
 ---
 
