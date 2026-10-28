@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ApplicationsPage from '@/app/applications/page';
 import ApplicationReviewPanel from '@/components/ApplicationReviewPanel';
@@ -118,6 +118,35 @@ describe('student and staff workflows', () => {
     await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/applications/23/status/', { status: 'accepted' }));
   });
 
+  it('filters staff applications into pending, shortlisted, accepted, and rejected groups', async () => {
+    vi.mocked(getApiPage).mockResolvedValue({
+      count: 4,
+      next: null,
+      previous: null,
+      results: [
+        application,
+        { ...application, id: 24, status: 'shortlisted', student: { id: 6, first_name: 'Sam', last_name: 'Shortlisted' } },
+        { ...application, id: 25, status: 'accepted', student: { id: 7, first_name: 'Alex', last_name: 'Accepted' } },
+        { ...application, id: 26, status: 'rejected', student: { id: 8, first_name: 'Rae', last_name: 'Rejected' } },
+      ],
+    });
+    vi.mocked(useAuth).mockReturnValue({
+      user: { ...student, role: 'officer' },
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      updateUser: vi.fn(),
+    });
+    render(<ApplicationReviewPanel />);
+
+    expect(await screen.findByText('Taylor Student')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Accepted 1/ }));
+
+    expect(await screen.findByText('Alex Accepted')).toBeInTheDocument();
+    expect(screen.queryByText('Sam Shortlisted')).not.toBeInTheDocument();
+    expect(screen.queryByText('Rae Rejected')).not.toBeInTheDocument();
+  });
+
   it('submits the application form as multipart data with the selected CV', async () => {
     vi.mocked(api.get).mockResolvedValueOnce({
       data: {
@@ -172,6 +201,46 @@ describe('student and staff workflows', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Your profile was saved.');
   });
 
+  it('moves the student course, placement, and application summary into the profile', async () => {
+    vi.mocked(getApiPage).mockImplementation(async (endpoint) => {
+      if (endpoint === '/academics/enrollments/') {
+        return {
+          count: 2,
+          next: null,
+          previous: null,
+          results: [
+            { id: 1, course_id: 3, course_code: 'AI101', course_title: 'Artificial Intelligence', status: 'active', enrolled_at: '2026-09-01' },
+            { id: 2, course_id: 4, course_code: 'WEB101', course_title: 'Web Development', status: 'completed', enrolled_at: '2026-01-01' },
+          ],
+        };
+      }
+      if (endpoint === '/applications/') {
+        return {
+          count: 2,
+          next: null,
+          previous: null,
+          results: [
+            { ...application, status: 'pending' },
+            { ...application, id: 24, status: 'accepted' },
+          ],
+        };
+      }
+      return { count: 3, next: null, previous: null, results: [] };
+    });
+
+    render(<ProfilePage />);
+
+    expect(await screen.findByRole('heading', { name: 'Student overview' })).toBeInTheDocument();
+    const summary = within(screen.getByRole('region', { name: 'Student overview' }));
+    await waitFor(() => {
+      expect(summary.getByText('Active courses').parentElement).toHaveTextContent('1');
+      expect(summary.getByText('Applications', { selector: 'dt' }).parentElement).toHaveTextContent('2');
+      expect(summary.getByText('Open placements').parentElement).toHaveTextContent('3');
+      expect(summary.getByText('pending:').parentElement).toHaveTextContent('1');
+      expect(summary.getByText('accepted:').parentElement).toHaveTextContent('1');
+    });
+  });
+
   it('shows the authorized lecturer course roster', async () => {
     vi.mocked(useAuth).mockReturnValue({
       user: { ...student, role: 'lecturer' },
@@ -198,25 +267,41 @@ describe('student and staff workflows', () => {
       },
     });
     vi.mocked(getApiPage).mockImplementation(async (endpoint) => ({
-      count: endpoint.endsWith('/roster/') ? 1 : 0,
+      count: endpoint.endsWith('/roster/') ? 2 : 0,
       next: null,
       previous: null,
       results: endpoint.endsWith('/roster/')
-        ? [{
-            id: 1,
-            student_id: 18,
-            student_name: 'Morgan Enrolled',
-            student_email: 'morgan@example.test',
-            status: 'active',
-            enrolled_at: '2026-10-01T09:00:00Z',
-          }]
+        ? [
+            {
+              id: 1,
+              student_id: 18,
+              student_name: 'Morgan Enrolled',
+              admission_number: '23/08181',
+              student_email: 'morgan@example.test',
+              status: 'active',
+              enrolled_at: '2026-10-01T09:00:00Z',
+            },
+            {
+              id: 2,
+              student_id: 19,
+              student_name: 'Jamie Enrolled',
+              admission_number: '26/2001',
+              student_email: 'jamie@example.test',
+              status: 'active',
+              enrolled_at: '2026-10-01T09:00:00Z',
+            },
+          ]
         : [],
     }));
 
     render(<CourseDetailPage />);
 
     expect(await screen.findByText('Morgan Enrolled')).toBeInTheDocument();
+    expect(screen.getByText('23/08181')).toBeInTheDocument();
     expect(screen.getByText('morgan@example.test')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Find student by admission number'), { target: { value: '23/08181' } });
+    expect(screen.getByText('Morgan Enrolled')).toBeInTheDocument();
+    expect(screen.queryByText('Jamie Enrolled')).not.toBeInTheDocument();
     expect(getApiPage).toHaveBeenCalledWith('/academics/courses/12/roster/', {}, expect.any(AbortSignal));
   });
 });

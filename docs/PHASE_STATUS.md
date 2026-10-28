@@ -344,3 +344,48 @@ The frontend now consumes the existing profile, roster, application, resource, a
 | P2 | Expand endpoint integration tests | Cover application detail/withdrawal/status changes, protected resource downloads, file replacement/deletion cleanup, placement close/reactivation, role/object authorization, and error response shapes. Exercise these with the configured isolated backend test settings, then run seeded-account smoke tests against PostgreSQL. |
 
 No backend code was changed in this frontend implementation. Keep backend changes and any required API-contract updates in the backend follow-up work.*** End Patch
+
+## Academic administration workflows — 2026-10-27
+
+- Added the admin-managed academic hierarchy: schools contain departments, and departments own degree programmes (retaining the existing `Course` model and API for compatibility).
+- Added reusable units that can be shared across departments and programmes. A programme-unit offering can have multiple lecturers, and lecturers can teach offerings across programmes.
+- Added admin screens for schools, departments, programmes, units and lecturer assignments. Programme admissions are managed by exact student admission number; students can view their enrolments but cannot self-enrol or drop programmes.
+- Existing departments are preserved by migration under an `UNASSIGNED` school for admins to review and reassign. Apply the new migrations during deployment with `python manage.py migrate`.
+- Added school/unit/enrolment counts to admin overview and kept academic-directory management on its dedicated pages. Inactive programmes and units remain reviewable; inactive offerings do not grant lecturers access.
+- Academic term management, attendance, grades, fee billing and formal admissions applications remain outside the current product scope. Weekly unit class sessions are managed with explicit term start/end dates.
+- Validation: backend `pytest` — **51 passed**; Django system check — passed; `makemigrations --check --dry-run` — no changes detected; frontend `npm run test` — **16 passed**; `npx tsc --noEmit` — passed; `npm run build` — passed; ESLint — no errors (one existing warning in `src/lib/api.ts`); `git diff --check` — passed.*** End Patch
+
+## One programme per student — 2026-10-27
+
+- Student creation and editing use a single programme dropdown. The selected programme determines the student's department and school; admins no longer assign those separately.
+- Student directory responses show the student's single current programme and its school/department. Changing the programme moves the previous current enrolment to dropped history, and the admissions workflow follows the same rule.
+- Added a data migration that retains the latest current enrolment and marks older active/completed enrolments as dropped, followed by a database constraint enforcing at most one current programme per student.
+- Validation: backend `pytest` — **53 passed**; Django system check and migration consistency check — passed; frontend tests — **16 passed**; TypeScript check and production build — passed; ESLint — no errors (one existing warning in `src/lib/api.ts`).*** End Patch
+
+## Lecturer unit portal — 2026-10-27
+
+- Replaced the lecturer overview's profile/course list with assigned units and a teaching calendar. Lecturers now see only their own unit offerings, and the lecturer directory is restricted to admins (lecturers may request only their own lecturer record).
+- Added the lecturer sidebar order: Overview, Units, Settings, Learning materials / notes, and Assignments. The lecturer profile shortcut and unrelated directory/placement navigation are not shown.
+- Added unit workspaces with course overview, enrolled-student roster, scoped announcements, notes/topic resources, assignment creation and deadlines, class schedule, and student group generation.
+- Added persistent assignments with instructions, due time, points, and publish status; student assignment lists show live countdowns, unit pages show deadlines, and assignment notifications link to the relevant unit.
+- Added weekly class sessions with weekday/time, room, and term dates. Calendar events include both class occurrences and assignment deadlines and are visible to lecturers and enrolled students.
+- Added automatic student groups using A–G or 1–10 labels and a configured maximum group size. Memberships are shuffled, replacing a previous set regenerates the groups, and students can view only their own group.
+- Added offering-scoped announcements and Notes resource category. Students see unit materials, announcements, assignments, sessions, and their group from the enrolled programme page.
+- Added backend migrations `academics.0007` and `resources.0005`. Apply them with `python manage.py migrate` before deploying these frontend workflows.
+- API routes include `GET /api/academics/offerings/<id>/`, `/roster/`, `/assignments/`, `/sessions/`, `/groups/`; `GET /api/academics/assignments/`, `/calendar/`; and `GET/POST /api/resources/offerings/<id>/announcements/`. Lecturer writes require an assigned offering; student reads require an active programme enrolment.
+- Research reference: Canvas/Instructure's [Assignments API](https://canvas.instructure.com/doc/api/assignments.html) models assignment due times; its [Calendar Events API](https://canvas.instructure.com/doc/api/calendar_events.html) includes dated events, start/end times, and location. CampusHub uses equivalent due-date/calendar fields within unit-scoped endpoints.
+- Validation: full backend suite — **59 passed**; Django system check and migration consistency check — passed; frontend tests — **17 passed**; TypeScript check and production build — passed; ESLint — no errors (one existing warning in `src/lib/api.ts`); `git diff --check` — passed.*** End Patch
+
+## Frontend-only academic workflow push — 2026-10-28
+
+The current push targets `feature/my-new-feature` and contains frontend changes plus this status update only. Backend source, tests, and migrations remain outside this push and must be included in a separate backend change before deploying the complete workflows.
+
+### Backend follow-up required
+
+| Priority | Backend work | Completion criteria |
+|---|---|---|
+| P0 | Include the academic structure and unit-workspace backend changes needed by the frontend: schools/departments/courses/units, enrolments, lecturer offering assignments, scoped resources and announcements, schedules, and groups. | Commit the matching models, permission checks, views, routes, tests, and migrations (`academics.0005`–`0007`, `resources.0004`–`0005`, and required account migrations); confirm admin and student/lecturer role behavior. |
+| P0 | Include assignment submission and grading APIs. | Commit assignment type/file-format validation, quiz questions and auto-marking, protected student uploads/downloads, lecturer submission review and file downloads, mark/feedback updates, and the per-unit CSV gradebook. Include `academics.0008`–`0009` and the API authorization tests. |
+| P0 | Apply and verify backend migrations before enabling these frontend screens in a shared environment. | Run `python manage.py migrate`, `python manage.py makemigrations --check --dry-run`, and the backend test suite against the deployment settings; verify uploaded files use persistent storage and authenticated downloads. |
+| P1 | Verify frontend/API integration against the deployed backend. | Exercise student course/unit access, file and quiz submissions, resubmission, early/late timestamps, lecturer review/download/mark/feedback, and CSV export with accounts for each role. Confirm students cannot read other students' work or quiz answer keys and lecturers cannot access unassigned offerings. |
+| P1 | Reconcile any API or frontend changes found during live verification. | Document the final request/response contract and run end-to-end smoke tests after the backend commit is deployed. |*** End Patch

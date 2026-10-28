@@ -5,7 +5,6 @@ import Link from 'next/link';
 import api from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/portal';
 import { createApplicationFormData, validateCvFile } from '@/lib/application-files';
-import ApplicationReviewPanel from '@/components/ApplicationReviewPanel';
 import DirectoryPage from '@/components/DirectoryPage';
 import PortalShell from '@/components/PortalShell';
 import type { Placement } from '@/types/portal';
@@ -153,7 +152,6 @@ export default function PlacementsPage() {
         {formError && !showCreateForm && (
           <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{formError}</p>
         )}
-        {canManage && <ApplicationReviewPanel />}
         <DirectoryPage<Placement>
           title="Placements"
           description="Explore internships and job opportunities, or manage listings for students."
@@ -219,6 +217,7 @@ export default function PlacementsPage() {
             },
             { label: 'Location', render: (placement) => <span className="text-slate-600">{placement.location}</span> },
             { label: 'Slots', render: (placement) => <span className="text-slate-600">{placement.slots_available}</span> },
+            { label: 'Applicants', render: (placement) => <span className="text-slate-600">{placement.application_count ?? 0}</span> },
             {
               label: 'Deadline',
               render: (placement) => (

@@ -2,7 +2,6 @@
 
 import MyCourses from '@/components/MyCourses';
 import PortalShell from '@/components/PortalShell';
-import CourseCatalog from '@/components/CourseCatalog';
 
 export default function CoursesPage() {
   return (
@@ -11,10 +10,9 @@ export default function CoursesPage() {
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Learning</p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight">My courses</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">Open a course to view its lecturer, notes, learning resources, and lecturer updates.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Open a course to view its units, lecturers, learning resources, and updates.</p>
         </div>
         <MyCourses />
-        <CourseCatalog />
       </section>
     </PortalShell>
   );

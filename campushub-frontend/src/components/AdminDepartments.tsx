@@ -5,12 +5,14 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { ReactNode } from 'react';
 import api from '@/lib/api';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
-import type { Course, DirectoryUser } from '@/types/portal';
+import type { Course, DirectoryUser, School } from '@/types/portal';
 
 interface Department {
   id: number;
   name: string;
   code: string;
+  school_id: number;
+  school__name: string;
   head_id: number | null;
   is_active?: boolean;
 }
@@ -18,6 +20,7 @@ interface Department {
 interface DepartmentForm {
   name: string;
   code: string;
+  school_id: string;
   head_id: string;
 }
 
@@ -27,11 +30,12 @@ type DepartmentRoster = {
   courses: Course[];
 };
 
-const emptyForm: DepartmentForm = { name: '', code: '', head_id: '' };
+const emptyForm: DepartmentForm = { name: '', code: '', school_id: '', head_id: '' };
 const emptyRoster: DepartmentRoster = { students: [], lecturers: [], courses: [] };
 
 export default function AdminDepartments() {
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
   const [lecturerOptions, setLecturerOptions] = useState<DirectoryUser[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [roster, setRoster] = useState<DepartmentRoster>(emptyRoster);
@@ -51,6 +55,7 @@ export default function AdminDepartments() {
     const results = await Promise.allSettled([
       getApiPage<Department>('/academics/departments/', {}, signal),
       getApiPage<DirectoryUser>('/lecturers/', {}, signal),
+      getApiPage<School>('/academics/schools/', {}, signal),
     ]);
     if (signal?.aborted) return;
 
@@ -60,8 +65,9 @@ export default function AdminDepartments() {
       setSelectedId((current) => current && rows.some((item) => item.id === current) ? current : rows[0]?.id ?? null);
     }
     if (results[1].status === 'fulfilled') setLecturerOptions(results[1].value.results);
+    if (results[2].status === 'fulfilled') setSchools(results[2].value.results);
     const errors = results.flatMap((result, index) => result.status === 'rejected'
-      ? [`${index === 0 ? 'Departments' : 'Lecturer choices'}: ${getApiErrorMessage(result.reason)}`]
+      ? [`${['Departments', 'Lecturer choices', 'Schools'][index]}: ${getApiErrorMessage(result.reason)}`]
       : []);
     setPageError(errors.length ? errors.join(' ') : null);
     setLoading(false);
@@ -105,7 +111,12 @@ export default function AdminDepartments() {
 
   function startEditing(department: Department) {
     setEditing(department);
-    setForm({ name: department.name, code: department.code, head_id: department.head_id ? String(department.head_id) : '' });
+    setForm({
+      name: department.name,
+      code: department.code,
+      school_id: String(department.school_id),
+      head_id: department.head_id ? String(department.head_id) : '',
+    });
     setFormError(null);
     setNotice(null);
   }
@@ -124,6 +135,7 @@ export default function AdminDepartments() {
     const payload = {
       name: form.name.trim(),
       code: form.code.trim().toUpperCase(),
+      school_id: Number(form.school_id),
       head_id: form.head_id ? Number(form.head_id) : null,
     };
     try {
@@ -144,13 +156,13 @@ export default function AdminDepartments() {
     }
   }
 
-  async function deactivateDepartment(department: Department) {
-    if (!window.confirm(`Deactivate ${department.name}?`)) return;
+  async function deleteDepartment(department: Department) {
+    if (!window.confirm(`Delete ${department.name}? Departments with programmes, members, or shared units cannot be deleted.`)) return;
     setFormError(null);
     setNotice(null);
     try {
       await api.delete(`/academics/departments/${department.id}/`);
-      setNotice(`${department.name} was deactivated.`);
+      setNotice(`${department.name} deleted.`);
       await loadDepartments();
     } catch (error) {
       setFormError(getApiErrorMessage(error));
@@ -184,7 +196,7 @@ export default function AdminDepartments() {
         <Link href="/admin" className="text-sm font-semibold text-blue-700 hover:underline">← Administration</Link>
         <p className="mt-4 text-sm font-semibold uppercase tracking-wide text-blue-700">Administration</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight">Departments</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600">Manage department details and review its students, lecturers, and courses.</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">Each department belongs to one school. Programmes belong to departments; shared units can be coordinated across several departments.</p>
       </header>
 
       {notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
@@ -209,6 +221,13 @@ export default function AdminDepartments() {
               <input required maxLength={10} value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
             </label>
             <label className="block text-sm font-medium text-slate-700">
+              School
+              <select required value={form.school_id} onChange={(event) => setForm({ ...form, school_id: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
+                <option value="">Choose a school</option>
+                {schools.filter((school) => school.code !== 'UNASSIGNED').map((school) => <option key={school.id} value={school.id}>{school.code} — {school.name}</option>)}
+              </select>
+            </label>
+            <label className="block text-sm font-medium text-slate-700">
               Department head
               <select value={form.head_id} onChange={(event) => setForm({ ...form, head_id: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
                 <option value="">Not assigned</option>
@@ -218,7 +237,7 @@ export default function AdminDepartments() {
               </select>
             </label>
             <div className="flex gap-2">
-              <button type="submit" disabled={saving} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
+              <button type="submit" disabled={saving || !schools.some((school) => school.code !== 'UNASSIGNED')} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
                 {saving ? 'Saving…' : editing ? 'Save changes' : 'Add department'}
               </button>
               {editing && <button type="button" onClick={cancelEditing} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Cancel</button>}
@@ -233,10 +252,10 @@ export default function AdminDepartments() {
                   <li key={department.id} className={`flex items-center justify-between gap-2 p-3 ${department.id === selectedId ? 'bg-blue-50' : ''}`}>
                     <button type="button" onClick={() => setSelectedId(department.id)} aria-pressed={department.id === selectedId} className="min-w-0 flex-1 text-left">
                       <span className="block truncate text-sm font-semibold text-slate-900">{department.name}</span>
-                      <span className="text-xs text-slate-500">{department.code}</span>
+                      <span className="text-xs text-slate-500">{department.code} · {department.school__name}</span>
                     </button>
                     <button type="button" onClick={() => startEditing(department)} className="rounded px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-white">Edit</button>
-                    <button type="button" onClick={() => void deactivateDepartment(department)} className="rounded px-2 py-1 text-xs font-semibold text-red-700 hover:bg-white">Deactivate</button>
+                    <button type="button" onClick={() => void deleteDepartment(department)} className="rounded px-2 py-1 text-xs font-semibold text-red-700 hover:bg-white">Delete</button>
                   </li>
                 ))}
               </ul>
@@ -250,6 +269,7 @@ export default function AdminDepartments() {
               <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{selectedDepartment.code}</p>
                 <h2 id="department-details-heading" className="mt-1 text-xl font-semibold">{selectedDepartment.name}</h2>
+                <p className="mt-1 text-sm text-slate-500">{selectedDepartment.school__name}</p>
                 <p className="mt-2 text-sm text-slate-600">Department head: {selectedHead ? `${selectedHead.first_name} ${selectedHead.last_name}` : selectedDepartment.head_id ? `Lecturer #${selectedDepartment.head_id}` : 'Not assigned'}</p>
               </header>
               {rosterError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{rosterError}</p>}
@@ -289,11 +309,11 @@ export default function AdminDepartments() {
                       </li>
                     ))}
                   </RosterCard>
-                  <RosterCard title="Courses" count={roster.courses.length} href="/admin/courses" action="Manage courses">
+                  <RosterCard title="Programmes" count={roster.courses.length} href="/admin/courses" action="Manage programmes">
                     {roster.courses.map((course) => (
                       <li key={course.id} className="flex items-center justify-between gap-3 px-4 py-3">
                         <span><span className="font-semibold">{course.code}</span> <span className="text-slate-700">{course.title}</span></span>
-                        <span className="text-xs text-slate-500">{course.lecturer_id ? `Lecturer #${course.lecturer_id}` : 'Unassigned'}</span>
+                        <span className="text-xs text-slate-500">{course.units?.length ?? 0} units</span>
                       </li>
                     ))}
                   </RosterCard>

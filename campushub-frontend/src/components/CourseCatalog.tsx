@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import api from '@/lib/api';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
 import type { Course, Enrollment } from '@/types/portal';
 
@@ -9,6 +8,7 @@ interface Department {
   id: number;
   name: string;
   code: string;
+  school__name: string;
 }
 
 export default function CourseCatalog() {
@@ -19,9 +19,7 @@ export default function CourseCatalog() {
   const [search, setSearch] = useState('');
   const [pageNumber, setPageNumber] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [submittingId, setSubmittingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const loadCatalog = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -47,21 +45,6 @@ export default function CourseCatalog() {
     return () => controller.abort();
   }, [loadCatalog]);
 
-  async function enroll(course: Course) {
-    setSubmittingId(course.id);
-    setError(null);
-    setNotice(null);
-    try {
-      await api.post('/academics/enrollments/', { course_id: course.id });
-      setNotice(`You are now enrolled in ${course.code}.`);
-      await loadCatalog();
-    } catch (requestError) {
-      setError(getApiErrorMessage(requestError));
-    } finally {
-      setSubmittingId(null);
-    }
-  }
-
   function enrollmentFor(courseId: number) {
     return enrollments.find((enrollment) => enrollment.course_id === courseId);
   }
@@ -77,8 +60,8 @@ export default function CourseCatalog() {
     <section aria-labelledby="course-catalog-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center">
         <div>
-          <h2 id="course-catalog-heading" className="font-semibold">Course catalog</h2>
-          <p className="mt-1 text-xs text-slate-500">Explore active courses and enroll in a course.</p>
+          <h2 id="course-catalog-heading" className="font-semibold">Course catalogue</h2>
+          <p className="mt-1 text-xs text-slate-500">Review available courses and their department and school.</p>
         </div>
         <label className="text-sm font-medium text-slate-700">
           <span className="sr-only">Filter courses by department</span>
@@ -89,14 +72,14 @@ export default function CourseCatalog() {
           >
             <option value="">All departments</option>
             {departments.map((department) => (
-              <option key={department.id} value={department.id}>{department.code} — {department.name}</option>
+              <option key={department.id} value={department.id}>{department.school__name} / {department.code} — {department.name}</option>
             ))}
           </select>
         </label>
       </div>
 
       <div className="border-b border-slate-100 px-5 py-3">
-        <label htmlFor="course-catalog-search" className="sr-only">Search course catalog</label>
+        <label htmlFor="course-catalog-search" className="sr-only">Search course catalogue</label>
         <input
           id="course-catalog-search"
           type="search"
@@ -107,7 +90,6 @@ export default function CourseCatalog() {
         />
       </div>
 
-      {notice && <p role="status" className="border-b border-emerald-100 bg-emerald-50 px-5 py-3 text-sm text-emerald-800">{notice}</p>}
       {error && (
         <div className="flex flex-col justify-between gap-2 border-b border-red-100 bg-red-50 px-5 py-3 text-sm text-red-800 sm:flex-row sm:items-center">
           <p role="alert">{error}</p>
@@ -116,7 +98,7 @@ export default function CourseCatalog() {
       )}
 
       {loading ? (
-        <p role="status" className="p-8 text-center text-sm text-slate-500">Loading course catalog…</p>
+        <p role="status" className="p-8 text-center text-sm text-slate-500">Loading course catalogue…</p>
       ) : visibleCourses.length ? (
         <>
           <ul className="divide-y divide-slate-100">
@@ -128,21 +110,14 @@ export default function CourseCatalog() {
                   <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{course.code}</p>
                   <h3 className="mt-1 font-semibold text-slate-900">{course.title}</h3>
                   {course.description && <p className="mt-1 max-w-2xl text-sm text-slate-600">{course.description}</p>}
-                  <p className="mt-1 text-xs text-slate-500">{course.credits} credits</p>
+                  <p className="mt-1 text-xs text-slate-500">{course.school_name} / {course.department_name} · {course.credits} total credits · {course.units?.length ?? 0} units</p>
                 </div>
                 {enrollment?.status === 'active' ? (
                   <span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">Enrolled</span>
                 ) : enrollment ? (
                   <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold capitalize text-slate-600">{enrollment.status}</span>
                 ) : (
-                  <button
-                    type="button"
-                    disabled={submittingId !== null}
-                    onClick={() => void enroll(course)}
-                    className="shrink-0 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {submittingId === course.id ? 'Enrolling…' : 'Enroll'}
-                  </button>
+                  <span className="max-w-44 rounded-lg bg-slate-50 px-3 py-2 text-center text-xs font-medium text-slate-600">Course enrolment is managed by the administration</span>
                 )}
               </li>
             );

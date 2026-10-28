@@ -13,6 +13,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState({
     email: '',
     username: '',
+    admission_number: '',
     first_name: '',
     last_name: '',
     password: '',
@@ -45,6 +46,7 @@ export default function RegisterPage() {
     await api.post('/auth/register/', {
       email: form.email.trim(),
       username: form.username.trim(),
+      admission_number: form.admission_number.trim(),
       first_name: form.first_name.trim(),
       last_name: form.last_name.trim(),
       password: form.password,
@@ -126,6 +128,22 @@ export default function RegisterPage() {
                 required
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="admission_number" className="block text-sm font-medium text-gray-700 mb-1">
+                Admission / Registration Number
+              </label>
+              <input
+                id="admission_number"
+                type="text"
+                required
+                maxLength={30}
+                placeholder="e.g. 23/08181"
+                value={form.admission_number}
+                onChange={(e) => setForm({ ...form, admission_number: e.target.value })}
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
               />
             </div>
