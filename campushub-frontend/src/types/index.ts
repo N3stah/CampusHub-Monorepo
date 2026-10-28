@@ -4,6 +4,7 @@ export interface User {
   username: string;
   first_name: string;
   last_name: string;
+  admission_number?: string | null;
   full_name?: string;
   role: 'student' | 'lecturer' | 'officer' | 'admin';
   department: number | null;

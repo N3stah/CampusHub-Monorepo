@@ -15,8 +15,6 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [droppingId, setDroppingId] = useState<number | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const loadCourses = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -31,22 +29,6 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
     }
   }, []);
 
-  async function dropCourse(enrollment: Enrollment) {
-    if (!window.confirm(`Drop ${enrollment.course_code} — ${enrollment.course_title}?`)) return;
-    setDroppingId(enrollment.id);
-    setError(null);
-    setNotice(null);
-    try {
-      await api.delete(`/academics/enrollments/${enrollment.id}/`);
-      setNotice(`${enrollment.course_code} has been dropped.`);
-      await loadCourses();
-    } catch (requestError) {
-      setError(getApiErrorMessage(requestError));
-    } finally {
-      setDroppingId(null);
-    }
-  }
-
   useEffect(() => {
     const controller = new AbortController();
     void Promise.resolve().then(() => loadCourses(controller.signal));
@@ -60,9 +42,8 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
         <div>
           <h2 id="my-courses-heading" className="font-semibold">My courses</h2>
-          <p className="mt-1 text-xs text-slate-500">Courses you are currently taking</p>
+          <p className="mt-1 text-xs text-slate-500">Courses assigned to your student account</p>
         </div>
-        {notice && <p role="status" className="border-b border-emerald-100 bg-emerald-50 px-5 py-3 text-sm text-emerald-800">{notice}</p>}
         {courses.length > 0 && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{courses.length}</span>}
       </div>
       {loading ? (
@@ -76,28 +57,20 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
         <ul className={compact ? 'divide-y divide-slate-100' : 'grid gap-3 p-4 sm:grid-cols-2'}>
           {courses.map((enrollment) => (
             <li key={enrollment.id}>
-              <div className={`flex items-center justify-between gap-3 ${compact ? 'py-4 first:pt-1 last:pb-1' : 'h-full rounded-xl border border-slate-200 p-4'}`}>
+              <div className={`${compact ? 'py-4 first:pt-1 last:pb-1' : 'h-full rounded-xl border border-slate-200 p-4'}`}>
                 <Link href={`/courses/${enrollment.course_id}`} className="min-w-0 flex-1 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-700">
                   <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{enrollment.course_code}</p>
                   <p className="mt-1 font-semibold text-slate-900">{enrollment.course_title}</p>
                   <span className="mt-3 inline-flex text-sm font-semibold text-blue-700">Open course →</span>
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => void dropCourse(enrollment)}
-                  disabled={droppingId !== null}
-                  className="shrink-0 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
-                >
-                  {droppingId === enrollment.id ? 'Dropping…' : 'Drop'}
-                </button>
               </div>
             </li>
           ))}
         </ul>
       ) : (
         <div className="px-5 py-8 text-center">
-          <p className="text-sm font-medium text-slate-700">No active courses yet</p>
-          <p className="mt-1 text-sm text-slate-500">Your enrolled courses will appear here.</p>
+          <p className="text-sm font-medium text-slate-700">No course enrolments yet</p>
+          <p className="mt-1 text-sm text-slate-500">The administration will add your courses after registration.</p>
         </div>
       )}
     </section>

@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import api from '@/lib/api';
 import DirectoryPage from '@/components/DirectoryPage';
 import PortalShell from '@/components/PortalShell';
-import { getApiErrorMessage, getDepartmentName } from '@/lib/portal';
-import type { Lecturer } from '@/types/portal';
+import { getApiErrorMessage, getApiPage, getDepartmentName } from '@/lib/portal';
+import type { Lecturer, School } from '@/types/portal';
 import { useAuth } from '@/context/AuthContext';
 
 interface LecturerForm {
@@ -13,6 +13,7 @@ interface LecturerForm {
   last_name: string;
   email: string;
   username: string;
+  school_id: string;
   department: string;
   title: string;
   bio: string;
@@ -25,6 +26,7 @@ const emptyForm: LecturerForm = {
   last_name: '',
   email: '',
   username: '',
+  school_id: '',
   department: '',
   title: '',
   bio: '',
@@ -34,6 +36,8 @@ const emptyForm: LecturerForm = {
 
 export default function LecturersPage() {
   const { user } = useAuth();
+  const [schools, setSchools] = useState<School[]>([]);
+  const [departments, setDepartments] = useState<{ id: number; code: string; name: string; school_id: number; school__name: string }[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [editingLecturer, setEditingLecturer] = useState<Lecturer | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -43,6 +47,22 @@ export default function LecturersPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const canManageLecturers = user?.role === 'admin';
 
+  useEffect(() => {
+    if (!canManageLecturers) return;
+    let active = true;
+    void Promise.all([
+      getApiPage<School>('/academics/schools/', {}),
+      getApiPage<{ id: number; code: string; name: string; school_id: number; school__name: string }>('/academics/departments/', {}),
+    ]).then(([schoolPage, departmentPage]) => {
+      if (!active) return;
+      setSchools(schoolPage.results);
+      setDepartments(departmentPage.results);
+    }).catch((error: unknown) => {
+      if (active) setFormError(getApiErrorMessage(error));
+    });
+    return () => { active = false; };
+  }, [canManageLecturers]);
+
   function openCreateForm() {
     setEditingLecturer(null);
     setForm(emptyForm);
@@ -51,13 +71,16 @@ export default function LecturersPage() {
   }
 
   function openEditForm(lecturer: Lecturer) {
+    const departmentId = typeof lecturer.department === 'number' ? lecturer.department : 0;
+    const department = departments.find((item) => item.id === departmentId);
     setEditingLecturer(lecturer);
     setForm({
       first_name: lecturer.first_name,
       last_name: lecturer.last_name,
       email: lecturer.email,
       username: lecturer.username,
-      department: typeof lecturer.department === 'number' ? String(lecturer.department) : '',
+      school_id: department ? String(department.school_id) : '',
+      department: departmentId ? String(departmentId) : '',
       title: lecturer.title ?? '',
       bio: lecturer.bio ?? '',
       office_hours: lecturer.office_hours ?? '',
@@ -71,7 +94,8 @@ export default function LecturersPage() {
     event.preventDefault();
     setSaving(true);
     setFormError(null);
-    const { password, department, ...lecturerData } = form;
+    const { password, school_id, department, ...lecturerData } = form;
+    void school_id;
     const payload = {
       ...lecturerData,
       role: 'lecturer',
@@ -122,7 +146,7 @@ export default function LecturersPage() {
   }
 
   return (
-    <PortalShell roles={['admin', 'officer', 'lecturer']}>
+    <PortalShell roles={['admin']}>
       <div className="space-y-4">
         {notice && (
           <div role="status" className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
@@ -135,7 +159,7 @@ export default function LecturersPage() {
         )}
         <DirectoryPage<Lecturer>
           title="Lecturers"
-          description="Browse lecturer contacts, departments, and courses. Administrators can create, update, and deactivate lecturer accounts."
+          description="Browse lecturer contacts and their home departments. Teaching assignments are managed per programme unit."
           endpoint="/lecturers/"
           searchPlaceholder="Search by name, email, or course"
           emptyMessage="No lecturers found. Try changing your search."
@@ -192,7 +216,7 @@ export default function LecturersPage() {
               ),
             },
             { label: 'Email', render: (lecturer) => <span className="text-slate-600">{lecturer.email}</span> },
-            { label: 'Department', render: (lecturer) => <span className="text-slate-600">{getDepartmentName(lecturer.department)}</span> },
+            { label: 'School / department', render: (lecturer) => <span className="text-slate-600">{lecturer.school_name && lecturer.department_name ? `${lecturer.school_name} / ${lecturer.department_name}` : getDepartmentName(lecturer.department)}</span> },
             {
               label: 'Courses',
               render: (lecturer) => (
@@ -260,8 +284,17 @@ export default function LecturersPage() {
                     <input required type="password" autoComplete="new-password" minLength={8} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
                   </label>
                 )}
-                <label className="text-sm font-medium text-slate-700">Department ID
-                  <input type="number" min="1" value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
+                <label className="text-sm font-medium text-slate-700">School
+                  <select required value={form.school_id} onChange={(event) => setForm({ ...form, school_id: event.target.value, department: '' })} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100">
+                    <option value="">Choose school</option>
+                    {schools.filter((school) => school.code !== 'UNASSIGNED').map((school) => <option key={school.id} value={school.id}>{school.code} — {school.name}</option>)}
+                  </select>
+                </label>
+                <label className="text-sm font-medium text-slate-700">Home department
+                  <select required value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100">
+                    <option value="">Choose department</option>
+                    {departments.filter((department) => String(department.school_id) === form.school_id).map((department) => <option key={department.id} value={department.id}>{department.code} — {department.name}</option>)}
+                  </select>
                 </label>
                 <label className="text-sm font-medium text-slate-700">Job title
                   <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />

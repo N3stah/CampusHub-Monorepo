@@ -7,6 +7,7 @@ import DownloadApplicationCvButton from '@/components/DownloadApplicationCvButto
 import type { ApiPage, StudentApplication } from '@/types/portal';
 
 const statuses = ['pending', 'shortlisted', 'accepted', 'rejected'] as const;
+const statusFilters = ['all', ...statuses] as const;
 
 const statusStyle: Record<string, string> = {
   pending: 'bg-amber-50 text-amber-800',
@@ -21,6 +22,7 @@ export default function ApplicationReviewPanel() {
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
+  const [activeStatus, setActiveStatus] = useState<typeof statusFilters[number]>('all');
 
   const loadApplications = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -33,6 +35,11 @@ export default function ApplicationReviewPanel() {
       if (!signal?.aborted) setLoading(false);
     }
   }, [pageNumber]);
+
+  const applications = page?.results ?? [];
+  const filteredApplications = activeStatus === 'all'
+    ? applications
+    : applications.filter((application) => application.status === activeStatus);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -61,10 +68,35 @@ export default function ApplicationReviewPanel() {
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
         <div>
           <h2 id="review-applications-heading" className="font-semibold">Review applications</h2>
-          <p className="mt-1 text-xs text-slate-500">Update shortlisted, accepted, or rejected decisions</p>
+          <p className="mt-1 text-xs text-slate-500">Review applicants and update their decisions.</p>
         </div>
         {page && <span className="text-sm text-slate-500">{page.count} total</span>}
       </div>
+      {page && (
+        <div className="flex gap-2 overflow-x-auto border-b border-slate-100 px-5 py-3" aria-label="Filter applications by status">
+          {statusFilters.map((status) => {
+            const count = status === 'all'
+              ? applications.length
+              : applications.filter((application) => application.status === status).length;
+            const label = status === 'all' ? 'All applications' : `${status[0].toUpperCase()}${status.slice(1)}`;
+            return (
+              <button
+                key={status}
+                type="button"
+                aria-pressed={activeStatus === status}
+                onClick={() => setActiveStatus(status)}
+                className={`shrink-0 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                  activeStatus === status
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                {label}<span className="ml-1.5 text-xs opacity-70">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {error && (
         <div className="flex flex-col justify-between gap-2 border-b border-red-100 bg-red-50 px-5 py-3 text-sm text-red-800 sm:flex-row sm:items-center">
           <p role="alert">{error}</p>
@@ -73,7 +105,7 @@ export default function ApplicationReviewPanel() {
       )}
       {loading ? (
         <p role="status" className="px-5 py-8 text-center text-sm text-slate-500">Loading applications…</p>
-      ) : page?.results.length ? (
+      ) : page && filteredApplications.length ? (
         <>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm">
@@ -88,13 +120,8 @@ export default function ApplicationReviewPanel() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {page.results.map((application) => (
+                {filteredApplications.map((application) => (
                   <tr key={application.id}>
-                    <td className="px-5 py-4">
-                      {application.cv_file
-                        ? <DownloadApplicationCvButton applicationId={application.id} cvUrl={application.cv_file} />
-                        : <span className="text-xs text-slate-500">Not provided</span>}
-                    </td>
                     <td className="px-5 py-4">
                       <p className="font-semibold text-slate-900">
                         {application.student
@@ -116,6 +143,11 @@ export default function ApplicationReviewPanel() {
                       <span className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${statusStyle[application.status] ?? 'bg-slate-100 text-slate-700'}`}>
                         {application.status}
                       </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      {application.cv_file
+                        ? <DownloadApplicationCvButton applicationId={application.id} cvUrl={application.cv_file} />
+                        : <span className="text-xs text-slate-500">Not provided</span>}
                     </td>
                     <td className="px-5 py-4">
                       <label className="sr-only" htmlFor={`application-status-${application.id}`}>Update status for application {application.id}</label>
@@ -156,7 +188,11 @@ export default function ApplicationReviewPanel() {
           </div>
         </>
       ) : (
-        <p className="px-5 py-8 text-center text-sm text-slate-500">{error ? 'Applications could not be loaded.' : 'No applications have been submitted yet.'}</p>
+        <p role="status" className="px-5 py-8 text-center text-sm text-slate-500">
+          {error
+            ? 'Applications could not be loaded.'
+            : activeStatus === 'all' ? 'No applications have been submitted yet.' : `No ${activeStatus} applications.`}
+        </p>
       )}
     </section>
   );
