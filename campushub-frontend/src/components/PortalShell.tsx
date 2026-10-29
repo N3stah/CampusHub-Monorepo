@@ -15,7 +15,8 @@ interface PortalShellProps {
 const navigation: { label: string; href: string; roles: User['role'][] }[] = [
   { label: 'Overview', href: '/dashboard', roles: ['student', 'lecturer', 'officer', 'admin'] },
   { label: 'Units', href: '/lecturer/units', roles: ['lecturer'] },
-  { label: 'Settings', href: '/profile', roles: ['lecturer'] },
+  { label: 'Lesson plan', href: '/lecturer/lessons', roles: ['lecturer'] },
+  { label: 'Attendance', href: '/lecturer/attendance', roles: ['lecturer'] },
   { label: 'Learning materials / notes', href: '/lecturer/materials', roles: ['lecturer'] },
   { label: 'Assignments', href: '/assignments', roles: ['student', 'lecturer'] },
   { label: 'My courses', href: '/courses', roles: ['student'] },
@@ -91,6 +92,24 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12a2 2 0 0 0 4 0" />
               </svg>
             </Link>
+            {user.role === 'lecturer' && (
+              <Link
+                href="/profile"
+                aria-label="Settings"
+                title="Settings"
+                aria-current={pathname === '/profile' ? 'page' : undefined}
+                className={`rounded-lg border p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${
+                  pathname === '/profile'
+                    ? 'border-blue-200 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-blue-700'
+                }`}
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m19.4 15 .1.1a1.8 1.8 0 1 1-2.55 2.55l-.1-.1a1.8 1.8 0 0 0-3.06 1.27v.28a1.8 1.8 0 1 1-3.6 0v-.15a1.8 1.8 0 0 0-3.06-1.27l-.1.1a1.8 1.8 0 1 1-2.55-2.55l.1-.1a1.8 1.8 0 0 0-1.27-3.06h-.28a1.8 1.8 0 1 1 0-3.6h.15a1.8 1.8 0 0 0 1.27-3.06l-.1-.1A1.8 1.8 0 1 1 7 2.63l.1.1a1.8 1.8 0 0 0 3.06-1.27v-.28a1.8 1.8 0 1 1 3.6 0v.15a1.8 1.8 0 0 0 3.06 1.27l.1-.1a1.8 1.8 0 1 1 2.55 2.55l-.1.1a1.8 1.8 0 0 0 1.27 3.06h.28a1.8 1.8 0 1 1 0 3.6h-.15A1.8 1.8 0 0 0 19.4 15Z" />
+                </svg>
+              </Link>
+            )}
             {user.role !== 'lecturer' && (
               <Link
                 href="/profile"

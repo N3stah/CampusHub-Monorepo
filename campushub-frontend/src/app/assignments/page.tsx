@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
 import { downloadBlob, getDownloadFilename } from '@/lib/application-files';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
-import type { AssignmentSubmission, UnitAssignment } from '@/types/portal';
+import type { AcademicUnit, AssignmentSubmission, UnitAssignment } from '@/types/portal';
 
 function countdown(dueAt: string, now: number) {
   const difference = new Date(dueAt).getTime() - now;
@@ -41,6 +41,8 @@ function submissionTiming(submittedAt: string, dueAt: string) {
 export default function AssignmentsPage() {
   const { user } = useAuth();
   const [assignments, setAssignments] = useState<UnitAssignment[]>([]);
+  const [teachingUnits, setTeachingUnits] = useState<{ offeringId: number; code: string; title: string; courseCode: string }[]>([]);
+  const [selectedOfferingId, setSelectedOfferingId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
@@ -53,15 +55,28 @@ export default function AssignmentsPage() {
 
   const loadAssignments = useCallback(async (signal?: AbortSignal) => {
     try {
-      const page = await getApiPage<UnitAssignment>('/academics/assignments/', {}, signal);
+      const [page, unitsPage] = await Promise.all([
+        getApiPage<UnitAssignment>('/academics/assignments/', {}, signal),
+        user?.role === 'lecturer'
+          ? getApiPage<AcademicUnit>('/academics/units/', {}, signal)
+          : Promise.resolve(null),
+      ]);
       setAssignments(page.results);
+      setTeachingUnits(unitsPage?.results.flatMap((unit) => unit.offerings
+        .filter((offering) => offering.lecturers.some((lecturer) => lecturer.id === user?.id))
+        .map((offering) => ({
+          offeringId: offering.offering_id,
+          code: unit.code,
+          title: unit.title,
+          courseCode: offering.course_code,
+        }))) ?? []);
       setError(null);
     } catch (requestError) {
       if (!signal?.aborted) setError(getApiErrorMessage(requestError));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, []);
+  }, [user?.id, user?.role]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -165,7 +180,24 @@ export default function AssignmentsPage() {
     }
   }
 
-  const orderedAssignments = [...assignments].sort((a, b) => Date.parse(a.due_at) - Date.parse(b.due_at));
+  async function downloadAssignmentDocument(assignment: UnitAssignment) {
+    try {
+      const response = await api.get<Blob>(
+        `/academics/assignments/${assignment.id}/attachment/`,
+        { responseType: 'blob' },
+      );
+      downloadBlob(
+        response.data,
+        getDownloadFilename(response.headers['content-disposition'], assignment.attachment_name ?? 'assignment-document'),
+      );
+    } catch (requestError) {
+      setSubmitErrors((current) => ({ ...current, [assignment.id]: getApiErrorMessage(requestError) }));
+    }
+  }
+
+  const orderedAssignments = [...assignments]
+    .filter((assignment) => !selectedOfferingId || String(assignment.offering_id) === selectedOfferingId)
+    .sort((a, b) => Date.parse(a.due_at) - Date.parse(b.due_at));
 
   return (
     <PortalShell roles={['student', 'lecturer']}>
@@ -179,25 +211,63 @@ export default function AssignmentsPage() {
           <p role="status" className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading assignments…</p>
         ) : error ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-5"><p role="alert" className="text-sm text-red-800">{error}</p><button type="button" onClick={() => { setLoading(true); void loadAssignments(); }} className="mt-2 text-sm font-semibold text-red-900 underline">Try again</button></div>
-        ) : orderedAssignments.length ? (
-          <ol className="space-y-3">
+        ) : (user?.role === 'lecturer' ? teachingUnits.length > 0 : orderedAssignments.length > 0) ? (
+          <>
+          {user?.role === 'lecturer' && (
+            <section aria-label="Filter assignments by unit" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div><h2 className="font-semibold">Assignments by unit</h2><p className="mt-1 text-sm text-slate-600">Choose a unit to view only its assignments and CATS.</p></div>
+                <button type="button" onClick={() => setSelectedOfferingId('')} aria-pressed={!selectedOfferingId} className={`rounded-lg px-3 py-2 text-sm font-semibold ${!selectedOfferingId ? 'bg-blue-700 text-white' : 'border border-slate-200 text-slate-700 hover:bg-slate-50'}`}>All units</button>
+              </div>
+              <ul className="mt-4 flex flex-wrap gap-2">
+                {teachingUnits.map((unit) => {
+                  const count = assignments.filter((assignment) => assignment.offering_id === unit.offeringId).length;
+                  return <li key={unit.offeringId}><button type="button" onClick={() => setSelectedOfferingId(String(unit.offeringId))} aria-pressed={selectedOfferingId === String(unit.offeringId)} className={`rounded-xl border px-4 py-3 text-left ${selectedOfferingId === String(unit.offeringId) ? 'border-blue-700 bg-blue-50 text-blue-900' : 'border-slate-200 hover:border-blue-300'}`}><span className="block text-xs font-bold uppercase tracking-wide text-blue-700">{unit.code} · {unit.courseCode}</span><span className="mt-1 block text-sm font-semibold">{unit.title}</span><span className="mt-1 block text-xs text-slate-500">{count} {count === 1 ? 'assignment' : 'assignments'}</span></button></li>;
+                })}
+              </ul>
+            </section>
+          )}
+          {orderedAssignments.length ? <ol className="space-y-3">
             {orderedAssignments.map((assignment) => {
               const isPastDue = Date.parse(assignment.due_at) <= now;
               const submission = submissions[assignment.id];
+              const isLecturer = user?.role === 'lecturer';
               return (
-                <li key={assignment.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{assignment.unit_code} · {assignment.course_code}</p>
-                      <h2 className="mt-1 text-lg font-semibold">{assignment.title}</h2>
-                      <p className="mt-1 text-sm text-slate-600">{assignment.unit_title} · {assignment.max_points} points · {assignment.assignment_type === 'quiz' ? 'Multiple-choice quiz' : 'File submission'}</p>
+                <li key={assignment.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  {isLecturer ? (
+                    <Link
+                      href={`/lecturer/assignments/${assignment.id}`}
+                      aria-label={`Open ${assignment.title}`}
+                      className="flex w-full flex-wrap items-start justify-between gap-4 p-5 text-left transition hover:bg-slate-50"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{assignment.unit_code} · {assignment.course_code}</p>
+                        <h2 className="mt-1 text-lg font-semibold text-slate-900">{assignment.title}</h2>
+                        <p className="mt-1 text-sm text-slate-600">{assignment.unit_title} · {assignment.max_points} points · {assignment.assignment_type === 'quiz' ? 'Multiple-choice quiz' : 'File submission'}</p>
+                      </div>
+                      <div className="text-left sm:text-right">
+                        <p className="text-xs text-slate-500">Due {new Date(assignment.due_at).toLocaleString()}</p>
+                        <p className={`mt-1 text-sm font-bold ${isPastDue ? 'text-red-700' : 'text-amber-800'}`} aria-live="polite">{countdown(assignment.due_at, now)}</p>
+                        <span className="mt-2 block text-xs font-semibold text-blue-700">Open assignment →</span>
+                      </div>
+                    </Link>
+                  ) : (
+                    <div className="p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{assignment.unit_code} · {assignment.course_code}</p>
+                          <h2 className="mt-1 text-lg font-semibold">{assignment.title}</h2>
+                          <p className="mt-1 text-sm text-slate-600">{assignment.unit_title} · {assignment.max_points} points · {assignment.assignment_type === 'quiz' ? 'Multiple-choice quiz' : 'File submission'}</p>
+                        </div>
+                        <div className="text-left sm:text-right">
+                          <p className="text-xs text-slate-500">Due {new Date(assignment.due_at).toLocaleString()}</p>
+                          <p className={`mt-1 text-sm font-bold ${isPastDue ? 'text-red-700' : 'text-amber-800'}`} aria-live="polite">{countdown(assignment.due_at, now)}</p>
+                        </div>
+                      </div>
+                      <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">{assignment.instructions}</p>
+                      {assignment.attachment_name && <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3"><p className="text-sm font-semibold text-blue-900">Assignment document</p><p className="mt-1 text-sm text-blue-800">{assignment.attachment_name}</p><button type="button" onClick={() => void downloadAssignmentDocument(assignment)} className="mt-2 text-sm font-semibold text-blue-900 underline">Open / download document</button></div>}
                     </div>
-                    <div className="text-left sm:text-right">
-                      <p className="text-xs text-slate-500">Due {new Date(assignment.due_at).toLocaleString()}</p>
-                      <p className={`mt-1 text-sm font-bold ${isPastDue ? 'text-red-700' : 'text-amber-800'}`} aria-live="polite">{countdown(assignment.due_at, now)}</p>
-                    </div>
-                  </div>
-                  <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">{assignment.instructions}</p>
+                  )}
                   {user?.role === 'student' && (
                     <section aria-label={`Submit ${assignment.title}`} className="mt-5 border-t border-slate-100 pt-4">
                       {submissionLoading[assignment.id] ? (
@@ -255,14 +325,16 @@ export default function AssignmentsPage() {
                       )}
                     </section>
                   )}
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    {user?.role === 'student' && <Link href={`/courses/${assignment.course_id}#unit-${assignment.unit_id}`} className="text-sm font-semibold text-blue-700 hover:underline">Open unit →</Link>}
-                    {user?.role === 'lecturer' && <Link href={`/lecturer/units/${assignment.offering_id}#assignments`} className="text-sm font-semibold text-blue-700 hover:underline">Manage assignment →</Link>}
-                  </div>
+                  {user?.role === 'student' && (
+                    <div className="mt-4 flex flex-wrap gap-3 px-5 pb-5">
+                      <Link href={`/courses/${assignment.course_id}#unit-${assignment.unit_id}`} className="text-sm font-semibold text-blue-700 hover:underline">Open unit →</Link>
+                    </div>
+                  )}
                 </li>
               );
             })}
-          </ol>
+          </ol> : <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center"><p className="font-semibold">No assignments for this unit yet</p><p className="mt-1 text-sm text-slate-500">Choose another unit or publish an assignment from this unit page.</p></div>}
+          </>
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
             <p className="font-semibold">No assignments to show</p>

@@ -10,6 +10,8 @@ export interface CourseRosterEntry {
   student_id: number;
   student_name: string;
   admission_number: string | null;
+  course_code?: string;
+  course_title?: string;
   student_email: string;
   status: string;
   enrolled_at: string;
@@ -157,6 +159,8 @@ export interface CourseResource {
   category?: 'introduction' | 'notes' | 'topic' | 'assignment' | string;
   unit_id?: number | null;
   unit_code?: string | null;
+  lesson_id?: number | null;
+  lesson_title?: string | null;
   file_url?: string | null;
   file_size?: number;
   file_type?: string;
@@ -169,6 +173,10 @@ export interface CourseAnnouncement {
   title: string;
   body: string;
   is_pinned?: boolean;
+  target_group_id?: number | null;
+  target_group_name?: string | null;
+  publish_at?: string | null;
+  is_published?: boolean;
   created_at: string;
   author?: string;
   unit_id?: number | null;
@@ -186,6 +194,8 @@ export interface UnitAssignment {
   course_title: string;
   title: string;
   instructions: string;
+  attachment_name?: string | null;
+  attachment_url?: string | null;
   assignment_type: 'file' | 'quiz';
   allowed_file_types: string[];
   questions: AssignmentQuestion[];
@@ -210,6 +220,7 @@ export interface AssignmentSubmission {
   score: string | null;
   feedback: string;
   graded_at: string | null;
+  grade_released?: boolean;
 }
 
 export interface ClassSession {
@@ -231,7 +242,7 @@ export interface ClassSession {
 
 export interface CalendarEvent {
   id: string;
-  kind: 'class' | 'assignment';
+  kind: 'class' | 'assignment' | 'lesson';
   title: string;
   unit_code: string;
   offering_id: number;
@@ -240,6 +251,16 @@ export interface CalendarEvent {
   end_time: string | null;
   location: string | null;
   due_at: string | null;
+}
+
+export interface UnitLesson {
+  id: number;
+  offering_id: number;
+  title: string;
+  description: string;
+  scheduled_at: string;
+  duration_minutes: number;
+  created_at: string;
 }
 
 export interface UnitGroupSet {
