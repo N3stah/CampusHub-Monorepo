@@ -12,6 +12,15 @@ interface AssignedUnit {
   offeringId: number;
 }
 
+interface LecturerSummary {
+  unit_count: number;
+  upcoming_lesson_count: number;
+  upcoming_assignment_count: number;
+  unmarked_submission_count: number;
+  pending_assignments: { id: number; title: string; unit_code: string; unmarked_count: number }[];
+  upcoming_dates: { id: string; title: string; unit_code: string; kind: string; at: string }[];
+}
+
 const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 function dateInputValue(value: Date) {
@@ -59,6 +68,8 @@ export default function LecturerDashboard() {
   const { user } = useAuth();
   const [units, setUnits] = useState<AcademicUnit[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [summary, setSummary] = useState<LecturerSummary | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState(() => dateInputValue(new Date()));
   const [unitsLoading, setUnitsLoading] = useState(true);
@@ -117,14 +128,26 @@ export default function LecturerDashboard() {
     }
   }, [visibleMonth]);
 
+  const loadSummary = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const response = await api.get<LecturerSummary>('/academics/lecturer/summary/', { signal });
+      if (signal?.aborted) return;
+      setSummary(response.data);
+      setSummaryError(null);
+    } catch (requestError) {
+      if (!signal?.aborted) setSummaryError(getApiErrorMessage(requestError));
+    }
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     void Promise.resolve().then(() => {
       void loadUnits(controller.signal);
       void loadCalendar(controller.signal);
+      void loadSummary(controller.signal);
     });
     return () => controller.abort();
-  }, [loadUnits, loadCalendar]);
+  }, [loadUnits, loadCalendar, loadSummary]);
 
   const eventsByDate = useMemo(() => {
     const grouped = new Map<string, CalendarEvent[]>();
@@ -134,6 +157,7 @@ export default function LecturerDashboard() {
   const displayedDays = useMemo(() => monthDays(visibleMonth), [visibleMonth]);
   const selectedDayEvents = eventsByDate.get(selectedDate) ?? [];
   const monthLabel = visibleMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const pendingAssignments = summary?.pending_assignments ?? [];
 
   const selectedOfferingId = sessionForm.offering_id || String(assignedUnits[0]?.offeringId ?? '');
 
@@ -198,6 +222,23 @@ export default function LecturerDashboard() {
         ) : (
           <p className="px-5 py-8 text-center text-sm text-slate-500">No units are currently assigned to your account.</p>
         )}
+      </section>
+
+      <section aria-label="Teaching at a glance" className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div><h2 className="font-semibold text-slate-900">Teaching at a glance</h2><p className="mt-1 text-xs text-slate-500">The next steps and activity that may need your attention.</p></div>
+          <div className="flex flex-wrap gap-2"><Link href="/lecturer/lessons" className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-800 hover:bg-indigo-50">Plan lessons</Link><Link href="/lecturer/attendance" className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50">Take attendance</Link><Link href="/lecturer/materials" className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-50">Publish materials</Link></div>
+        </div>
+        {summaryError && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><p>{summaryError}</p><button type="button" onClick={() => void loadSummary()} className="font-semibold underline">Try again</button></div>}
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            { label: 'Assigned units', count: summary?.unit_count ?? assignedUnits.length, href: '/lecturer/units', color: 'text-blue-700', caption: 'Open your teaching units' },
+            { label: 'Upcoming lessons', count: summary?.upcoming_lesson_count ?? '—', href: '/lecturer/lessons', color: 'text-indigo-700', caption: 'Review your lesson plan' },
+            { label: 'Assignment deadlines', count: summary?.upcoming_assignment_count ?? '—', href: '/assignments', color: 'text-amber-700', caption: 'Review published work' },
+            { label: 'Submissions to mark', count: summary?.unmarked_submission_count ?? '—', href: pendingAssignments[0] ? `/lecturer/assignments/${pendingAssignments[0].id}` : '/assignments', color: 'text-emerald-700', caption: 'Review student work' },
+          ].map((item) => <Link key={item.label} href={item.href} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"><span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</span><strong className={`mt-1 block text-2xl ${item.color}`}>{item.count}</strong><span className="mt-1 block text-xs text-slate-500">{item.caption}</span></Link>)}
+        </div>
+        {pendingAssignments.length ? <section className="rounded-xl border border-amber-200 bg-amber-50/60 p-4"><h3 className="text-sm font-semibold text-amber-900">Marking queue</h3><ul className="mt-2 grid gap-2 sm:grid-cols-2">{pendingAssignments.map((assignment) => <li key={assignment.id}><Link href={`/lecturer/assignments/${assignment.id}`} className="flex items-center justify-between gap-3 rounded-lg border border-amber-100 bg-white px-3 py-2.5 text-sm hover:border-amber-300"><span className="min-w-0"><span className="block truncate font-medium text-slate-900">{assignment.title}</span><span className="text-xs text-slate-500">{assignment.unit_code}</span></span><span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900">{assignment.unmarked_count} to mark</span></Link></li>)}</ul></section> : null}
       </section>
 
       <section aria-labelledby="lecturer-calendar-heading" className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(20rem,0.7fr)]">
@@ -278,7 +319,7 @@ export default function LecturerDashboard() {
                     <span>{day.getDate()}</span>
                     {dayEvents.length > 0 && (
                       <span className={`flex gap-0.5 ${isSelected ? 'text-white' : ''}`} aria-hidden="true">
-                        {dayEvents.slice(0, 3).map((item) => <span key={item.id} className={`h-1 w-1 rounded-full ${isSelected ? 'bg-white' : item.kind === 'assignment' ? 'bg-amber-500' : 'bg-blue-600'}`} />)}
+                        {dayEvents.slice(0, 3).map((item) => <span key={item.id} className={`h-1 w-1 rounded-full ${isSelected ? 'bg-white' : item.kind === 'assignment' ? 'bg-amber-500' : item.kind === 'lesson' ? 'bg-emerald-500' : 'bg-blue-600'}`} />)}
                         {dayEvents.length > 3 && <span className="text-[9px] leading-none">+</span>}
                       </span>
                     )}
@@ -288,6 +329,7 @@ export default function LecturerDashboard() {
             </div>
             <div className="mt-4 flex flex-wrap gap-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-600" />Class</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" />Lesson</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-500" />Assignment deadline</span>
               {calendarLoading && <span role="status" className="ml-auto">Updating calendar…</span>}
             </div>
@@ -300,12 +342,12 @@ export default function LecturerDashboard() {
                   {selectedDayEvents.map((item) => (
                     <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                       <div className="min-w-0">
-                        <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{item.unit_code} · {item.kind === 'assignment' ? 'Deadline' : 'Class'}</p>
+                        <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{item.unit_code} · {item.kind === 'assignment' ? 'Deadline' : item.kind === 'lesson' ? 'Lesson' : 'Class'}</p>
                         <p className="mt-1 truncate text-sm font-semibold">{item.title}</p>
                         {item.location && <p className="mt-0.5 text-xs text-slate-500">{item.location}</p>}
                       </div>
-                      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${item.kind === 'assignment' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
-                        {item.kind === 'assignment' ? `Due ${item.start_time}` : `${item.start_time}–${item.end_time}`}
+                      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${item.kind === 'assignment' ? 'bg-amber-50 text-amber-800' : item.kind === 'lesson' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+                        {item.kind === 'assignment' ? `Due ${item.start_time}` : item.kind === 'lesson' ? item.start_time : `${item.start_time}–${item.end_time}`}
                       </span>
                     </li>
                   ))}

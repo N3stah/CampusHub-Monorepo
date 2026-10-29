@@ -273,13 +273,13 @@ export default function StudentDashboard() {
                 {selectedDayEvents.map((event) => (
                   <li key={event.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                     <div className="min-w-0">
-                      <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{event.unit_code} · {event.kind === 'assignment' ? 'Deadline' : 'Class'}</p>
+                      <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{event.unit_code} · {event.kind === 'assignment' ? 'Deadline' : event.kind === 'lesson' ? 'Lesson' : 'Class'}</p>
                       <p className="mt-1 truncate text-sm font-semibold">{event.title}</p>
                       {event.location && <p className="mt-0.5 text-xs text-slate-500">{event.location}</p>}
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${event.kind === 'assignment' ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
-                        {event.kind === 'assignment' ? `Due ${event.start_time}` : `${event.start_time}–${event.end_time}`}
+                      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${event.kind === 'assignment' ? 'bg-amber-50 text-amber-800' : event.kind === 'lesson' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+                        {event.kind === 'assignment' ? `Due ${event.start_time}` : event.kind === 'lesson' ? event.start_time : `${event.start_time}–${event.end_time}`}
                       </span>
                       {event.kind === 'assignment' && <Link href="/assignments" className="text-sm font-semibold text-blue-700 hover:underline">Details</Link>}
                     </div>

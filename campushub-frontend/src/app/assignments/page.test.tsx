@@ -6,6 +6,7 @@ import { getApiPage } from '@/lib/portal';
 const mocks = vi.hoisted(() => ({
   getApiPage: vi.fn(),
   api: { get: vi.fn(), post: vi.fn() },
+  role: 'student' as 'student' | 'lecturer',
 }));
 
 vi.mock('@/lib/api', () => ({ default: mocks.api }));
@@ -14,7 +15,7 @@ vi.mock('@/lib/portal', async () => {
   return { ...actual, getApiPage: mocks.getApiPage };
 });
 vi.mock('@/context/AuthContext', () => ({
-  useAuth: () => ({ user: { role: 'student' } }),
+  useAuth: () => ({ user: { id: 5, role: mocks.role } }),
 }));
 vi.mock('@/components/PortalShell', () => ({
   default: ({ children }: { children: React.ReactNode }) => children,
@@ -22,8 +23,8 @@ vi.mock('@/components/PortalShell', () => ({
 vi.mock('next/link', async () => {
   const React = await import('react');
   return {
-    default: ({ href, children }: { href: string; children: React.ReactNode }) =>
-      React.createElement('a', { href }, children),
+    default: ({ href, children, ...props }: { href: string; children: React.ReactNode; [key: string]: unknown }) =>
+      React.createElement('a', { href, ...props }, children),
   };
 });
 
@@ -49,6 +50,8 @@ const assignment = {
 };
 
 beforeEach(() => {
+  mocks.role = 'student';
+  vi.mocked(mocks.api.get).mockReset();
   vi.mocked(getApiPage).mockResolvedValue({
     count: 1,
     next: null,
@@ -96,5 +99,48 @@ describe('assignment submission timing', () => {
 
     expect(await screen.findByText('Score: 18.50 / 20')).toBeInTheDocument();
     expect(screen.getByText('Clear analysis and good references.')).toBeInTheDocument();
+  });
+
+  it('opens a dedicated assignment detail page from the lecturer assignment list', async () => {
+    mocks.role = 'lecturer';
+    const lecturerAssignment = {
+      ...assignment,
+      title: 'Assignment 1',
+      unit_code: 'BIT01104',
+      course_code: 'BIT',
+      unit_title: 'Computer Applications',
+      instructions: 'Complete and submit the practical exercise.',
+    };
+    vi.mocked(getApiPage).mockImplementation(async (endpoint) => endpoint === '/academics/units/'
+      ? {
+        count: 1,
+        next: null,
+        previous: null,
+        results: [{
+          id: 2,
+          code: 'BIT01104',
+          title: 'Computer Applications',
+          offerings: [{
+            offering_id: 3,
+            course_code: 'BIT',
+            lecturers: [{ id: 5, name: 'Lecturer Example' }],
+          }],
+        }],
+      } as never
+      : {
+        count: 1,
+        next: null,
+        previous: null,
+        results: [lecturerAssignment],
+      });
+
+    render(<AssignmentsPage />);
+
+    const assignmentCard = await screen.findByRole('link', { name: 'Open Assignment 1' });
+    expect(assignmentCard).toHaveTextContent('BIT01104 · BIT');
+    expect(assignmentCard).toHaveAttribute('href', '/lecturer/assignments/8');
+    expect(screen.queryByText('Complete and submit the practical exercise.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /toggle assignment/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /manage assignment/i })).not.toBeInTheDocument();
   });
 });
