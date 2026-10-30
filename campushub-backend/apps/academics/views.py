@@ -1212,3 +1212,35 @@ def offering_groups(request, pk):
         groups = group_set.groups.all()
         data = [format_group(g, include_members=True) for g in groups]
         return JsonResponse({'count': len(data), 'results': data}, status=201)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def offering_roster_csv(request, pk):
+    user = request.user
+    try:
+        offering = Offering.objects.select_related('course').get(pk=pk)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+
+    if not is_offering_lecturer(user, offering):
+        return JsonResponse({'error': 'Only assigned lecturers or admins can export roster'}, status=403)
+
+    enrollments = Enrollment.objects.filter(course=offering.course).select_related('student').order_by('student__last_name')
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="roster_offering_{pk}.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(['Student', 'Email', 'Admission Number', 'Enrollment Status', 'Enrolled At'])
+
+    for e in enrollments:
+        writer.writerow([
+            e.student.get_full_name(),
+            e.student.email,
+            e.student.admission_number or '',
+            e.status,
+            e.enrolled_at.isoformat() if e.enrolled_at else ''
+        ])
+
+    return response
