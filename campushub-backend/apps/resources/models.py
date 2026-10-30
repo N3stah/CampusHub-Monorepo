@@ -7,6 +7,12 @@ class Resource(models.Model):
         on_delete=models.CASCADE,
         related_name='resources'
     )
+    offering = models.ForeignKey(
+        'academics.Offering',
+        on_delete=models.CASCADE,
+        null=True, blank=True,
+        related_name='resources'
+    )
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -18,14 +24,15 @@ class Resource(models.Model):
     file = models.FileField(upload_to='resources/%Y/%m/')
     file_type = models.CharField(max_length=10)
     file_size = models.PositiveIntegerField()
-    download_count = models.PositiveIntegerField(default=0)  # Added in A1
+    download_count = models.PositiveIntegerField(default=0)
+    category = models.CharField(max_length=20, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['-created_at']
         indexes = [
             models.Index(fields=['course', '-created_at']),
         ]
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.title} ({self.course.code})"
@@ -36,6 +43,12 @@ class Announcement(models.Model):
         on_delete=models.CASCADE,
         related_name='announcements'
     )
+    offering = models.ForeignKey(
+        'academics.Offering',
+        on_delete=models.CASCADE,
+        null=True, blank=True,
+        related_name='announcements'
+    )
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -44,12 +57,15 @@ class Announcement(models.Model):
     )
     title = models.CharField(max_length=200)
     body = models.TextField()
-    is_pinned = models.BooleanField(default=False)  # Added in A2
+    is_pinned = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-is_pinned', '-created_at']  # Pinned first, per ERD
+        indexes = [
+            models.Index(fields=['course', '-created_at']),
+        ]
+        ordering = ['-is_pinned', '-created_at']
 
     def __str__(self):
         return f"{self.title} ({self.course.code})"

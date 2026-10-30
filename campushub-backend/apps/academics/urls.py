@@ -17,4 +17,9 @@ urlpatterns = [
     path('admin/enrollments/<int:pk>/', views.admin_enrollment_update, name='admin-enrollment-update'),
     path('enrollments/', views.enrollment_list_create, name='enrollment-list-create'),
     path('enrollments/<int:pk>/', views.enrollment_drop, name='enrollment-drop'),
+    path('offerings/<int:pk>/', views.offering_detail, name='offering-detail'),
+    path('offerings/<int:pk>/roster/', views.offering_roster, name='offering-roster'),
+    path('offerings/<int:pk>/sessions/', views.offering_sessions, name='offering-sessions'),
+    path('sessions/<int:pk>/', views.session_delete, name='session-delete'),
+    path('calendar/', views.calendar_view, name='calendar'),
 ]

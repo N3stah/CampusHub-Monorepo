@@ -130,3 +130,19 @@ class Enrollment(models.Model):
 
     def __str__(self):
         return f"{self.student.email} - {self.course.code}"
+
+
+class ClassSession(models.Model):
+    offering = models.ForeignKey(Offering, on_delete=models.CASCADE, related_name='sessions')
+    day_of_week = models.IntegerField()  # 0=Monday .. 6=Sunday
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    starts_on = models.DateField()
+    ends_on = models.DateField()
+    location = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ['day_of_week', 'start_time']
+
+    def __str__(self):
+        return f"{self.offering.unit.code} - Day {self.day_of_week} at {self.start_time}"
