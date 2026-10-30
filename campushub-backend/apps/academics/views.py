@@ -940,8 +940,15 @@ def assignment_submission(request, pk):
             uploaded_file = request.FILES.get('file')
             if not uploaded_file:
                 return JsonResponse({'error': 'File is required for file-type assignments'}, status=400)
+            # File size guard (10 MB max)
+            MAX_FILE_SIZE = 10 * 1024 * 1024
+            if uploaded_file.size > MAX_FILE_SIZE:
+                return JsonResponse({'error': 'File too large (max 10MB)'}, status=400)
+            # Extension guard: assignment whitelist or global default
+            DEFAULT_ALLOWED_TYPES = ['pdf', 'docx', 'doc', 'txt', 'png', 'jpg', 'jpeg', 'zip']
+            allowed_types = assignment.allowed_file_types or DEFAULT_ALLOWED_TYPES
             ext = os.path.splitext(uploaded_file.name)[1][1:].lower()
-            if assignment.allowed_file_types and ext not in assignment.allowed_file_types:
+            if ext not in allowed_types:
                 return JsonResponse({'error': f'File type {ext} not allowed'}, status=400)
             submission = AssignmentSubmission.objects.create(
                 assignment=assignment, student=user, file=uploaded_file
