@@ -855,6 +855,15 @@ def offering_assignments(request, pk):
             return JsonResponse({'error': 'Only assigned lecturers or admins can create assignments'}, status=403)
         try:
             data = json.loads(request.body)
+            # Validate type vs questions consistency
+            atype = data.get('assignment_type')
+            questions = data.get('questions', [])
+            if atype == 'quiz':
+                if not questions:
+                    return JsonResponse({'error': 'Quiz assignments require at least one question'}, status=400)
+                for q in questions:
+                    if q.get('correct_option') is None:
+                        return JsonResponse({'error': 'Each quiz question must have a correct_option'}, status=400)
             assignment = Assignment.objects.create(
                 offering=offering,
                 title=data['title'],
