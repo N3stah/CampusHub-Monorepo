@@ -1,5 +1,9 @@
+import os
 import json
+import csv
+from django.http import HttpResponse
 from django.db import transaction
+from django.utils import timezone
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -7,7 +11,7 @@ from django.contrib.auth import get_user_model
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
-from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession
+from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission
 from apps.common.pagination import paginate_queryset
 
 User = get_user_model()
@@ -790,3 +794,271 @@ def calendar_view(request):
         })
     # TODO: Add assignment due dates in Stage 3
     return JsonResponse({'count': len(events), 'results': events})
+
+
+# --- Assignment Views ---
+
+def format_assignment(a, include_questions=False, include_correct=False):
+    data = {
+        'id': a.id,
+        'offering_id': a.offering_id,
+        'title': a.title,
+        'instructions': a.instructions,
+        'assignment_type': a.assignment_type,
+        'allowed_file_types': a.allowed_file_types,
+        'due_at': a.due_at.isoformat() if hasattr(a.due_at, 'isoformat') else str(a.due_at),
+        'max_points': a.max_points,
+        'is_published': a.is_published,
+        'created_at': a.created_at.isoformat()
+    }
+    if include_questions:
+        questions = []
+        for q in a.questions.all():
+            q_data = {'id': q.id, 'prompt': q.prompt, 'options': q.options}
+            if include_correct:
+                q_data['correct_option'] = q.correct_option
+            questions.append(q_data)
+        data['questions'] = questions
+    return data
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def assignment_list(request):
+    user = request.user
+    if user.role == 'student':
+        course_ids = Enrollment.objects.filter(student=user, status='active').values_list('course_id', flat=True)
+        offering_ids = Offering.objects.filter(course_id__in=course_ids).values_list('id', flat=True)
+        assignments = Assignment.objects.filter(offering_id__in=offering_ids, is_published=True)
+    else:
+        assignments = Assignment.objects.all()
+    return paginate_queryset(assignments, request, format_assignment)
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@jwt_required
+def offering_assignments(request, pk):
+    user = request.user
+    try:
+        offering = Offering.objects.get(pk=pk)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    if request.method == 'GET':
+        if not is_offering_lecturer(user, offering) and user.role != 'student':
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+        assignments = offering.assignments.all()
+        return paginate_queryset(assignments, request, lambda a: format_assignment(a, include_questions=True, include_correct=is_offering_lecturer(user, offering)))
+        
+    elif request.method == 'POST':
+        if not is_offering_lecturer(user, offering):
+            return JsonResponse({'error': 'Only assigned lecturers or admins can create assignments'}, status=403)
+        try:
+            data = json.loads(request.body)
+            assignment = Assignment.objects.create(
+                offering=offering,
+                title=data['title'],
+                instructions=data.get('instructions', ''),
+                assignment_type=data['assignment_type'],
+                allowed_file_types=data.get('allowed_file_types', []),
+                due_at=timezone.now() if not data.get('due_at') else data['due_at'],
+                max_points=data['max_points'],
+                is_published=data.get('is_published', False)
+            )
+            if assignment.assignment_type == 'quiz' and 'questions' in data:
+                for q in data['questions']:
+                    AssignmentQuestion.objects.create(
+                        assignment=assignment,
+                        prompt=q['prompt'],
+                        options=q['options'],
+                        correct_option=q.get('correct_option')
+                    )
+        except (KeyError, json.JSONDecodeError):
+            return JsonResponse({'error': 'Invalid JSON or missing fields'}, status=400)
+        return JsonResponse(format_assignment(assignment, include_questions=True, include_correct=True), status=201)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@jwt_required
+def assignment_delete(request, pk):
+    user = request.user
+    try:
+        assignment = Assignment.objects.select_related('offering').get(pk=pk)
+    except Assignment.DoesNotExist:
+        return JsonResponse({'error': 'Assignment not found'}, status=404)
+    if not is_offering_lecturer(user, assignment.offering):
+        return JsonResponse({'error': 'Only assigned lecturers or admins can delete assignments'}, status=403)
+    assignment.delete()
+    return JsonResponse({'message': 'Assignment deleted successfully'})
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@jwt_required
+def assignment_submission(request, pk):
+    user = request.user
+    try:
+        assignment = Assignment.objects.select_related('offering').get(pk=pk)
+    except Assignment.DoesNotExist:
+        return JsonResponse({'error': 'Assignment not found'}, status=404)
+        
+    if request.method == 'GET':
+        if user.role != 'student':
+            return JsonResponse({'error': 'Only students can view their own submission'}, status=403)
+        sub = AssignmentSubmission.objects.filter(assignment=assignment, student=user).first()
+        if sub:
+            return JsonResponse({'submission': {'id': sub.id, 'score': str(sub.score) if sub.score else None, 'submitted_at': sub.submitted_at.isoformat(), 'feedback': sub.feedback}})
+        return JsonResponse({'submission': None})
+        
+    elif request.method == 'POST':
+        if user.role != 'student':
+            return JsonResponse({'error': 'Only students can submit assignments'}, status=403)
+            
+        # Check deadline
+        if timezone.now() > assignment.due_at:
+            return JsonResponse({'error': 'Submission deadline passed'}, status=400)
+            
+        # Check if already submitted
+        if AssignmentSubmission.objects.filter(assignment=assignment, student=user).exists():
+            return JsonResponse({'error': 'Already submitted'}, status=400)
+            
+        if assignment.assignment_type == 'file':
+            uploaded_file = request.FILES.get('file')
+            if not uploaded_file:
+                return JsonResponse({'error': 'File is required for file-type assignments'}, status=400)
+            ext = os.path.splitext(uploaded_file.name)[1][1:].lower()
+            if assignment.allowed_file_types and ext not in assignment.allowed_file_types:
+                return JsonResponse({'error': f'File type {ext} not allowed'}, status=400)
+            submission = AssignmentSubmission.objects.create(
+                assignment=assignment, student=user, file=uploaded_file
+            )
+        else:  # quiz
+            try:
+                data = json.loads(request.body)
+                answers = data.get('answers', {})
+            except json.JSONDecodeError:
+                return JsonResponse({'error': 'Invalid JSON'}, status=400)
+                
+            # Auto-mark quiz
+            correct_count = 0
+            total_questions = 0
+            for q in assignment.questions.all():
+                total_questions += 1
+                if str(q.id) in answers and answers[str(q.id)] == q.correct_option:
+                    correct_count += 1
+                    
+            score = (correct_count / total_questions * assignment.max_points) if total_questions > 0 else 0
+            submission = AssignmentSubmission.objects.create(
+                assignment=assignment, student=user, answers=answers, score=score, graded_at=timezone.now()
+            )
+            
+        return JsonResponse({'id': submission.id, 'score': str(submission.score) if submission.score else None}, status=201)
+
+
+# --- Submission Management Views ---
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def assignment_submissions_list(request, pk):
+    user = request.user
+    try:
+        assignment = Assignment.objects.select_related('offering').get(pk=pk)
+    except Assignment.DoesNotExist:
+        return JsonResponse({'error': 'Assignment not found'}, status=404)
+        
+    if not is_offering_lecturer(user, assignment.offering):
+        return JsonResponse({'error': 'Only assigned lecturers or admins can view all submissions'}, status=403)
+        
+    submissions = assignment.submissions.all().select_related('student')
+    data = [
+        {
+            'id': s.id,
+            'student_id': s.student_id,
+            'student_name': s.student.get_full_name(),
+            'submitted_at': s.submitted_at.isoformat(),
+            'score': str(s.score) if s.score else None,
+            'feedback': s.feedback,
+            'graded_at': s.graded_at.isoformat() if s.graded_at else None
+        } for s in submissions
+    ]
+    return JsonResponse({'count': len(data), 'results': data})
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def submission_download(request, pk):
+    user = request.user
+    try:
+        submission = AssignmentSubmission.objects.select_related('assignment__offering', 'student').get(pk=pk)
+    except AssignmentSubmission.DoesNotExist:
+        return JsonResponse({'error': 'Submission not found'}, status=404)
+        
+    # Permission: submitting student, assigned lecturer, or admin
+    if user.role != 'admin' and submission.student_id != user.id and not is_offering_lecturer(user, submission.assignment.offering):
+        return JsonResponse({'error': 'Not found'}, status=404)
+        
+    if not submission.file:
+        return JsonResponse({'error': 'No file attached'}, status=404)
+        
+    file_handle = submission.file.open('rb')
+    from django.http import FileResponse
+    return FileResponse(file_handle, as_attachment=True, filename=os.path.basename(submission.file.name))
+
+@csrf_exempt
+@require_http_methods(["PATCH"])
+@jwt_required
+def submission_grade(request, pk):
+    user = request.user
+    try:
+        submission = AssignmentSubmission.objects.select_related('assignment__offering').get(pk=pk)
+    except AssignmentSubmission.DoesNotExist:
+        return JsonResponse({'error': 'Submission not found'}, status=404)
+        
+    if not is_offering_lecturer(user, submission.assignment.offering):
+        return JsonResponse({'error': 'Only assigned lecturers or admins can grade submissions'}, status=403)
+        
+    try:
+        data = json.loads(request.body)
+        score = data.get('score')
+        feedback = data.get('feedback', '')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        
+    submission.score = score
+    submission.feedback = feedback
+    submission.graded_at = timezone.now()
+    submission.save(update_fields=['score', 'feedback', 'graded_at'])
+    
+    return JsonResponse({'id': submission.id, 'score': str(submission.score), 'feedback': submission.feedback})
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def offering_grades_csv(request, pk):
+    user = request.user
+    try:
+        offering = Offering.objects.select_related('course').get(pk=pk)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    if not is_offering_lecturer(user, offering):
+        return JsonResponse({'error': 'Only assigned lecturers or admins can export grades'}, status=403)
+        
+    enrollments = Enrollment.objects.filter(course=offering.course, status='active').select_related('student')
+    assignments = offering.assignments.all()
+    
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="grades_offering_{pk}.csv"'
+    
+    writer = csv.writer(response)
+    header = ['Student', 'Admission Number'] + [a.title for a in assignments]
+    writer.writerow(header)
+    
+    for e in enrollments:
+        row = [e.student.get_full_name(), e.student.admission_number or '']
+        for a in assignments:
+            sub = AssignmentSubmission.objects.filter(assignment=a, student=e.student).first()
+            row.append(str(sub.score) if sub and sub.score else '')
+        writer.writerow(row)
+        
+    return response
