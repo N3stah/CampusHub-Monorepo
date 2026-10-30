@@ -13,6 +13,8 @@ from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
 from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup
 from apps.common.pagination import paginate_queryset
+from apps.notifications.services import NotificationService
+from datetime import timedelta
 
 User = get_user_model()
 
@@ -855,6 +857,15 @@ def offering_assignments(request, pk):
             return JsonResponse({'error': 'Only assigned lecturers or admins can create assignments'}, status=403)
         try:
             data = json.loads(request.body)
+            # Validate type vs questions consistency
+            atype = data.get('assignment_type')
+            questions = data.get('questions', [])
+            if atype == 'quiz':
+                if not questions:
+                    return JsonResponse({'error': 'Quiz assignments require at least one question'}, status=400)
+                for q in questions:
+                    if q.get('correct_option') is None:
+                        return JsonResponse({'error': 'Each quiz question must have a correct_option'}, status=400)
             assignment = Assignment.objects.create(
                 offering=offering,
                 title=data['title'],
@@ -875,6 +886,19 @@ def offering_assignments(request, pk):
                     )
         except (KeyError, json.JSONDecodeError):
             return JsonResponse({'error': 'Invalid JSON or missing fields'}, status=400)
+        # Notify enrolled students if assignment is published
+        if assignment.is_published:
+            student_ids = list(Enrollment.objects.filter(
+                course=offering.course, status='active'
+            ).values_list('student_id', flat=True))
+            if student_ids:
+                NotificationService.notify_bulk(
+                    recipients=student_ids,
+                    verb='assignment.published',
+                    message=f'New assignment: {assignment.title}',
+                    actor=user,
+                    link=f'/api/academics/assignments/{assignment.id}/'
+                )
         return JsonResponse(format_assignment(assignment, include_questions=True, include_correct=True), status=201)
 
 @csrf_exempt
@@ -906,16 +930,22 @@ def assignment_submission(request, pk):
             return JsonResponse({'error': 'Only students can view their own submission'}, status=403)
         sub = AssignmentSubmission.objects.filter(assignment=assignment, student=user).first()
         if sub:
-            return JsonResponse({'submission': {'id': sub.id, 'score': str(sub.score) if sub.score else None, 'submitted_at': sub.submitted_at.isoformat(), 'feedback': sub.feedback}})
+            released = sub.released_at is not None
+            score = str(sub.score) if sub.score and released else None
+            feedback = sub.feedback if released else None
+            return JsonResponse({'submission': {'id': sub.id, 'score': score, 'submitted_at': sub.submitted_at.isoformat(), 'feedback': feedback, 'released_at': sub.released_at.isoformat() if sub.released_at else None}})
         return JsonResponse({'submission': None})
         
     elif request.method == 'POST':
+        
+        # Submission deadline enforcement
+        
+        if assignment.due_at and timezone.now() > assignment.due_at:
+        
+            return JsonResponse({'error': 'Submission deadline has passed'}, status=400)
         if user.role != 'student':
             return JsonResponse({'error': 'Only students can submit assignments'}, status=403)
             
-        # Check deadline
-        if timezone.now() > assignment.due_at:
-            return JsonResponse({'error': 'Submission deadline passed'}, status=400)
             
         # Check if already submitted
         if AssignmentSubmission.objects.filter(assignment=assignment, student=user).exists():
@@ -925,8 +955,15 @@ def assignment_submission(request, pk):
             uploaded_file = request.FILES.get('file')
             if not uploaded_file:
                 return JsonResponse({'error': 'File is required for file-type assignments'}, status=400)
+            # File size guard (10 MB max)
+            MAX_FILE_SIZE = 10 * 1024 * 1024
+            if uploaded_file.size > MAX_FILE_SIZE:
+                return JsonResponse({'error': 'File too large (max 10MB)'}, status=400)
+            # Extension guard: assignment whitelist or global default
+            DEFAULT_ALLOWED_TYPES = ['pdf', 'docx', 'doc', 'txt', 'png', 'jpg', 'jpeg', 'zip']
+            allowed_types = assignment.allowed_file_types or DEFAULT_ALLOWED_TYPES
             ext = os.path.splitext(uploaded_file.name)[1][1:].lower()
-            if assignment.allowed_file_types and ext not in assignment.allowed_file_types:
+            if ext not in allowed_types:
                 return JsonResponse({'error': f'File type {ext} not allowed'}, status=400)
             submission = AssignmentSubmission.objects.create(
                 assignment=assignment, student=user, file=uploaded_file
@@ -948,7 +985,7 @@ def assignment_submission(request, pk):
                     
             score = (correct_count / total_questions * assignment.max_points) if total_questions > 0 else 0
             submission = AssignmentSubmission.objects.create(
-                assignment=assignment, student=user, answers=answers, score=score, graded_at=timezone.now()
+                assignment=assignment, student=user, answers=answers, score=score, graded_at=timezone.now(), released_at=timezone.now()
             )
             
         return JsonResponse({'id': submission.id, 'score': str(submission.score) if submission.score else None}, status=201)
@@ -1027,8 +1064,22 @@ def submission_grade(request, pk):
     submission.score = score
     submission.feedback = feedback
     submission.graded_at = timezone.now()
-    submission.save(update_fields=['score', 'feedback', 'graded_at'])
+    released = data.get('released', True)
+    if released:
+        submission.released_at = timezone.now()
+    else:
+        submission.released_at = None
+    submission.save(update_fields=['score', 'feedback', 'graded_at', 'released_at'])
     
+    # Notify student if grade is released
+    if released:
+        NotificationService.notify(
+            recipient=submission.student,
+            verb='grade.released',
+            message=f'Grade released for {submission.assignment.title}',
+            actor=user,
+            link=f'/api/academics/assignments/{submission.assignment_id}/submission/'
+        )
     return JsonResponse({'id': submission.id, 'score': str(submission.score), 'feedback': submission.feedback})
 
 @csrf_exempt
@@ -1150,6 +1201,153 @@ def offering_groups(request, pk):
                 chunk = students[i * students_per_group : (i + 1) * students_per_group]
                 group.members.set(chunk)
                 
+        # Notify all shuffled students
+        NotificationService.notify_bulk(
+            recipients=students,
+            verb='groups.shuffled',
+            message=f'Groups assigned for {offering}',
+            actor=user,
+            link=f'/api/academics/offerings/{offering.id}/groups/'
+        )
+        
         groups = group_set.groups.all()
         data = [format_group(g, include_members=True) for g in groups]
         return JsonResponse({'count': len(data), 'results': data}, status=201)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def offering_roster_csv(request, pk):
+    user = request.user
+    try:
+        offering = Offering.objects.select_related('course').get(pk=pk)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+
+    if not is_offering_lecturer(user, offering):
+        return JsonResponse({'error': 'Only assigned lecturers or admins can export roster'}, status=403)
+
+    enrollments = Enrollment.objects.filter(course=offering.course).select_related('student').order_by('student__last_name')
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="roster_offering_{pk}.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(['Student', 'Email', 'Admission Number', 'Enrollment Status', 'Enrolled At'])
+
+    for e in enrollments:
+        writer.writerow([
+            e.student.get_full_name(),
+            e.student.email,
+            e.student.admission_number or '',
+            e.status,
+            e.enrolled_at.isoformat() if e.enrolled_at else ''
+        ])
+
+    return response
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def student_dashboard(request):
+    user = request.user
+    if user.role != 'student':
+        return JsonResponse({'error': 'Only students can access this endpoint'}, status=403)
+
+    now = timezone.now()
+    week_ahead = now + timedelta(days=7)
+
+    enrollments = Enrollment.objects.filter(student=user, status='active').select_related('course')
+    courses = [{'id': e.course.id, 'code': e.course.code, 'title': e.course.title} for e in enrollments]
+
+    course_ids = [e.course_id for e in enrollments]
+    offering_ids = list(Offering.objects.filter(course_id__in=course_ids).values_list('id', flat=True))
+
+    upcoming = Assignment.objects.filter(
+        offering_id__in=offering_ids, is_published=True,
+        due_at__gte=now, due_at__lte=week_ahead
+    ).order_by('due_at')
+    upcoming_data = [
+        {'id': a.id, 'title': a.title, 'due_at': a.due_at.isoformat(), 'offering_id': a.offering_id, 'assignment_type': a.assignment_type}
+        for a in upcoming
+    ]
+
+    submitted_ids = set(AssignmentSubmission.objects.filter(
+        student=user, assignment__in=upcoming
+    ).values_list('assignment_id', flat=True))
+    pending_count = len(upcoming_data) - len(submitted_ids)
+
+    recent_grades = AssignmentSubmission.objects.filter(
+        student=user, released_at__isnull=False, graded_at__isnull=False
+    ).order_by('-graded_at')[:5]
+    grades_data = [
+        {'assignment_id': s.assignment_id, 'assignment_title': s.assignment.title,
+         'score': str(s.score) if s.score else None, 'max_points': s.assignment.max_points,
+         'released_at': s.released_at.isoformat()}
+        for s in recent_grades
+    ]
+
+    groups = StudentGroup.objects.filter(members=user).select_related('group_set__offering')
+    groups_data = [
+        {'group_id': g.id, 'group_name': g.name, 'offering_id': g.group_set.offering_id, 'members_count': g.members.count()}
+        for g in groups
+    ]
+
+    return JsonResponse({
+        'courses': courses,
+        'upcoming_assignments': upcoming_data,
+        'pending_submissions_count': pending_count,
+        'recent_grades': grades_data,
+        'groups': groups_data
+    })
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def lecturer_dashboard(request):
+    user = request.user
+    if user.role != 'lecturer' and user.role != 'admin':
+        return JsonResponse({'error': 'Only lecturers can access this endpoint'}, status=403)
+
+    now = timezone.now()
+
+    if user.role == 'admin':
+        taught_offerings = Offering.objects.all().select_related('course', 'unit')
+    else:
+        ta = UnitTeachingAssignment.objects.filter(lecturer=user).values_list('offering_id', flat=True)
+        taught_offerings = Offering.objects.filter(id__in=ta).select_related('course', 'unit')
+
+    offerings_data = [
+        {'id': o.id, 'course_code': o.course.code, 'unit_code': o.unit.code, 'is_active': o.is_active}
+        for o in taught_offerings
+    ]
+
+    taught_ids = list(taught_offerings.values_list('id', flat=True))
+    pending_qs = AssignmentSubmission.objects.filter(
+        assignment__offering_id__in=taught_ids, graded_at__isnull=True
+    ).select_related('student', 'assignment').order_by('-submitted_at')
+    pending_data = [
+        {'id': s.id, 'student_name': s.student.get_full_name(),
+         'assignment_title': s.assignment.title, 'submitted_at': s.submitted_at.isoformat()}
+        for s in pending_qs[:20]
+    ]
+
+    today_weekday = now.weekday()
+    today_sessions = ClassSession.objects.filter(
+        offering_id__in=taught_ids, day_of_week=today_weekday
+    ).select_related('offering__course', 'offering__unit')
+    sessions_data = [
+        {'id': s.id, 'offering_id': s.offering_id, 'course_code': s.offering.course.code,
+         'start_time': getattr(s, 'start_time', None).isoformat() if getattr(s, 'start_time', None) else None,
+         'end_time': getattr(s, 'end_time', None).isoformat() if getattr(s, 'end_time', None) else None,
+         'room': getattr(s, 'room', None)}
+        for s in today_sessions
+    ]
+
+    return JsonResponse({
+        'taught_offerings': offerings_data,
+        'pending_grading_count': pending_qs.count(),
+        'pending_submissions': pending_data,
+        'today_sessions': sessions_data
+    })

@@ -1,4 +1,6 @@
 from django.db import models
+from django.db.models.signals import m2m_changed
+from django.dispatch import receiver
 from django.conf import settings
 
 class School(models.Model):
@@ -185,6 +187,7 @@ class AssignmentSubmission(models.Model):
     submitted_at = models.DateTimeField(auto_now_add=True)
     score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     feedback = models.TextField(blank=True)
+    released_at = models.DateTimeField(null=True, blank=True)
     graded_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -212,3 +215,16 @@ class StudentGroup(models.Model):
 
     def __str__(self):
         return f"Group {self.name} ({self.group_set.offering.unit.code})"
+
+# Enforce that a student can only be in one StudentGroup per GroupSet
+@receiver(m2m_changed, sender=StudentGroup.members.through)
+def enforce_one_group_per_student(sender, instance, action, pk_set, **kwargs):
+    """Prevents a student from being added to multiple groups within the same GroupSet."""
+    if action == 'pre_add':
+        existing = StudentGroup.objects.filter(
+            group_set=instance.group_set,
+            members__in=pk_set
+        ).exclude(pk=instance.pk)
+        if existing.exists():
+            from django.core.exceptions import ValidationError
+            raise ValidationError('A student can only be in one group per GroupSet')
