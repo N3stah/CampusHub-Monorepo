@@ -30,4 +30,5 @@ urlpatterns = [
     path('submissions/<int:pk>/download/', views.submission_download, name='submission-download'),
     path('submissions/<int:pk>/grade/', views.submission_grade, name='submission-grade'),
     path('offerings/<int:pk>/grades.csv', views.offering_grades_csv, name='offering-grades-csv'),
+    path('offerings/<int:pk>/groups/', views.offering_groups, name='offering-groups'),
 ]
