@@ -906,7 +906,10 @@ def assignment_submission(request, pk):
             return JsonResponse({'error': 'Only students can view their own submission'}, status=403)
         sub = AssignmentSubmission.objects.filter(assignment=assignment, student=user).first()
         if sub:
-            return JsonResponse({'submission': {'id': sub.id, 'score': str(sub.score) if sub.score else None, 'submitted_at': sub.submitted_at.isoformat(), 'feedback': sub.feedback}})
+            released = sub.released_at is not None
+            score = str(sub.score) if sub.score and released else None
+            feedback = sub.feedback if released else None
+            return JsonResponse({'submission': {'id': sub.id, 'score': score, 'submitted_at': sub.submitted_at.isoformat(), 'feedback': feedback, 'released_at': sub.released_at.isoformat() if sub.released_at else None}})
         return JsonResponse({'submission': None})
         
     elif request.method == 'POST':
@@ -919,9 +922,6 @@ def assignment_submission(request, pk):
         if user.role != 'student':
             return JsonResponse({'error': 'Only students can submit assignments'}, status=403)
             
-        # Check deadline
-        if timezone.now() > assignment.due_at:
-            return JsonResponse({'error': 'Submission deadline passed'}, status=400)
             
         # Check if already submitted
         if AssignmentSubmission.objects.filter(assignment=assignment, student=user).exists():
@@ -954,7 +954,7 @@ def assignment_submission(request, pk):
                     
             score = (correct_count / total_questions * assignment.max_points) if total_questions > 0 else 0
             submission = AssignmentSubmission.objects.create(
-                assignment=assignment, student=user, answers=answers, score=score, graded_at=timezone.now()
+                assignment=assignment, student=user, answers=answers, score=score, graded_at=timezone.now(), released_at=timezone.now()
             )
             
         return JsonResponse({'id': submission.id, 'score': str(submission.score) if submission.score else None}, status=201)
@@ -1033,7 +1033,12 @@ def submission_grade(request, pk):
     submission.score = score
     submission.feedback = feedback
     submission.graded_at = timezone.now()
-    submission.save(update_fields=['score', 'feedback', 'graded_at'])
+    released = data.get('released', True)
+    if released:
+        submission.released_at = timezone.now()
+    else:
+        submission.released_at = None
+    submission.save(update_fields=['score', 'feedback', 'graded_at', 'released_at'])
     
     return JsonResponse({'id': submission.id, 'score': str(submission.score), 'feedback': submission.feedback})
 
