@@ -14,6 +14,7 @@ from apps.accounts.models import AuditEvent
 from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup
 from apps.common.pagination import paginate_queryset
 from apps.notifications.services import NotificationService
+from datetime import timedelta
 
 User = get_user_model()
 
@@ -1244,3 +1245,109 @@ def offering_roster_csv(request, pk):
         ])
 
     return response
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def student_dashboard(request):
+    user = request.user
+    if user.role != 'student':
+        return JsonResponse({'error': 'Only students can access this endpoint'}, status=403)
+
+    now = timezone.now()
+    week_ahead = now + timedelta(days=7)
+
+    enrollments = Enrollment.objects.filter(student=user, status='active').select_related('course')
+    courses = [{'id': e.course.id, 'code': e.course.code, 'title': e.course.title} for e in enrollments]
+
+    course_ids = [e.course_id for e in enrollments]
+    offering_ids = list(Offering.objects.filter(course_id__in=course_ids).values_list('id', flat=True))
+
+    upcoming = Assignment.objects.filter(
+        offering_id__in=offering_ids, is_published=True,
+        due_at__gte=now, due_at__lte=week_ahead
+    ).order_by('due_at')
+    upcoming_data = [
+        {'id': a.id, 'title': a.title, 'due_at': a.due_at.isoformat(), 'offering_id': a.offering_id, 'assignment_type': a.assignment_type}
+        for a in upcoming
+    ]
+
+    submitted_ids = set(AssignmentSubmission.objects.filter(
+        student=user, assignment__in=upcoming
+    ).values_list('assignment_id', flat=True))
+    pending_count = len(upcoming_data) - len(submitted_ids)
+
+    recent_grades = AssignmentSubmission.objects.filter(
+        student=user, released_at__isnull=False, graded_at__isnull=False
+    ).order_by('-graded_at')[:5]
+    grades_data = [
+        {'assignment_id': s.assignment_id, 'assignment_title': s.assignment.title,
+         'score': str(s.score) if s.score else None, 'max_points': s.assignment.max_points,
+         'released_at': s.released_at.isoformat()}
+        for s in recent_grades
+    ]
+
+    groups = StudentGroup.objects.filter(members=user).select_related('group_set__offering')
+    groups_data = [
+        {'group_id': g.id, 'group_name': g.name, 'offering_id': g.group_set.offering_id, 'members_count': g.members.count()}
+        for g in groups
+    ]
+
+    return JsonResponse({
+        'courses': courses,
+        'upcoming_assignments': upcoming_data,
+        'pending_submissions_count': pending_count,
+        'recent_grades': grades_data,
+        'groups': groups_data
+    })
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def lecturer_dashboard(request):
+    user = request.user
+    if user.role != 'lecturer' and user.role != 'admin':
+        return JsonResponse({'error': 'Only lecturers can access this endpoint'}, status=403)
+
+    now = timezone.now()
+
+    if user.role == 'admin':
+        taught_offerings = Offering.objects.all().select_related('course', 'unit')
+    else:
+        ta = UnitTeachingAssignment.objects.filter(lecturer=user).values_list('offering_id', flat=True)
+        taught_offerings = Offering.objects.filter(id__in=ta).select_related('course', 'unit')
+
+    offerings_data = [
+        {'id': o.id, 'course_code': o.course.code, 'unit_code': o.unit.code, 'is_active': o.is_active}
+        for o in taught_offerings
+    ]
+
+    taught_ids = list(taught_offerings.values_list('id', flat=True))
+    pending_qs = AssignmentSubmission.objects.filter(
+        assignment__offering_id__in=taught_ids, graded_at__isnull=True
+    ).select_related('student', 'assignment').order_by('-submitted_at')
+    pending_data = [
+        {'id': s.id, 'student_name': s.student.get_full_name(),
+         'assignment_title': s.assignment.title, 'submitted_at': s.submitted_at.isoformat()}
+        for s in pending_qs[:20]
+    ]
+
+    today_weekday = now.weekday()
+    today_sessions = ClassSession.objects.filter(
+        offering_id__in=taught_ids, day_of_week=today_weekday
+    ).select_related('offering__course', 'offering__unit')
+    sessions_data = [
+        {'id': s.id, 'offering_id': s.offering_id, 'course_code': s.offering.course.code,
+         'start_time': getattr(s, 'start_time', None).isoformat() if getattr(s, 'start_time', None) else None,
+         'end_time': getattr(s, 'end_time', None).isoformat() if getattr(s, 'end_time', None) else None,
+         'room': getattr(s, 'room', None)}
+        for s in today_sessions
+    ]
+
+    return JsonResponse({
+        'taught_offerings': offerings_data,
+        'pending_grading_count': pending_qs.count(),
+        'pending_submissions': pending_data,
+        'today_sessions': sessions_data
+    })
