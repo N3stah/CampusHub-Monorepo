@@ -311,3 +311,154 @@ def announcement_detail_update_delete(request, course_id, pk):
             return JsonResponse({'error': 'You do not have permission to delete this announcement'}, status=403)
         announcement.delete()
         return JsonResponse({'message': 'Announcement deleted successfully'})
+
+
+# --- Offering-Scoped Resource Views ---
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@jwt_required
+def offering_resource_list_create(request, offering_id):
+    from apps.academics.models import Offering, Enrollment, UnitTeachingAssignment
+    from apps.notifications.services import NotificationService
+    try:
+        offering = Offering.objects.get(pk=offering_id)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    course = offering.course
+    user = request.user
+    
+    # Permission: enrolled student, assigned lecturer, or admin
+    is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists() or course.lecturer_id == user.id
+    if user.role != 'admin' and not is_lecturer and not Enrollment.objects.filter(student=user, course=course, status='active').exists():
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+        
+    if request.method == 'GET':
+        resources = Resource.objects.filter(offering=offering).select_related('uploaded_by')
+        data = [format_resource(r, request) for r in resources]
+        return JsonResponse(data, safe=False)
+        
+    elif request.method == 'POST':
+        if not is_lecturer and user.role != 'admin':
+            return JsonResponse({'error': 'Only lecturers or admins can upload resources'}, status=403)
+            
+        title = request.POST.get('title')
+        description = request.POST.get('description', '')
+        category = request.POST.get('category', '')
+        uploaded_file = request.FILES.get('file')
+        
+        if not title or not uploaded_file:
+            return JsonResponse({'error': 'Title and file are required'}, status=400)
+            
+        ext = os.path.splitext(uploaded_file.name)[1][1:].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            return JsonResponse({'error': f'File type {ext} not allowed'}, status=400)
+            
+        resource = Resource.objects.create(
+            course=course,
+            offering=offering,
+            uploaded_by=user,
+            title=title,
+            description=description,
+            category=category,
+            file=uploaded_file,
+            file_type=ext,
+            file_size=uploaded_file.size
+        )
+        return JsonResponse(format_resource(resource, request), status=201)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@jwt_required
+def offering_resource_delete(request, offering_id, pk):
+    from apps.academics.models import Offering, UnitTeachingAssignment
+    try:
+        offering = Offering.objects.get(pk=offering_id)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    try:
+        resource = Resource.objects.get(pk=pk, offering=offering)
+    except Resource.DoesNotExist:
+        return JsonResponse({'error': 'Resource not found'}, status=404)
+        
+    user = request.user
+    is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists() or course.lecturer_id == user.id
+    if user.role != 'admin' and resource.uploaded_by_id != user.id and not is_lecturer:
+        return JsonResponse({'error': 'You can only delete resources you uploaded'}, status=403)
+        
+    resource.file.delete(save=False)
+    resource.delete()
+    return JsonResponse({'message': 'Resource deleted successfully'})
+
+# --- Offering-Scoped Announcement Views ---
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@jwt_required
+def offering_announcement_list_create(request, offering_id):
+    from apps.academics.models import Offering, Enrollment, UnitTeachingAssignment
+    try:
+        offering = Offering.objects.get(pk=offering_id)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    course = offering.course
+    user = request.user
+    
+    is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists() or course.lecturer_id == user.id
+    if user.role != 'admin' and not is_lecturer and not Enrollment.objects.filter(student=user, course=course, status='active').exists():
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+        
+    if request.method == 'GET':
+        announcements = Announcement.objects.filter(offering=offering).select_related('author')
+        data = [format_announcement(a) for a in announcements]
+        return JsonResponse(data, safe=False)
+        
+    elif request.method == 'POST':
+        if not is_lecturer and user.role != 'admin':
+            return JsonResponse({'error': 'Only lecturers or admins can post announcements'}, status=403)
+            
+        try:
+            data = json.loads(request.body)
+            title = data.get('title')
+            body = data.get('body')
+            is_pinned = data.get('is_pinned', False)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+            
+        if not title or not body:
+            return JsonResponse({'error': 'Title and body are required'}, status=400)
+            
+        announcement = Announcement.objects.create(
+            course=course,
+            offering=offering,
+            author=user,
+            title=title,
+            body=body,
+            is_pinned=is_pinned
+        )
+        return JsonResponse(format_announcement(announcement), status=201)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@jwt_required
+def offering_announcement_delete(request, offering_id, pk):
+    from apps.academics.models import Offering
+    try:
+        offering = Offering.objects.get(pk=offering_id)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    try:
+        announcement = Announcement.objects.get(pk=pk, offering=offering)
+    except Announcement.DoesNotExist:
+        return JsonResponse({'error': 'Announcement not found'}, status=404)
+        
+    user = request.user
+    if user.role != 'admin' and announcement.author_id != user.id and offering.course.lecturer_id != user.id:
+        return JsonResponse({'error': 'You do not have permission to delete this announcement'}, status=403)
+        
+    announcement.delete()
+    return JsonResponse({'message': 'Announcement deleted successfully'})

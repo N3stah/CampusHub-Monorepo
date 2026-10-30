@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
-from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment
+from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession
 from apps.common.pagination import paginate_queryset
 
 User = get_user_model()
@@ -656,3 +656,137 @@ def admin_enrollment_update(request, pk):
         })
     else:
         return JsonResponse({'error': 'No course_id provided or same as current'}, status=400)
+
+
+# --- Offering Views ---
+
+def is_offering_lecturer(user, offering):
+    if user.role == 'admin':
+        return True
+    return offering.teaching_assignments.filter(lecturer=user).exists()
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def offering_detail(request, pk):
+    try:
+        offering = Offering.objects.select_related('unit', 'course').get(pk=pk)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    lecturers = list(offering.teaching_assignments.select_related('lecturer').values('lecturer_id', 'lecturer__first_name', 'lecturer__last_name'))
+    data = {
+        'id': offering.id,
+        'unit': {'id': offering.unit.id, 'code': offering.unit.code, 'title': offering.unit.title},
+        'course': {'id': offering.course.id, 'code': offering.course.code, 'title': offering.course.title},
+        'lecturers': lecturers,
+        'is_active': offering.is_active
+    }
+    return JsonResponse(data)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def offering_roster(request, pk):
+    user = request.user
+    try:
+        offering = Offering.objects.select_related('course').get(pk=pk)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    if not is_offering_lecturer(user, offering):
+        return JsonResponse({'error': 'Only the assigned lecturer or admin can view the roster'}, status=403)
+        
+    enrollments = Enrollment.objects.filter(course=offering.course, status='active').select_related('student')
+    data = [
+        {
+            'id': e.id,
+            'student_id': e.student.id,
+            'student_name': e.student.get_full_name(),
+            'student_email': e.student.email,
+            'admission_number': e.student.admission_number
+        } for e in enrollments
+    ]
+    return JsonResponse({'count': len(data), 'results': data})
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@jwt_required
+def offering_sessions(request, pk):
+    user = request.user
+    try:
+        offering = Offering.objects.get(pk=pk)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    if request.method == 'GET':
+        if not is_offering_lecturer(user, offering) and user.role != 'student':
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+        sessions = offering.sessions.all().values('id', 'day_of_week', 'start_time', 'end_time', 'starts_on', 'ends_on', 'location')
+        return JsonResponse(list(sessions), safe=False)
+        
+    elif request.method == 'POST':
+        if not is_offering_lecturer(user, offering):
+            return JsonResponse({'error': 'Only assigned lecturers or admins can create sessions'}, status=403)
+        try:
+            data = json.loads(request.body)
+            session = ClassSession.objects.create(
+                offering=offering,
+                day_of_week=data['day_of_week'],
+                start_time=data['start_time'],
+                end_time=data['end_time'],
+                starts_on=data['starts_on'],
+                ends_on=data['ends_on'],
+                location=data.get('location', '')
+            )
+        except (KeyError, json.JSONDecodeError):
+            return JsonResponse({'error': 'Invalid JSON or missing fields'}, status=400)
+        return JsonResponse({'id': session.id, 'day_of_week': session.day_of_week}, status=201)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@jwt_required
+def session_delete(request, pk):
+    user = request.user
+    try:
+        session = ClassSession.objects.select_related('offering').get(pk=pk)
+    except ClassSession.DoesNotExist:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+        
+    if not is_offering_lecturer(user, session.offering):
+        return JsonResponse({'error': 'Only assigned lecturers or admins can delete sessions'}, status=403)
+        
+    session.delete()
+    return JsonResponse({'message': 'Session deleted successfully'})
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def calendar_view(request):
+    user = request.user
+    # Get offerings the user is involved in
+    if user.role == 'student':
+        course_ids = Enrollment.objects.filter(student=user, status='active').values_list('course_id', flat=True)
+        offerings = Offering.objects.filter(course_id__in=course_ids)
+    elif user.role == 'lecturer':
+        offering_ids = UnitTeachingAssignment.objects.filter(lecturer=user).values_list('offering_id', flat=True)
+        offerings = Offering.objects.filter(id__in=offering_ids)
+    else: # admin
+        offerings = Offering.objects.all()
+        
+    sessions = ClassSession.objects.filter(offering__in=offerings).select_related('offering__unit', 'offering__course')
+    
+    # Expand sessions to concrete dates (simplified: just return the session template)
+    events = []
+    for s in sessions:
+        events.append({
+            'id': s.id,
+            'title': f"{s.offering.unit.code} - {s.offering.course.code}",
+            'day_of_week': s.day_of_week,
+            'start_time': str(s.start_time),
+            'end_time': str(s.end_time),
+            'location': s.location,
+            'type': 'session'
+        })
+    # TODO: Add assignment due dates in Stage 3
+    return JsonResponse({'count': len(events), 'results': events})
