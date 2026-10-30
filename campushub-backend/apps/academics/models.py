@@ -146,3 +146,51 @@ class ClassSession(models.Model):
 
     def __str__(self):
         return f"{self.offering.unit.code} - Day {self.day_of_week} at {self.start_time}"
+
+
+class Assignment(models.Model):
+    offering = models.ForeignKey(Offering, on_delete=models.CASCADE, related_name='assignments')
+    title = models.CharField(max_length=200)
+    instructions = models.TextField(blank=True)
+    assignment_type = models.CharField(max_length=10, choices=[('file', 'file'), ('quiz', 'quiz')])
+    allowed_file_types = models.JSONField(default=list, blank=True)
+    due_at = models.DateTimeField()
+    max_points = models.IntegerField()
+    is_published = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.title} ({self.offering.unit.code})"
+
+
+class AssignmentQuestion(models.Model):
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='questions')
+    prompt = models.TextField()
+    options = models.JSONField(default=list)
+    correct_option = models.IntegerField(null=True, blank=True)  # index into options; NEVER serialize this field back to students
+
+    def __str__(self):
+        return f"Question for {self.assignment.title}"
+
+
+class AssignmentSubmission(models.Model):
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='submissions')
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assignment_submissions')
+    file = models.FileField(upload_to='submissions/%Y/%m/', null=True, blank=True)
+    answers = models.JSONField(default=dict, blank=True)  # {question_id: selected_option_index} for quiz type
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    feedback = models.TextField(blank=True)
+    graded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['assignment', 'student'], name='one_submission_per_student_per_assignment'),
+        ]
+
+    def __str__(self):
+        return f"{self.student.email} - {self.assignment.title}"

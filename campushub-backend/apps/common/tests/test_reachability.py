@@ -19,6 +19,7 @@ def test_all_api_routes_are_reachable():
         '/api/users/',
         '/api/academics/schools/',
         '/api/academics/units/',
+        '/api/academics/assignments/',
         '/api/academics/calendar/',
         '/api/academics/departments/',
         '/api/academics/admin/enrollments/',

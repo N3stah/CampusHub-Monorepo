@@ -22,4 +22,12 @@ urlpatterns = [
     path('offerings/<int:pk>/sessions/', views.offering_sessions, name='offering-sessions'),
     path('sessions/<int:pk>/', views.session_delete, name='session-delete'),
     path('calendar/', views.calendar_view, name='calendar'),
+    path('assignments/', views.assignment_list, name='assignment-list'),
+    path('offerings/<int:pk>/assignments/', views.offering_assignments, name='offering-assignments'),
+    path('assignments/<int:pk>/', views.assignment_delete, name='assignment-delete'),
+    path('assignments/<int:pk>/submission/', views.assignment_submission, name='assignment-submission'),
+    path('assignments/<int:pk>/submissions/', views.assignment_submissions_list, name='assignment-submissions-list'),
+    path('submissions/<int:pk>/download/', views.submission_download, name='submission-download'),
+    path('submissions/<int:pk>/grade/', views.submission_grade, name='submission-grade'),
+    path('offerings/<int:pk>/grades.csv', views.offering_grades_csv, name='offering-grades-csv'),
 ]

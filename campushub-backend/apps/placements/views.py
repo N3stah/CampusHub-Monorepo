@@ -52,7 +52,7 @@ def format_application(a, request):
         },
         "status": a.status,
         "cover_note": a.cover_note,
-        "cv_file": request.build_absolute_uri(a.cv_file.url) if a.cv_file else None,
+        "has_cv": bool(a.cv_file),
         "applied_at": a.applied_at.isoformat(),
         "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
         "reviewed_by": {
@@ -298,3 +298,25 @@ def application_withdraw(request, pk):
     )
     
     return JsonResponse({"message": "Application withdrawn successfully"})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def application_cv_download(request, pk):
+    from django.http import FileResponse
+    user = request.user
+    try:
+        application = Application.objects.select_related('placement', 'student').get(pk=pk)
+    except Application.DoesNotExist:
+        return JsonResponse({"error": "Application not found"}, status=404)
+        
+    # Permission: student owner, placement officer, or admin
+    if user.role != 'admin' and application.student_id != user.id and application.placement.posted_by_id != user.id:
+        return JsonResponse({"error": "Not found"}, status=404)
+        
+    if not application.cv_file:
+        return JsonResponse({"error": "No CV attached"}, status=404)
+        
+    file_handle = application.cv_file.open('rb')
+    return FileResponse(file_handle, as_attachment=True, filename=os.path.basename(application.cv_file.name))
