@@ -910,6 +910,12 @@ def assignment_submission(request, pk):
         return JsonResponse({'submission': None})
         
     elif request.method == 'POST':
+        
+        # Submission deadline enforcement
+        
+        if assignment.due_at and timezone.now() > assignment.due_at:
+        
+            return JsonResponse({'error': 'Submission deadline has passed'}, status=400)
         if user.role != 'student':
             return JsonResponse({'error': 'Only students can submit assignments'}, status=403)
             
