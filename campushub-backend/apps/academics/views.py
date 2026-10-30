@@ -13,6 +13,7 @@ from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
 from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup
 from apps.common.pagination import paginate_queryset
+from apps.notifications.services import NotificationService
 
 User = get_user_model()
 
@@ -884,6 +885,19 @@ def offering_assignments(request, pk):
                     )
         except (KeyError, json.JSONDecodeError):
             return JsonResponse({'error': 'Invalid JSON or missing fields'}, status=400)
+        # Notify enrolled students if assignment is published
+        if assignment.is_published:
+            student_ids = list(Enrollment.objects.filter(
+                course=offering.course, status='active'
+            ).values_list('student_id', flat=True))
+            if student_ids:
+                NotificationService.notify_bulk(
+                    recipients=student_ids,
+                    verb='assignment.published',
+                    message=f'New assignment: {assignment.title}',
+                    actor=user,
+                    link=f'/api/academics/assignments/{assignment.id}/'
+                )
         return JsonResponse(format_assignment(assignment, include_questions=True, include_correct=True), status=201)
 
 @csrf_exempt
@@ -1056,6 +1070,15 @@ def submission_grade(request, pk):
         submission.released_at = None
     submission.save(update_fields=['score', 'feedback', 'graded_at', 'released_at'])
     
+    # Notify student if grade is released
+    if released:
+        NotificationService.notify(
+            recipient=submission.student,
+            verb='grade.released',
+            message=f'Grade released for {submission.assignment.title}',
+            actor=user,
+            link=f'/api/academics/assignments/{submission.assignment_id}/submission/'
+        )
     return JsonResponse({'id': submission.id, 'score': str(submission.score), 'feedback': submission.feedback})
 
 @csrf_exempt
@@ -1177,6 +1200,15 @@ def offering_groups(request, pk):
                 chunk = students[i * students_per_group : (i + 1) * students_per_group]
                 group.members.set(chunk)
                 
+        # Notify all shuffled students
+        NotificationService.notify_bulk(
+            recipients=students,
+            verb='groups.shuffled',
+            message=f'Groups assigned for {offering}',
+            actor=user,
+            link=f'/api/academics/offerings/{offering.id}/groups/'
+        )
+        
         groups = group_set.groups.all()
         data = [format_group(g, include_members=True) for g in groups]
         return JsonResponse({'count': len(data), 'results': data}, status=201)
