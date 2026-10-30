@@ -194,3 +194,21 @@ class AssignmentSubmission(models.Model):
 
     def __str__(self):
         return f"{self.student.email} - {self.assignment.title}"
+
+
+class GroupSet(models.Model):
+    offering = models.OneToOneField(Offering, on_delete=models.CASCADE, related_name='group_set')
+    naming_scheme = models.CharField(max_length=10, choices=[('letters', 'letters'), ('numbers', 'numbers')])
+    students_per_group = models.IntegerField()
+
+    def __str__(self):
+        return f"GroupSet for {self.offering.unit.code}"
+
+
+class StudentGroup(models.Model):
+    group_set = models.ForeignKey(GroupSet, on_delete=models.CASCADE, related_name='groups')
+    name = models.CharField(max_length=10)  # "A".."G" or "1".."10"
+    members = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='study_groups')
+
+    def __str__(self):
+        return f"Group {self.name} ({self.group_set.offering.unit.code})"

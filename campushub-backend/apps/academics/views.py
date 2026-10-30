@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
-from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission
+from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup
 from apps.common.pagination import paginate_queryset
 
 User = get_user_model()
@@ -1062,3 +1062,94 @@ def offering_grades_csv(request, pk):
         writer.writerow(row)
         
     return response
+
+
+# --- Student Groups Views ---
+
+def format_group(group, include_members=False):
+    data = {
+        'id': group.id,
+        'name': group.name,
+    }
+    if include_members:
+        data['members'] = list(group.members.values('id', 'first_name', 'last_name', 'email'))
+    return data
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@jwt_required
+def offering_groups(request, pk):
+    user = request.user
+    try:
+        offering = Offering.objects.select_related('course').get(pk=pk)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    if request.method == 'GET':
+        try:
+            group_set = offering.group_set
+        except GroupSet.DoesNotExist:
+            return JsonResponse({'count': 0, 'results': []})
+            
+        if is_offering_lecturer(user, offering) or user.role == 'admin':
+            groups = group_set.groups.all()
+            data = [format_group(g, include_members=True) for g in groups]
+            return JsonResponse({'count': len(data), 'results': data})
+        else:
+            group = group_set.groups.filter(members=user).first()
+            if group:
+                return JsonResponse({'count': 1, 'results': [format_group(group, include_members=True)]})
+            return JsonResponse({'count': 0, 'results': []})
+            
+    elif request.method == 'POST':
+        if not is_offering_lecturer(user, offering):
+            return JsonResponse({'error': 'Only assigned lecturers or admins can manage groups'}, status=403)
+            
+        try:
+            data = json.loads(request.body)
+            naming_scheme = data.get('naming_scheme', 'letters')
+            students_per_group = int(data.get('students_per_group', 3))
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+            
+        if naming_scheme not in ['letters', 'numbers']:
+            return JsonResponse({'error': 'naming_scheme must be letters or numbers'}, status=400)
+        if students_per_group < 1:
+            return JsonResponse({'error': 'students_per_group must be at least 1'}, status=400)
+            
+        students = list(User.objects.filter(
+            enrollments__course=offering.course,
+            enrollments__status='active',
+            role='student'
+        ).distinct())
+        
+        if not students:
+            return JsonResponse({'error': 'No enrolled students to group'}, status=400)
+            
+        with transaction.atomic():
+            if hasattr(offering, 'group_set'):
+                offering.group_set.delete()
+                
+            group_set = GroupSet.objects.create(
+                offering=offering,
+                naming_scheme=naming_scheme,
+                students_per_group=students_per_group
+            )
+            
+            import random
+            random.shuffle(students)
+            
+            num_groups = (len(students) + students_per_group - 1) // students_per_group
+            for i in range(num_groups):
+                if naming_scheme == 'letters':
+                    name = chr(65 + i)
+                else:
+                    name = str(i + 1)
+                    
+                group = StudentGroup.objects.create(group_set=group_set, name=name)
+                chunk = students[i * students_per_group : (i + 1) * students_per_group]
+                group.members.set(chunk)
+                
+        groups = group_set.groups.all()
+        data = [format_group(g, include_members=True) for g in groups]
+        return JsonResponse({'count': len(data), 'results': data}, status=201)
