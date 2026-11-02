@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
-from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup
+from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup, Lesson
 from apps.common.pagination import paginate_queryset
 from apps.notifications.services import NotificationService
 from datetime import timedelta
@@ -780,21 +780,70 @@ def calendar_view(request):
     else: # admin
         offerings = Offering.objects.all()
         
-    sessions = ClassSession.objects.filter(offering__in=offerings).select_related('offering__unit', 'offering__course')
-    
-    # Expand sessions to concrete dates (simplified: just return the session template)
+    offering_ids = list(offerings.values_list('id', flat=True))
+    now = timezone.now()
     events = []
+
+    # Class sessions (recurring) — compute next occurrence date
+    sessions = ClassSession.objects.filter(
+        offering_id__in=offering_ids
+    ).select_related('offering__unit', 'offering__course')
     for s in sessions:
+        days_ahead = (s.day_of_week - now.weekday()) % 7
+        next_date = (now + timedelta(days=days_ahead)).date()
         events.append({
-            'id': s.id,
+            'id': f'class-{s.id}',
+            'kind': 'class',
             'title': f"{s.offering.unit.code} - {s.offering.course.code}",
-            'day_of_week': s.day_of_week,
+            'unit_code': s.offering.unit.code,
+            'offering_id': s.offering_id,
+            'date': next_date.isoformat(),
             'start_time': str(s.start_time),
-            'end_time': str(s.end_time),
-            'location': s.location,
-            'type': 'session'
+            'end_time': str(s.end_time) if s.end_time else None,
+            'location': getattr(s, 'location', None),
+            'due_at': None,
+            'day_of_week': s.day_of_week,
         })
-    # TODO: Add assignment due dates in Stage 3
+
+    # Assignment due dates (students see published only)
+    a_filter = {'offering_id__in': offering_ids, 'due_at__isnull': False}
+    if user.role == 'student':
+        a_filter['is_published'] = True
+    assignments = Assignment.objects.filter(**a_filter).select_related('offering__unit')
+    for a in assignments:
+        events.append({
+            'id': f'assignment-{a.id}',
+            'kind': 'assignment',
+            'title': a.title,
+            'unit_code': a.offering.unit.code,
+            'offering_id': a.offering_id,
+            'date': a.due_at.date().isoformat(),
+            'start_time': a.due_at.time().isoformat(),
+            'end_time': None,
+            'location': None,
+            'due_at': a.due_at.isoformat(),
+        })
+
+    # Lessons
+    lessons = Lesson.objects.filter(
+        offering_id__in=offering_ids,
+    ).select_related('offering__unit')
+    for l in lessons:
+        lesson_end = l.scheduled_at + timedelta(minutes=l.duration_minutes)
+        events.append({
+            'id': f'lesson-{l.id}',
+            'kind': 'lesson',
+            'title': l.title,
+            'unit_code': l.offering.unit.code,
+            'offering_id': l.offering_id,
+            'date': l.scheduled_at.date().isoformat(),
+            'start_time': l.scheduled_at.time().isoformat(),
+            'end_time': lesson_end.time().isoformat(),
+            'location': None,
+            'due_at': None,
+        })
+
+    events.sort(key=lambda e: (e['date'], e['start_time']))
     return JsonResponse({'count': len(events), 'results': events})
 
 
@@ -1351,3 +1400,151 @@ def lecturer_dashboard(request):
         'pending_submissions': pending_data,
         'today_sessions': sessions_data
     })
+
+# --- Lesson Plan Views ---
+
+def format_lesson(lesson):
+    return {
+        'id': lesson.id,
+        'offering_id': lesson.offering_id,
+        'title': lesson.title,
+        'description': lesson.description,
+        'scheduled_at': lesson.scheduled_at.isoformat(),
+        'duration_minutes': lesson.duration_minutes,
+        'created_at': lesson.created_at.isoformat(),
+    }
+
+
+def check_lesson_overlap(lecturer, scheduled_at, duration_minutes, exclude_lesson_id=None):
+    """Returns error message string if overlap found, None otherwise.
+    Checks both Lesson and ClassSession conflicts for all offerings the lecturer teaches."""
+    from datetime import timedelta
+    lesson_end = scheduled_at + timedelta(minutes=duration_minutes)
+    lesson_weekday = scheduled_at.weekday()
+
+    taught_ids = list(UnitTeachingAssignment.objects.filter(
+        lecturer=lecturer
+    ).values_list('offering_id', flat=True))
+
+    # Lesson overlaps (same date)
+    lessons_qs = Lesson.objects.filter(
+        offering_id__in=taught_ids,
+        scheduled_at__date=scheduled_at.date(),
+    )
+    if exclude_lesson_id:
+        lessons_qs = lessons_qs.exclude(pk=exclude_lesson_id)
+    for other in lessons_qs:
+        other_end = other.scheduled_at + timedelta(minutes=other.duration_minutes)
+        if scheduled_at < other_end and lesson_end > other.scheduled_at:
+            return f'Lesson overlaps with "{other.title}" at {other.scheduled_at.isoformat()}'
+
+    # ClassSession overlaps (same weekday, time-of-day comparison)
+    sessions = ClassSession.objects.filter(
+        offering_id__in=taught_ids,
+        day_of_week=lesson_weekday,
+    )
+    ls, le = scheduled_at.time(), lesson_end.time()
+    for s in sessions:
+        ss = getattr(s, 'start_time', None)
+        se = getattr(s, 'end_time', None)
+        if ss and se and ls < se and le > ss:
+            return f'Lesson overlaps with class session ({ss}-{se})'
+
+    return None
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@jwt_required
+def offering_lessons(request, pk):
+    user = request.user
+    try:
+        offering = Offering.objects.select_related('course', 'unit').get(pk=pk)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+
+    if request.method == 'GET':
+        is_lect = is_offering_lecturer(user, offering)
+        is_stu = user.role == 'student' and Enrollment.objects.filter(
+            student=user, course=offering.course, status='active').exists()
+        if not is_lect and not is_stu and user.role != 'admin':
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+        lessons = offering.lessons.all().order_by('scheduled_at')
+        data = [format_lesson(l) for l in lessons]
+        return JsonResponse({'count': len(data), 'results': data})
+
+    elif request.method == 'POST':
+        if not is_offering_lecturer(user, offering):
+            return JsonResponse({'error': 'Only assigned lecturers or admins can create lessons'}, status=403)
+        try:
+            data = json.loads(request.body)
+            title = data['title']
+            sa_raw = data['scheduled_at']
+            duration_minutes = int(data['duration_minutes'])
+            description = data.get('description', '')
+        except (KeyError, json.JSONDecodeError, ValueError):
+            return JsonResponse({'error': 'Invalid JSON or missing fields (title, scheduled_at, duration_minutes)'}, status=400)
+
+        from datetime import datetime
+        try:
+            scheduled_at = datetime.fromisoformat(sa_raw) if isinstance(sa_raw, str) else sa_raw
+        except ValueError:
+            return JsonResponse({'error': 'Invalid scheduled_at format (use ISO 8601)'}, status=400)
+
+        overlap = check_lesson_overlap(user, scheduled_at, duration_minutes)
+        if overlap:
+            return JsonResponse({'error': overlap}, status=400)
+
+        lesson = Lesson.objects.create(
+            offering=offering, title=title, description=description,
+            scheduled_at=scheduled_at, duration_minutes=duration_minutes)
+        return JsonResponse(format_lesson(lesson), status=201)
+
+
+@csrf_exempt
+@require_http_methods(["PATCH", "DELETE"])
+@jwt_required
+def lesson_detail(request, pk):
+    user = request.user
+    try:
+        lesson = Lesson.objects.select_related('offering__course', 'offering__unit').get(pk=pk)
+    except Lesson.DoesNotExist:
+        return JsonResponse({'error': 'Lesson not found'}, status=404)
+
+    if not is_offering_lecturer(user, lesson.offering):
+        return JsonResponse({'error': 'Only assigned lecturers or admins can manage lessons'}, status=403)
+
+    if request.method == 'DELETE':
+        lesson.delete()
+        return JsonResponse({'message': 'Lesson deleted successfully'})
+
+    elif request.method == 'PATCH':
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        from datetime import datetime
+        new_sa = data.get('scheduled_at')
+        new_dur = data.get('duration_minutes')
+
+        if new_sa:
+            try:
+                lesson.scheduled_at = datetime.fromisoformat(new_sa) if isinstance(new_sa, str) else new_sa
+            except ValueError:
+                return JsonResponse({'error': 'Invalid scheduled_at format'}, status=400)
+        if new_dur is not None:
+            lesson.duration_minutes = int(new_dur)
+
+        if new_sa or new_dur is not None:
+            overlap = check_lesson_overlap(user, lesson.scheduled_at, lesson.duration_minutes, exclude_lesson_id=lesson.id)
+            if overlap:
+                return JsonResponse({'error': overlap}, status=400)
+
+        if 'title' in data:
+            lesson.title = data['title']
+        if 'description' in data:
+            lesson.description = data['description']
+
+        lesson.save()
+        return JsonResponse(format_lesson(lesson))

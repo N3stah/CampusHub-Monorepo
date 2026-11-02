@@ -32,6 +32,8 @@ urlpatterns = [
     path('offerings/<int:pk>/grades.csv', views.offering_grades_csv, name='offering-grades-csv'),
     path('offerings/<int:pk>/roster.csv', views.offering_roster_csv, name='offering-roster-csv'),
     path('offerings/<int:pk>/groups/', views.offering_groups, name='offering-groups'),
+    path('offerings/<int:pk>/lessons/', views.offering_lessons, name='offering-lessons'),
+    path('lessons/<int:pk>/', views.lesson_detail, name='lesson-detail'),
     path('dashboard/student/', views.student_dashboard, name='student-dashboard'),
     path('dashboard/lecturer/', views.lecturer_dashboard, name='lecturer-dashboard'),
 ]
