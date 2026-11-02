@@ -3,6 +3,7 @@ import json
 import csv
 from django.http import HttpResponse
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -11,7 +12,7 @@ from django.contrib.auth import get_user_model
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
-from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup, Lesson
+from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup, Lesson, AttendanceRecord
 from apps.common.pagination import paginate_queryset
 from apps.notifications.services import NotificationService
 from datetime import timedelta
@@ -704,6 +705,20 @@ def offering_roster(request, pk):
         return JsonResponse({'error': 'Only the assigned lecturer or admin can view the roster'}, status=403)
         
     enrollments = Enrollment.objects.filter(course=offering.course, status='active').select_related('student')
+        
+    search = request.GET.get('search', '').strip()
+        
+    if search:
+        
+        enrollments = enrollments.filter(
+        
+            Q(student__first_name__icontains=search) |
+        
+            Q(student__last_name__icontains=search) |
+        
+            Q(student__admission_number__icontains=search)
+        
+        )
     data = [
         {
             'id': e.id,
@@ -1548,3 +1563,105 @@ def lesson_detail(request, pk):
 
         lesson.save()
         return JsonResponse(format_lesson(lesson))
+
+# --- Attendance Views ---
+
+def format_attendance_session(session):
+    return {
+        'id': session.id,
+        'offering_id': session.offering_id,
+        'day_of_week': session.day_of_week,
+        'start_time': str(session.start_time),
+        'end_time': str(session.end_time) if session.end_time else None,
+        'room': getattr(session, 'room', None),
+        'unit_code': session.offering.unit.code,
+        'unit_title': getattr(session.offering.unit, 'name', ''),
+        'course_code': session.offering.course.code,
+        'course_title': session.offering.course.title,
+    }
+
+
+def _build_attendance_records(session, attendance_date):
+    """Build AttendanceRow list — one per enrolled student, unmarked = status null."""
+    enrollments = Enrollment.objects.filter(
+        course=session.offering.course, status='active'
+    ).select_related('student').order_by('student__last_name', 'student__first_name')
+    saved = {
+        r.student_id: r for r in AttendanceRecord.objects.filter(
+            session=session, date=attendance_date
+        )
+    }
+    records = []
+    for e in enrollments:
+        r = saved.get(e.student_id)
+        records.append({
+            'student_id': e.student_id,
+            'student_name': e.student.get_full_name(),
+            'admission_number': e.student.admission_number or None,
+            'course_code': session.offering.course.code,
+            'course_title': session.offering.course.title,
+            'status': r.status if r else None,
+            'note': r.note if r else '',
+        })
+    return records
+
+
+@csrf_exempt
+@require_http_methods(["GET", "PUT"])
+@jwt_required
+def session_attendance(request, pk):
+    user = request.user
+    try:
+        session = ClassSession.objects.select_related(
+            'offering__course', 'offering__unit'
+        ).get(pk=pk)
+    except ClassSession.DoesNotExist:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+
+    if not is_offering_lecturer(user, session.offering) and user.role != 'admin':
+        return JsonResponse({'error': 'Only assigned lecturers or admins can manage attendance'}, status=403)
+
+    date_str = request.GET.get('date')
+    if not date_str:
+        return JsonResponse({'error': 'date parameter is required (YYYY-MM-DD)'}, status=400)
+    from datetime import datetime as dt_cls
+    try:
+        attendance_date = dt_cls.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'error': 'Invalid date format (use YYYY-MM-DD)'}, status=400)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            'session': format_attendance_session(session),
+            'date': date_str,
+            'records': _build_attendance_records(session, attendance_date),
+        })
+
+    elif request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            records_data = data.get('records', [])
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        if not isinstance(records_data, list):
+            return JsonResponse({'error': 'records must be a list'}, status=400)
+
+        valid_statuses = {'present', 'late', 'absent', 'excused'}
+        with transaction.atomic():
+            for row in records_data:
+                sid = row.get('student_id')
+                status = row.get('status')
+                note = row.get('note', '')
+                if not sid or status not in valid_statuses:
+                    return JsonResponse({'error': f'Invalid record: student_id and valid status required'}, status=400)
+                AttendanceRecord.objects.update_or_create(
+                    session=session,
+                    student_id=sid,
+                    date=attendance_date,
+                    defaults={'status': status, 'note': note, 'recorded_by': user}
+                )
+        return JsonResponse({
+            'session': format_attendance_session(session),
+            'date': date_str,
+            'records': _build_attendance_records(session, attendance_date),
+        })
