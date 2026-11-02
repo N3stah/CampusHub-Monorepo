@@ -1,7 +1,13 @@
+from datetime import timedelta
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
+from django.utils import timezone
+
+from apps.academics.models import Course, Department, Enrollment, School, Unit
 from apps.accounts.jwt_utils import make_pair
+from apps.placements.models import Application, Placement
 
 User = get_user_model()
 pytestmark = pytest.mark.django_db
@@ -241,10 +247,40 @@ def test_superuser_defaults_to_admin_role():
 def test_admin_stats_requires_admin_role_and_returns_counts(client):
     admin = make_user('admin@example.test', 'campus-admin', role='admin')
     student = make_user('student@example.test', 'student-one')
+    lecturer = make_user('lecturer@example.test', 'lecturer-one', role='lecturer')
+    officer = make_user('officer@example.test', 'officer-one', role='officer')
+    school = School.objects.create(name='Engineering', code='ENG')
+    department = Department.objects.create(name='Computing', code='COMP', school=school)
+    course = Course.objects.create(code='BSCIT', title='Information Technology', department=department)
+    unit = Unit.objects.create(code='IT101', title='Introduction to IT')
+    Enrollment.objects.create(student=student, course=course)
+    placement = Placement.objects.create(
+        title='Software Intern',
+        company='CampusHub',
+        location='Nairobi',
+        description='Internship placement',
+        requirements='Currently enrolled student',
+        deadline=timezone.localdate() + timedelta(days=30),
+    )
+    Application.objects.create(student=student, placement=placement, cover_note='I am interested.')
 
     response = client.get('/api/admin/stats/', **auth_header(admin))
     assert response.status_code == 200
-    assert response.json()['active_users'] == 2
+    assert response.json() == {
+        'active_users': 4,
+        'students': 1,
+        'lecturers': 1,
+        'placement_officers': 1,
+        'schools': 1,
+        'departments': 1,
+        'courses': 1,
+        'units': 1,
+        'active_enrollments': 1,
+        'placements': 1,
+        'applications': 1,
+        'open_placements': 1,
+        'pending_applications': 1,
+    }
 
     forbidden = client.get('/api/admin/stats/', **auth_header(student))
     assert forbidden.status_code == 403

@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import api from '@/lib/api';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
 import type { CalendarEvent, CourseAnnouncement, Enrollment, Placement, StudentApplication } from '@/types/portal';
 
@@ -132,11 +131,8 @@ export default function StudentDashboard() {
     const from = dateInputValue(startOfMonth(visibleMonth));
     const to = dateInputValue(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0));
     try {
-      const response = await api.get<CalendarEvent[]>('/academics/calendar/', {
-        params: { from, to },
-        signal,
-      });
-      setCalendarEvents(response.data);
+      const page = await getApiPage<CalendarEvent>('/academics/calendar/', { from, to }, signal);
+      setCalendarEvents(page.results);
       setCalendarError(null);
     } catch (requestError) {
       if (!signal?.aborted) setCalendarError(getApiErrorMessage(requestError));

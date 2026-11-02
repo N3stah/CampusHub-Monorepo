@@ -5,10 +5,8 @@ import { getApiPage } from '@/lib/portal';
 
 const mocks = vi.hoisted(() => ({
   getApiPage: vi.fn(),
-  api: { get: vi.fn() },
 }));
 
-vi.mock('@/lib/api', () => ({ default: mocks.api }));
 vi.mock('@/lib/portal', async () => {
   const actual = await vi.importActual<typeof import('@/lib/portal')>('@/lib/portal');
   return { ...actual, getApiPage: mocks.getApiPage };
@@ -23,7 +21,6 @@ vi.mock('next/link', async () => {
 
 beforeEach(() => {
   vi.mocked(getApiPage).mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
-  vi.mocked(mocks.api.get).mockResolvedValue({ data: [] });
 });
 
 describe('student dashboard', () => {
@@ -34,9 +31,43 @@ describe('student dashboard', () => {
     expect(screen.getByRole('heading', { name: 'My calendar' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next month' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /full calendar/i })).not.toBeInTheDocument();
-    await waitFor(() => expect(mocks.api.get).toHaveBeenCalledWith(
+    await waitFor(() => expect(getApiPage).toHaveBeenCalledWith(
       '/academics/calendar/',
-      expect.objectContaining({ params: expect.any(Object), signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ from: expect.any(String), to: expect.any(String) }),
+      expect.any(AbortSignal),
     ));
+  });
+
+  it('renders calendar events from the paginated results envelope', async () => {
+    const today = new Date();
+    const date = [
+      today.getFullYear(),
+      String(today.getMonth() + 1).padStart(2, '0'),
+      String(today.getDate()).padStart(2, '0'),
+    ].join('-');
+    vi.mocked(getApiPage).mockImplementation(async (endpoint) => ({
+      count: endpoint === '/academics/calendar/' ? 1 : 0,
+      next: null,
+      previous: null,
+      results: endpoint === '/academics/calendar/'
+        ? [{
+          id: 'class-1',
+          kind: 'class',
+          title: 'Database lecture',
+          unit_code: 'CS101',
+          offering_id: 1,
+          date,
+          start_time: '10:00',
+          end_time: '11:00',
+          location: 'Room 2',
+          due_at: null,
+        }]
+        : [],
+    }));
+
+    render(<StudentDashboard />);
+
+    expect(await screen.findByText('Database lecture')).toBeInTheDocument();
+    expect(screen.getByText('Room 2')).toBeInTheDocument();
   });
 });
