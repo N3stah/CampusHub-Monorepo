@@ -6,6 +6,8 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.auth import get_user_model
 from django.db.models import F
 from django.conf import settings
+from django.db.models import Q
+from django.utils import timezone
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.academics.models import Course, Enrollment
@@ -54,7 +56,10 @@ def format_announcement(a):
         'is_pinned': a.is_pinned,
         'author': a.author.get_full_name() if a.author else None,
         'created_at': a.created_at.isoformat(),
-        'updated_at': a.updated_at.isoformat()
+        'updated_at': a.updated_at.isoformat(),
+        'scheduled_for': a.scheduled_for.isoformat() if a.scheduled_for else None,
+        'dispatched_at': a.dispatched_at.isoformat() if a.dispatched_at else None,
+        'group_id': a.group_id,
     }
 
 # --- Resource Views ---
@@ -226,47 +231,66 @@ def announcement_list_create(request, course_id):
     if request.method == 'GET':
         if not has_course_view_permission(user, course):
             return JsonResponse({'error': 'Permission denied'}, status=403)
-        
         announcements = Announcement.objects.filter(course=course).select_related('author')
+        announcements = announcements.filter(
+            Q(scheduled_for__isnull=True) | Q(dispatched_at__isnull=False)
+        )
+        if user.role == 'student':
+            announcements = announcements.filter(
+                Q(group__isnull=True) | Q(group__members=user)
+            )
         data = [format_announcement(a) for a in announcements]
         return JsonResponse(data, safe=False)
 
     elif request.method == 'POST':
         if not has_course_modify_permission(user, course):
             return JsonResponse({'error': 'Only lecturers or admins can post announcements'}, status=403)
-
         try:
             data = json.loads(request.body)
             title = data.get('title')
             body = data.get('body')
             is_pinned = data.get('is_pinned', False)
+            scheduled_for = data.get('scheduled_for')
+            group_id = data.get('group_id')
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
         if not title or not body:
             return JsonResponse({'error': 'Title and body are required'}, status=400)
 
-        announcement = Announcement.objects.create(
-            course=course,
-            author=user,
-            title=title,
-            body=body,
-            is_pinned=is_pinned
-        )
-        
-        # --- Notification Hook ---
-        enrolled_students = Enrollment.objects.filter(
-            course=course, status='active'
-        ).values_list('student', flat=True)
-        
-        NotificationService.notify_bulk(
-            recipients=list(enrolled_students),
-            verb='announcement_added',
-            message=f'New announcement "{announcement.title}" posted to {course.code}',
-            actor=user,
-            link=f'/courses/{course.id}/'
-        )
+        from datetime import datetime
+        sf = None
+        if scheduled_for:
+            try:
+                sf = datetime.fromisoformat(scheduled_for) if isinstance(scheduled_for, str) else scheduled_for
+            except ValueError:
+                return JsonResponse({'error': 'Invalid scheduled_for format'}, status=400)
+        grp = None
+        if group_id:
+            from apps.academics.models import StudentGroup
+            grp = StudentGroup.objects.filter(pk=group_id).first()
+            if not grp:
+                return JsonResponse({'error': 'Group not found'}, status=400)
 
+        now = timezone.now()
+        announcement = Announcement.objects.create(
+            course=course, author=user, title=title, body=body,
+            is_pinned=is_pinned, scheduled_for=sf, group=grp,
+        )
+        if not sf or sf <= now:
+            if grp:
+                recipients = list(grp.members.values_list('id', flat=True))
+            else:
+                recipients = list(Enrollment.objects.filter(
+                    course=course, status='active'
+                ).values_list('student', flat=True))
+            if recipients:
+                NotificationService.notify_bulk(
+                    recipients=recipients, verb='announcement_added',
+                    message=f'New announcement "{announcement.title}" posted to {course.code}',
+                    actor=user, link=f'/courses/{course.id}/'
+                )
+            announcement.dispatched_at = now
+            announcement.save(update_fields=['dispatched_at'])
         return JsonResponse(format_announcement(announcement), status=201)
 
 @csrf_exempt
@@ -403,42 +427,75 @@ def offering_announcement_list_create(request, offering_id):
         offering = Offering.objects.get(pk=offering_id)
     except Offering.DoesNotExist:
         return JsonResponse({'error': 'Offering not found'}, status=404)
-        
+
     course = offering.course
     user = request.user
-    
+
     is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists() or course.lecturer_id == user.id
     if user.role != 'admin' and not is_lecturer and not Enrollment.objects.filter(student=user, course=course, status='active').exists():
         return JsonResponse({'error': 'Permission denied'}, status=403)
-        
+
     if request.method == 'GET':
         announcements = Announcement.objects.filter(offering=offering).select_related('author')
+        announcements = announcements.filter(
+            Q(scheduled_for__isnull=True) | Q(dispatched_at__isnull=False)
+        )
+        if user.role == 'student':
+            announcements = announcements.filter(
+                Q(group__isnull=True) | Q(group__members=user)
+            )
         data = [format_announcement(a) for a in announcements]
         return JsonResponse(data, safe=False)
-        
+
     elif request.method == 'POST':
         if not is_lecturer and user.role != 'admin':
             return JsonResponse({'error': 'Only lecturers or admins can post announcements'}, status=403)
-            
         try:
             data = json.loads(request.body)
             title = data.get('title')
             body = data.get('body')
             is_pinned = data.get('is_pinned', False)
+            scheduled_for = data.get('scheduled_for')
+            group_id = data.get('group_id')
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
-            
         if not title or not body:
             return JsonResponse({'error': 'Title and body are required'}, status=400)
-            
+
+        from datetime import datetime
+        sf = None
+        if scheduled_for:
+            try:
+                sf = datetime.fromisoformat(scheduled_for) if isinstance(scheduled_for, str) else scheduled_for
+            except ValueError:
+                return JsonResponse({'error': 'Invalid scheduled_for format'}, status=400)
+        grp = None
+        if group_id:
+            from apps.academics.models import StudentGroup
+            grp = StudentGroup.objects.filter(pk=group_id).first()
+            if not grp:
+                return JsonResponse({'error': 'Group not found'}, status=400)
+
+        now = timezone.now()
         announcement = Announcement.objects.create(
-            course=course,
-            offering=offering,
-            author=user,
-            title=title,
-            body=body,
-            is_pinned=is_pinned
+            course=course, offering=offering, author=user, title=title, body=body,
+            is_pinned=is_pinned, scheduled_for=sf, group=grp,
         )
+        if not sf or sf <= now:
+            if grp:
+                recipients = list(grp.members.values_list('id', flat=True))
+            else:
+                recipients = list(Enrollment.objects.filter(
+                    course=course, status='active'
+                ).values_list('student', flat=True))
+            if recipients:
+                NotificationService.notify_bulk(
+                    recipients=recipients, verb='announcement_added',
+                    message=f'New announcement "{announcement.title}" posted to {course.code}',
+                    actor=user, link=f'/courses/{course.id}/'
+                )
+            announcement.dispatched_at = now
+            announcement.save(update_fields=['dispatched_at'])
         return JsonResponse(format_announcement(announcement), status=201)
 
 @csrf_exempt

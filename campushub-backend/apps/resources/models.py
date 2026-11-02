@@ -60,6 +60,14 @@ class Announcement(models.Model):
     is_pinned = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+    dispatched_at = models.DateTimeField(null=True, blank=True)
+    group = models.ForeignKey(
+        'academics.StudentGroup',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='announcements'
+    )
 
     class Meta:
         indexes = [
