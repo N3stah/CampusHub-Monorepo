@@ -228,6 +228,29 @@ class Lesson(models.Model):
         return f'{self.title} ({self.offering})'
 
 
+class AttendanceRecord(models.Model):
+    session = models.ForeignKey(ClassSession, on_delete=models.CASCADE, related_name='attendance_records')
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    date = models.DateField()
+    status = models.CharField(max_length=10, choices=[
+        ('present', 'present'), ('late', 'late'), ('absent', 'absent'), ('excused', 'excused')
+    ])
+    note = models.TextField(blank=True, default='')
+    recorded_at = models.DateTimeField(auto_now=True)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='+')
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['session', 'student', 'date'],
+                name='one_attendance_record_per_student_session_date'
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.student} - {self.date} - {self.status}'
+
+
 # Enforce that a student can only be in one StudentGroup per GroupSet
 @receiver(m2m_changed, sender=StudentGroup.members.through)
 def enforce_one_group_per_student(sender, instance, action, pk_set, **kwargs):
