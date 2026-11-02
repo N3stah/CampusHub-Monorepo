@@ -216,6 +216,18 @@ class StudentGroup(models.Model):
     def __str__(self):
         return f"Group {self.name} ({self.group_set.offering.unit.code})"
 
+class Lesson(models.Model):
+    offering = models.ForeignKey(Offering, on_delete=models.CASCADE, related_name='lessons')
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    scheduled_at = models.DateTimeField()
+    duration_minutes = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.title} ({self.offering})'
+
+
 # Enforce that a student can only be in one StudentGroup per GroupSet
 @receiver(m2m_changed, sender=StudentGroup.members.through)
 def enforce_one_group_per_student(sender, instance, action, pk_set, **kwargs):
