@@ -74,12 +74,15 @@ export default function RegisterPage() {
 
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-12">
-      <div className="w-full max-w-md">
-        <div className="bg-white p-8 rounded-2xl shadow-lg">
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-8 sm:px-6 sm:py-12">
+      <div className="w-full max-w-xl">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-900/[0.04] sm:p-8">
           <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold text-gray-900">CampusHub</h1>
-            <p className="mt-2 text-gray-600">Create your student account</p>
+            <Link href="/" className="inline-flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
+              <span aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-700 text-sm font-extrabold text-white">C</span>
+              <span>Campus<span className="text-blue-700">Hub</span></span>
+            </Link>
+            <p className="mt-3 text-slate-600">Create your student account</p>
           </div>
 
           {error && (
@@ -89,7 +92,7 @@ export default function RegisterPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="first_name" className="block text-sm font-medium text-gray-700 mb-1">
                   First Name
@@ -100,7 +103,7 @@ export default function RegisterPage() {
                   required
                   value={form.first_name}
                   onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
               <div>
@@ -113,7 +116,7 @@ export default function RegisterPage() {
                   required
                   value={form.last_name}
                   onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
             </div>
@@ -128,7 +131,7 @@ export default function RegisterPage() {
                 required
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
@@ -144,7 +147,7 @@ export default function RegisterPage() {
                 placeholder="e.g. 23/08181"
                 value={form.admission_number}
                 onChange={(e) => setForm({ ...form, admission_number: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
@@ -158,7 +161,7 @@ export default function RegisterPage() {
                 required
                 value={form.username}
                 onChange={(e) => setForm({ ...form, username: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
@@ -176,7 +179,7 @@ export default function RegisterPage() {
                 required
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
@@ -190,22 +193,22 @@ export default function RegisterPage() {
                 required
                 value={form.password2}
                 onChange={(e) => setForm({ ...form, password2: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-medium py-2.5 px-4 rounded-lg transition mt-2"
+              className="min-h-12 w-full rounded-xl bg-blue-700 px-4 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-400"
             >
               {loading ? 'Creating account…' : 'Create account'}
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-gray-600">
+          <p className="mt-6 text-center text-sm text-slate-600">
             Already have an account?{' '}
-            <Link href="/login" className="text-indigo-600 hover:text-indigo-700 font-medium">
+            <Link href="/login" className="font-semibold text-blue-700 hover:text-blue-800">
               Sign in
             </Link>
           </p>

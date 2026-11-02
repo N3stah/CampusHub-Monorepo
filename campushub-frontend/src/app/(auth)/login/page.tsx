@@ -31,12 +31,15 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 sm:px-6">
       <div className="w-full max-w-md">
-        <div className="bg-white p-8 rounded-2xl shadow-lg">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-900/[0.04] sm:p-8">
           <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold text-gray-900">CampusHub</h1>
-            <p className="mt-2 text-gray-600">Sign in to your account</p>
+            <Link href="/" className="inline-flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
+              <span aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-700 text-sm font-extrabold text-white">C</span>
+              <span>Campus<span className="text-blue-700">Hub</span></span>
+            </Link>
+            <p className="mt-3 text-slate-600">Sign in to your account</p>
           </div>
 
           {error && (
@@ -56,7 +59,7 @@ export default function LoginPage() {
                 required
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
@@ -70,22 +73,22 @@ export default function LoginPage() {
                 required
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-medium py-2.5 px-4 rounded-lg transition"
+              className="min-h-12 w-full rounded-xl bg-blue-700 px-4 py-3 font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-400"
             >
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-gray-600">
+          <p className="mt-6 text-center text-sm text-slate-600">
             Don&apos;t have an account?{' '}
-            <Link href="/register" className="text-indigo-600 hover:text-indigo-700 font-medium">
+            <Link href="/register" className="font-semibold text-blue-700 hover:text-blue-800">
               Register here
             </Link>
           </p>

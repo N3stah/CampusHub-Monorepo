@@ -13,24 +13,25 @@ interface PortalShellProps {
 }
 
 const navigation: { label: string; href: string; roles: User['role'][] }[] = [
-  { label: 'Overview', href: '/dashboard', roles: ['student', 'lecturer', 'officer', 'admin'] },
+  { label: 'Overview', href: '/dashboard', roles: ['student', 'lecturer', 'officer'] },
   { label: 'Units', href: '/lecturer/units', roles: ['lecturer'] },
   { label: 'Lesson plan', href: '/lecturer/lessons', roles: ['lecturer'] },
   { label: 'Attendance', href: '/lecturer/attendance', roles: ['lecturer'] },
   { label: 'Learning materials / notes', href: '/lecturer/materials', roles: ['lecturer'] },
   { label: 'Assignments', href: '/assignments', roles: ['student', 'lecturer'] },
   { label: 'My courses', href: '/courses', roles: ['student'] },
-  { label: 'Students', href: '/users', roles: ['admin'] },
-  { label: 'Lecturers', href: '/lecturers', roles: ['admin'] },
-  { label: 'Placements', href: '/placements', roles: ['student', 'officer', 'admin'] },
-  { label: 'Applications', href: '/applications', roles: ['student', 'officer', 'admin'] },
-  { label: 'Administration', href: '/admin', roles: ['admin'] },
-  { label: 'Logs', href: '/admin/logs', roles: ['admin'] },
+  { label: 'Overview', href: '/admin', roles: ['admin'] },
+  { label: 'Campus stats', href: '/admin/stats', roles: ['admin'] },
   { label: 'Schools', href: '/admin/schools', roles: ['admin'] },
   { label: 'Departments', href: '/admin/departments', roles: ['admin'] },
   { label: 'Programmes', href: '/admin/courses', roles: ['admin'] },
   { label: 'Units and teaching', href: '/admin/units', roles: ['admin'] },
   { label: 'Programme admissions', href: '/admin/enrollments', roles: ['admin'] },
+  { label: 'Students', href: '/users', roles: ['admin'] },
+  { label: 'Lecturers', href: '/lecturers', roles: ['admin'] },
+  { label: 'Placements', href: '/placements', roles: ['student', 'officer', 'admin'] },
+  { label: 'Applications', href: '/applications', roles: ['student', 'officer', 'admin'] },
+  { label: 'Logs', href: '/admin/logs', roles: ['admin'] },
 ];
 
 export default function PortalShell({ children, roles }: PortalShellProps) {
@@ -57,20 +58,21 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-slate-50 text-slate-900">
-      <header className="fixed inset-x-0 top-0 z-30 h-16 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-          <Link href="/dashboard" className="text-xl font-bold tracking-tight text-blue-700">
-            CampusHub
+    <div className="h-dvh overflow-hidden bg-slate-50 text-slate-900">
+      <header className="fixed inset-x-0 top-0 z-30 h-16 border-b border-slate-200/80 bg-white/95 shadow-sm shadow-slate-900/[0.02] backdrop-blur">
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6">
+          <Link href="/dashboard" className="flex shrink-0 items-center gap-2 text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+            <span aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-700 text-sm font-extrabold text-white">C</span>
+            <span>Campus<span className="text-blue-700">Hub</span></span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
             <button
               type="button"
               aria-label={mobileNavigationOpen ? 'Close navigation menu' : 'Open navigation menu'}
               aria-expanded={mobileNavigationOpen}
               aria-controls={mobileNavigationOpen ? 'mobile-main-navigation' : undefined}
               onClick={() => setMobileNavigationOpen((open) => !open)}
-              className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 lg:hidden"
+              className="rounded-xl border border-slate-200 p-2 text-slate-600 transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 lg:hidden"
             >
               {mobileNavigationOpen ? (
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
@@ -86,7 +88,7 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
               href="/notifications"
               aria-label="Notifications"
               title="Notifications"
-              className="relative rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+              className="relative rounded-xl border border-slate-200 p-2 text-slate-600 transition hover:bg-slate-50 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
             >
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12a2 2 0 0 0 4 0" />
@@ -113,9 +115,9 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
             {user.role !== 'lecturer' && (
               <Link
                 href="/profile"
-                className="flex items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-1.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 sm:px-2.5"
               >
-                <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-700">
+                <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-700">
                   {`${user.first_name[0] ?? ''}${user.last_name[0] ?? ''}`.toUpperCase()}
                 </span>
                 <span className="hidden sm:inline">Profile</span>
@@ -124,9 +126,13 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
             <button
               type="button"
               onClick={logout}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+              aria-label="Sign out"
+              className="flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 px-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 sm:px-3"
             >
-              Sign out
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 17l5-5-5-5m5 5H3m9-9h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5" />
+              </svg>
+              <span className="hidden sm:inline">Sign out</span>
             </button>
           </div>
         </div>
@@ -140,7 +146,7 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
                 key={item.href}
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
-                className={`shrink-0 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${
+                className={`shrink-0 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
                   active
                     ? 'bg-blue-50 text-blue-700'
                   : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
@@ -160,7 +166,7 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
             onClick={() => setMobileNavigationOpen(false)}
             className="absolute inset-0 top-16 bg-slate-950/30"
           />
-          <nav id="mobile-main-navigation" aria-label="Main navigation" className="absolute bottom-0 left-0 top-16 w-72 max-w-[85vw] overflow-y-auto border-r border-slate-200 bg-white p-4 shadow-xl">
+          <nav id="mobile-main-navigation" aria-label="Main navigation" className="absolute bottom-0 left-0 top-16 w-72 max-w-[85vw] overflow-y-auto border-r border-slate-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-xl">
             <div className="flex flex-col gap-1">
               {availableNavigation.map((item) => {
                 const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(`${item.href}/`));
@@ -170,7 +176,7 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
                     href={item.href}
                     aria-current={active ? 'page' : undefined}
                     onClick={() => setMobileNavigationOpen(false)}
-                    className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition ${
+                    className={`min-h-11 rounded-xl px-3 py-3 text-sm font-semibold transition ${
                       active ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
@@ -183,7 +189,7 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
         </div>
       )}
       <main className="fixed bottom-0 left-0 right-0 top-16 overflow-y-auto lg:left-60">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">{children}</div>
+        <div className="portal-content mx-auto min-w-0 max-w-7xl px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-8">{children}</div>
       </main>
     </div>
   );

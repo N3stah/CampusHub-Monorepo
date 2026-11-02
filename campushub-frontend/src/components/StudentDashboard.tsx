@@ -195,20 +195,20 @@ export default function StudentDashboard() {
             <h2 id="student-calendar-heading" className="font-semibold">My calendar</h2>
             <p className="mt-1 text-xs text-slate-500">Classes and assignment deadlines from your enrolled units.</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center justify-center gap-1.5 sm:gap-2">
             <button type="button" aria-label="Previous month" onClick={() => {
               const month = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1);
               navigateMonth(month, month);
-            }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50">←</button>
-            <h3 aria-live="polite" className="min-w-36 text-center text-sm font-semibold">{monthLabel}</h3>
+            }} className="rounded-xl border border-slate-200 px-2.5 py-2 text-sm font-semibold hover:bg-slate-50 sm:px-3">←</button>
+            <h3 aria-live="polite" className="min-w-28 text-center text-sm font-semibold sm:min-w-36">{monthLabel}</h3>
             <button type="button" aria-label="Next month" onClick={() => {
               const month = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1);
               navigateMonth(month, month);
-            }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50">→</button>
+            }} className="rounded-xl border border-slate-200 px-2.5 py-2 text-sm font-semibold hover:bg-slate-50 sm:px-3">→</button>
             <button type="button" onClick={() => {
               const today = new Date();
               navigateMonth(today, today);
-            }} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50">Today</button>
+            }} className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 sm:px-3">Today</button>
           </div>
         </div>
         {calendarError && (

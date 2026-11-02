@@ -475,3 +475,40 @@ The current push targets `feature/my-new-feature` and contains frontend changes 
 | P0 | Apply and verify backend migrations before enabling these frontend screens in a shared environment. | Run `python manage.py migrate`, `python manage.py makemigrations --check --dry-run`, and the backend test suite against the deployment settings; verify uploaded files use persistent storage and authenticated downloads. |
 | P1 | Verify frontend/API integration against the deployed backend. | Exercise student course/unit access, file and quiz submissions, resubmission, early/late timestamps, lecturer review/download/mark/feedback, and CSV export with accounts for each role. Confirm students cannot read other students' work or quiz answer keys and lecturers cannot access unassigned offerings. |
 | P1 | Reconcile any API or frontend changes found during live verification. | Document the final request/response contract and run end-to-end smoke tests after the backend commit is deployed. |*** End Patch
+
+## Frontend/backend endpoint gap assessment — 2026-11-02
+
+Static comparison of the frontend API calls and the backend route/view/model source in this repository. These items have **not** been verified against a live backend. Confirm the deployed backend revision before treating a route as absent; do not recreate endpoints solely because a running service returned 404.
+
+### P0 — Make existing frontend workflows callable
+
+| Status | Workflow | Exact work required |
+|---|---|---|
+| `[ ]` | Lecturer lessons | The lecturer UI calls `GET/POST /api/academics/offerings/<offering_id>/lessons/` and `GET/PATCH/DELETE /api/academics/lessons/<lesson_id>/`, but matching backend routes/models were not found. Add the lesson model, migration, routes, views, validation, and tests; restrict writes to the lecturer assigned to the offering and reads to authorized offering members. If lessons are out of scope, remove the UI/API calls and clearly disable the workflow instead. |
+| `[ ]` | Lecturer attendance | The UI calls `GET/POST /api/academics/sessions/<session_id>/attendance/`, but no matching backend endpoint or attendance model was found. Add attendance storage, migration, endpoint, and tests; allow only the assigned lecturer to record/update attendance and limit student reads to their own record. If attendance is out of scope, remove the UI/API calls instead. |
+| `[ ]` | Lecturer dashboard summary | The frontend requests `GET /api/academics/lecturer/summary/`, while the backend declares `GET /api/academics/dashboard/lecturer/`. Select one canonical URL, update either the frontend call or backend route, and test the response and role permissions. |
+| `[ ]` | Assignment detail editing | The frontend uses `GET/PATCH /api/academics/assignments/<assignment_id>/`; the backend route currently maps that path to a DELETE-only view. Implement a detail view supporting the required GET/PATCH methods with offering-scoped lecturer authorization and field validation, while preserving the existing delete behavior through a supported method. Add method and authorization tests. |
+| `[ ]` | Assignment attachments | The frontend creates/replaces attachments and requests `/api/academics/assignments/<assignment_id>/attachment/`, but the backend assignment model and routes do not provide this feature. Add attachment storage, migration, upload/download or replacement handling, file validation, and permission-checked routes. Restrict changes to the assigned lecturer and downloads to authorized offering members; test invalid files and denied roles. |
+| `[ ]` | Assignment submission response contract | Frontend submission code expects `{ submission: AssignmentSubmission }`; backend POST currently returns `{ id, score }`, and GET omits fields expected by the frontend type. Define one response schema, return it consistently from GET/POST, update the frontend type/handling if needed, and test first submission, resubmission, and serialization of file/grade/feedback fields. |
+| `[ ]` | Student submission download | Frontend builds a download URL using the assignment ID at `/api/academics/assignments/<assignment_id>/submission/download/`; backend exposes `/api/academics/submissions/<submission_id>/download/`. Update the frontend to use the submission ID and backend route (or deliberately add a compatible assignment-scoped route), then test that students can only download their own submission and assigned lecturers can access submissions for their offering. |
+| `[ ]` | Group-set response shape | Backend returns a paginated `{ count, results }` response with group `members`; frontend expects `{ groups: [...] }` with `students` and reads `.groups.length`. Choose and document one shape, update backend or frontend consumers and types together, and test empty and populated group sets plus student membership privacy. |
+| `[ ]` | Calendar response shape and assignment deadlines | Frontend renders dated events using a `kind` discriminator; backend calendar currently returns weekly session templates using `day_of_week`, and assignment due dates are not included. Return dated class occurrences and assignment-deadline events with a stable event kind and the fields the UI renders, or change the UI to the intended template model. Cover term boundaries, weekdays/time zones, unpublished assignments, and students/lecturers with different offering access. |
+
+### P1 — Decide whether backend-only routes need frontend workflows
+
+For each route below, decide whether to add a user-facing action and connect it to the existing endpoint, or explicitly mark it out of scope. Do not add duplicate backend routes if the existing route already implements the behavior.
+
+| Status | Existing backend capability | Decision / exact work |
+|---|---|---|
+| `[ ]` | Dropping an enrollment | Confirm whether staff or students need a drop action. If in scope, add the authorized action to the relevant UI and test that users cannot drop another student's enrollment; otherwise document it as backend-only. |
+| `[ ]` | Bulk lecturer assignment | Decide whether admins need a bulk assignment workflow. If yes, add the admin UI, input validation, and success/error handling against the existing endpoint; otherwise document it as backend-only. |
+| `[ ]` | Course roster CSV export | Decide whether lecturers/admins need CSV export. If yes, expose the existing export in the authorized roster UI and test permissions and CSV contents; otherwise document it as backend-only. |
+| `[ ]` | Dashboard API routes | Identify which dashboard route responses are intended for current frontend pages. Connect each needed route and align its response type, or mark unused routes as backend-only; do not maintain unconsumed routes without an explicit product decision. |
+
+### P0 — Contract and integration verification
+
+- `[ ]` Maintain a route/contract checklist for each workflow above: HTTP method, path, authentication, role/object permissions, request body, success response, and error response.
+- `[ ]` Add or update focused backend tests for every implemented route, including invalid input, unsupported methods, unauthorized roles, cross-student access, and cross-offering access where applicable.
+- `[ ]` Add or update frontend tests for the actual request path/method and expected response shape, including loading, empty, and error states.
+- `[ ]` Run backend tests, frontend tests, TypeScript checks, and lint after reconciling the contracts.
+- `[ ]` After confirming the deployed revision, run authenticated integration smoke tests for student, lecturer, and admin workflows; record the tested backend revision and results here. Static source comparison alone is not evidence of live integration.*** End Patch
