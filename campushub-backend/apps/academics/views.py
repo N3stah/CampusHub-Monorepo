@@ -1405,7 +1405,7 @@ def lecturer_dashboard(request):
         {'id': s.id, 'offering_id': s.offering_id, 'course_code': s.offering.course.code,
          'start_time': getattr(s, 'start_time', None).isoformat() if getattr(s, 'start_time', None) else None,
          'end_time': getattr(s, 'end_time', None).isoformat() if getattr(s, 'end_time', None) else None,
-         'room': getattr(s, 'room', None)}
+         'room': getattr(s, 'location', None)}
         for s in today_sessions
     ]
 
@@ -1575,7 +1575,7 @@ def format_attendance_session(session):
         'end_time': str(session.end_time) if session.end_time else None,
         'room': getattr(session, 'room', None),
         'unit_code': session.offering.unit.code,
-        'unit_title': getattr(session.offering.unit, 'name', ''),
+        'unit_title': getattr(session.offering.unit, 'title', ''),
         'course_code': session.offering.course.code,
         'course_title': session.offering.course.title,
     }
