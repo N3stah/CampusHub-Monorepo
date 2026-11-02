@@ -3,7 +3,7 @@
 **Project:** CampusHub — University Departmental Resource & Placement Portal
 **Stack:** Plain Django (no DRF) + PyJWT · PostgreSQL 18 · Next.js (App Router)
 **Internship:** Spin Mobile LLC — 12-Week Roadmap (Aug 17 – Nov 6, 2026)
-**ERD Version:** v2.1 · **Date:** 2026-10-21
+**ERD Version:** v3.0 · **Date:** 2026-11-02
 **Authors:** Mark Manoti (N3stah) · Titus
 
 > This document matches the models on `main`. Table names are the real Django table names
@@ -37,8 +37,20 @@
 | 8 | `placements_application` | Student submissions to placements | FK to Student User + Placement |
 | 9 | `notifications_notification` | In-app notifications | FK to recipient User + actor User |
 | 10 | `accounts_auditevent` | Admin activity history | FK to actor User (nullable) |
+| 11 | `academics_school` | Top-level academic unit | 1:N to Department, 1:N to Unit |
+| 12 | `academics_unit` | Academic unit within a School | 1:N to Offering |
+| 13 | `academics_offering` | Links Unit to Course | 1:N to ClassSession, Assignment, Lesson |
+| 14 | `academics_unitteachingassignment` | Lecturer assigned to Offering | FK to Offering + User |
+| 15 | `academics_classsession` | Recurring weekly class slot | FK to Offering, 1:N AttendanceRecord |
+| 16 | `academics_assignment` | Assignment (quiz/file) | 1:N Question, 1:N Submission |
+| 17 | `academics_assignmentquestion` | Quiz question | FK to Assignment |
+| 18 | `academics_assignmentsubmission` | Student submission | FK to Assignment + Student, released_at |
+| 19 | `academics_groupset` | OneToOne with Offering | 1:N StudentGroup |
+| 20 | `academics_studentgroup` | Group within GroupSet | M2M members to User |
+| 21 | `academics_lesson` | Scheduled lesson | FK to Offering |
+| 22 | `academics_attendancerecord` | Per-student attendance | FK to ClassSession + Student |
 
-**Total tables:** 10 (plus Django's own auth/session/migration tables, not documented here).
+**Total tables:** 22 (10 original + 12 new academic models, plus Django's own auth/session/migration tables, not documented here).
 **Relationship types exercised:** 1:N (Department → Course), N:M (Student ↔ Course via Enrollment), and a role discriminator on User.
 
 ---
@@ -353,6 +365,163 @@ INDEX (recipient_id, is_read, created_at DESC)   -- unread count and list
 | created_at | DateTimeField | TIMESTAMPTZ | auto_now_add | |
 
 ---
+
+
+
+### 3.11 `academics_school`
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | bigint | PK |
+| name | varchar(100) | UNIQUE, NOT NULL |
+| code | varchar(20) | UNIQUE, NOT NULL |
+| created_at | timestamptz | auto_now_add |
+| updated_at | timestamptz | auto_now |
+
+**Relationships:** 1:N to Department, 1:N to Unit.
+
+---
+
+### 3.12 `academics_unit`
+
+| id | bigint | PK |
+| school_id | bigint | FK -> school |
+| code | varchar(20) | UNIQUE |
+| title | varchar(200) | NOT NULL |
+| description | text | blank |
+| created_at | timestamptz | auto_now_add |
+
+---
+
+### 3.13 `academics_offering`
+
+| id | bigint | PK |
+| unit_id | bigint | FK -> unit |
+| course_id | bigint | FK -> course |
+| is_active | boolean | default True |
+| created_at | timestamptz | auto_now_add |
+
+---
+
+### 3.14 `academics_unitteachingassignment`
+
+| id | bigint | PK |
+| offering_id | bigint | FK -> offering |
+| lecturer_id | bigint | FK -> user |
+| created_at | timestamptz | auto_now_add |
+
+Unique on (offering, lecturer).
+
+---
+
+### 3.15 `academics_classsession`
+
+| id | bigint | PK |
+| offering_id | bigint | FK -> offering |
+| day_of_week | smallint | 0=Mon..6=Sun |
+| start_time | time | NOT NULL |
+| end_time | time | NOT NULL |
+| starts_on | date | NOT NULL |
+| ends_on | date | NOT NULL |
+| location | varchar(100) | nullable |
+
+---
+
+### 3.16 `academics_assignment`
+
+| id | bigint | PK |
+| offering_id | bigint | FK -> offering |
+| title | varchar(200) | NOT NULL |
+| instructions | text | blank |
+| assignment_type | varchar(10) | quiz/file |
+| allowed_file_types | json | default [] |
+| due_at | timestamptz | NOT NULL |
+| max_points | integer | NOT NULL |
+| is_published | boolean | default False |
+| created_at | timestamptz | auto_now_add |
+
+---
+
+### 3.17 `academics_assignmentquestion`
+
+| id | bigint | PK |
+| assignment_id | bigint | FK -> assignment |
+| prompt | text | NOT NULL |
+| options | json | list of strings |
+| correct_option | integer | index, NOT NULL |
+
+`correct_option` never serialized to students.
+
+---
+
+### 3.18 `academics_assignmentsubmission`
+
+| id | bigint | PK |
+| assignment_id | bigint | FK -> assignment |
+| student_id | bigint | FK -> user |
+| answers | json | {question_id: option} |
+| file | varchar | nullable |
+| score | numeric(5,2) | nullable |
+| feedback | text | blank |
+| submitted_at | timestamptz | auto_now_add |
+| graded_at | timestamptz | nullable |
+| released_at | timestamptz | nullable (score hidden until set) |
+
+Unique on (assignment, student).
+
+---
+
+### 3.19 `academics_groupset`
+
+| id | bigint | PK |
+| offering_id | bigint | FK -> offering (OneToOne) |
+| naming_scheme | varchar(10) | letters/numbers |
+| students_per_group | integer | NOT NULL |
+
+---
+
+### 3.20 `academics_studentgroup`
+
+| id | bigint | PK |
+| group_set_id | bigint | FK -> groupset |
+| name | varchar(10) | NOT NULL |
+
+M2M `members` to accounts_user. Signal enforces one group per student per GroupSet.
+
+---
+
+### 3.21 `academics_lesson`
+
+| id | bigint | PK |
+| offering_id | bigint | FK -> offering |
+| title | varchar(200) | NOT NULL |
+| description | text | blank |
+| scheduled_at | timestamptz | NOT NULL |
+| duration_minutes | integer | NOT NULL |
+| created_at | timestamptz | auto_now_add |
+
+Overlap validation rejects conflicts with other Lessons or ClassSessions.
+
+---
+
+### 3.22 `academics_attendancerecord`
+
+| id | bigint | PK |
+| session_id | bigint | FK -> classsession |
+| student_id | bigint | FK -> user |
+| date | date | NOT NULL |
+| status | varchar(10) | present/late/absent/excused |
+| note | text | blank |
+| recorded_at | timestamptz | auto_now |
+| recorded_by_id | bigint | FK -> user, nullable |
+
+Unique on (session, student, date).
+
+---
+
+### 3.23 `resources_announcement` (updated v3.0)
+
+New fields: `scheduled_for` (timestamptz, nullable), `dispatched_at` (timestamptz, nullable), `group_id` (FK -> studentgroup, nullable).
 
 ## 4. Relationship Summary
 

@@ -512,3 +512,34 @@ For each route below, decide whether to add a user-facing action and connect it 
 - `[ ]` Add or update frontend tests for the actual request path/method and expected response shape, including loading, empty, and error states.
 - `[ ]` Run backend tests, frontend tests, TypeScript checks, and lint after reconciling the contracts.
 - `[ ]` After confirming the deployed revision, run authenticated integration smoke tests for student, lecturer, and admin workflows; record the tested backend revision and results here. Static source comparison alone is not evidence of live integration.*** End Patch
+
+## Backend: Lessons, Attendance, Scheduled Announcements + Test Coverage — 2026-11-02
+
+### Section 1: Lesson Plan Backend (merged `231fd2b`)
+- Lesson model (offering FK, title, description, scheduled_at, duration_minutes)
+- Migration 0010_lesson_model
+- GET/POST/PATCH/DELETE lesson endpoints with overlap validation (checks both
+  Lesson and ClassSession conflicts for the lecturer's taught offerings)
+- Calendar view updated to CalendarEvent shape with kind: class|assignment|lesson
+
+### Section 2: Attendance Backend (merged `8a98416`)
+- AttendanceRecord model (session FK, student FK, date, status, note, recorded_by)
+  with unique constraint on (session, student, date)
+- Migration 0011_attendance_record
+- GET/PUT /sessions/<id>/attendance/?date=YYYY-MM-DD matching frontend AttendanceResponse
+- Roster ?search= param added (filters by student name or admission number)
+
+### Section 3: Scheduled Announcements (merged `9189b1d`)
+- scheduled_for, dispatched_at, group fields on Announcement (migration 0005)
+- Visibility filtering: scheduled-not-dispatched hidden; group-targeted hidden from non-members
+- New management command: dispatch_scheduled_announcements (idempotent)
+
+### Section 4: Test Coverage + Bug Fix (merged `0526ff9`)
+- 17 new tests (52 -> 69 total), coverage 62% -> 72%
+- Test files: test_resources, test_lessons, test_attendance, test_dashboards,
+  test_notification_triggers
+- Bug fix: format_attendance_session used 'room' instead of 'location'
+
+**Tests:** 69 passed · **Coverage:** 72%
+
+---

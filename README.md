@@ -42,6 +42,21 @@ The API is fully documented in [`campushub-backend/docs/openapi.json`](campushub
 
 ---
 
+## Academic Structure
+
+The academics module implements a 4-level hierarchy: **School -> Department -> Unit -> Offering**.
+
+- **Offering** links a Unit to a Course, with teaching assignments, class sessions, assignments, and student groups
+- **Assignments** support both `quiz` (auto-marked) and `file` (lecturer-graded) types
+- **Grade release**: scores hidden from students until `released_at` is set
+- **Lessons**: `GET/POST /offerings/<id>/lessons/`, `PATCH/DELETE /lessons/<id>/` with overlap validation
+- **Attendance**: `GET/PUT /sessions/<id>/attendance/?date=YYYY-MM-DD` — one row per enrolled student, upsert on PUT
+- **Scheduled announcements**: `POST /courses/<id>/announcements/` accepts `scheduled_for` and `group_id`; `python manage.py dispatch_scheduled_announcements` dispatches due announcements
+- **Dashboards**: `GET /dashboard/student/` and `GET /dashboard/lecturer/`
+- **CSV exports**: `GET /offerings/<id>/grades.csv` and `GET /offerings/<id>/roster.csv`
+
+---
+
 ## User Roles
 
 | Role | Description |
