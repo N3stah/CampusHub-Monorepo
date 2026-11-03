@@ -858,8 +858,15 @@ def calendar_view(request):
             'due_at': None,
         })
 
+    # Filter by from/to query params if provided
+    from_date = request.GET.get('from')
+    to_date = request.GET.get('to')
+    if from_date:
+        events = [e for e in events if e['date'] >= from_date]
+    if to_date:
+        events = [e for e in events if e['date'] <= to_date]
     events.sort(key=lambda e: (e['date'], e['start_time']))
-    return JsonResponse({'count': len(events), 'results': events})
+    return JsonResponse(events, safe=False)
 
 
 # --- Assignment Views ---

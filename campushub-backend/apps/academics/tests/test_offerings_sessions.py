@@ -83,4 +83,4 @@ def test_calendar(client, admin_user, offering):
     headers = {'HTTP_AUTHORIZATION': f'Bearer {token}'}
     response = client.get('/api/academics/calendar/', **headers)
     assert response.status_code == 200
-    assert response.json()['count'] >= 1
+    assert len(response.json()) >= 1
