@@ -24,6 +24,7 @@ urlpatterns = [
     path('sessions/<int:pk>/', views.session_delete, name='session-delete'),
     path('sessions/<int:pk>/attendance/', views.session_attendance, name='session-attendance'),
     path('calendar/', views.calendar_view, name='calendar'),
+    path('calendar.ics', views.calendar_ics_view, name='calendar-ics'),
     path('assignments/', views.assignment_list, name='assignment-list'),
     path('offerings/<int:pk>/assignments/', views.offering_assignments, name='offering-assignments'),
     path('assignments/<int:pk>/', views.assignment_delete, name='assignment-delete'),
