@@ -780,26 +780,21 @@ def session_delete(request, pk):
     session.delete()
     return JsonResponse({'message': 'Session deleted successfully'})
 
-@csrf_exempt
-@require_http_methods(["GET"])
-@jwt_required
-def calendar_view(request):
-    user = request.user
-    # Get offerings the user is involved in
+def _get_calendar_events(user, query_params=None):
+    """Build calendar events for a user from sessions, assignments, and lessons."""
     if user.role == 'student':
         course_ids = Enrollment.objects.filter(student=user, status='active').values_list('course_id', flat=True)
         offerings = Offering.objects.filter(course_id__in=course_ids)
     elif user.role == 'lecturer':
         offering_ids = UnitTeachingAssignment.objects.filter(lecturer=user).values_list('offering_id', flat=True)
         offerings = Offering.objects.filter(id__in=offering_ids)
-    else: # admin
+    else:
         offerings = Offering.objects.all()
-        
+
     offering_ids = list(offerings.values_list('id', flat=True))
     now = timezone.now()
     events = []
 
-    # Class sessions (recurring) — compute next occurrence date
     sessions = ClassSession.objects.filter(
         offering_id__in=offering_ids
     ).select_related('offering__unit', 'offering__course')
@@ -820,7 +815,6 @@ def calendar_view(request):
             'day_of_week': s.day_of_week,
         })
 
-    # Assignment due dates (students see published only)
     a_filter = {'offering_id__in': offering_ids, 'due_at__isnull': False}
     if user.role == 'student':
         a_filter['is_published'] = True
@@ -839,7 +833,6 @@ def calendar_view(request):
             'due_at': a.due_at.isoformat(),
         })
 
-    # Lessons
     lessons = Lesson.objects.filter(
         offering_id__in=offering_ids,
     ).select_related('offering__unit')
@@ -858,15 +851,65 @@ def calendar_view(request):
             'due_at': None,
         })
 
-    # Filter by from/to query params if provided
-    from_date = request.GET.get('from')
-    to_date = request.GET.get('to')
-    if from_date:
-        events = [e for e in events if e['date'] >= from_date]
-    if to_date:
-        events = [e for e in events if e['date'] <= to_date]
+    if query_params:
+        from_date = query_params.get('from')
+        to_date = query_params.get('to')
+        if from_date:
+            events = [e for e in events if e['date'] >= from_date]
+        if to_date:
+            events = [e for e in events if e['date'] <= to_date]
     events.sort(key=lambda e: (e['date'], e['start_time']))
+    return events
+
+
+def _format_ics_dt(date_str, time_str):
+    """Convert ISO date + time to iCalendar datetime (YYYYMMDDTHHMMSS)."""
+    date_clean = date_str.replace('-', '')
+    if time_str:
+        parts = str(time_str).split(':')
+        h = parts[0].zfill(2)[:2]
+        m = parts[1].zfill(2)[:2] if len(parts) > 1 else '00'
+        s = parts[2].split('.')[0].zfill(2)[:2] if len(parts) > 2 else '00'
+        return f"{date_clean}T{h}{m}{s}"
+    return date_clean
+
+
+def _serialize_ics(events):
+    """Serialize events list as an iCalendar (ICS) document."""
+    lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//CampusHub//Calendar//EN']
+    for e in events:
+        date_str = e.get('date')
+        if not date_str:
+            continue
+        dtstart = _format_ics_dt(date_str, e.get('start_time'))
+        dtend = _format_ics_dt(date_str, e.get('end_time')) if e.get('end_time') else dtstart
+        lines.append('BEGIN:VEVENT')
+        lines.append(f'UID:{e.get("id", "")}@campushub')
+        lines.append(f'DTSTART:{dtstart}')
+        lines.append(f'DTEND:{dtend}')
+        lines.append(f'SUMMARY:{e.get("title", "")}')
+        if e.get('location'):
+            lines.append(f'LOCATION:{e["location"]}')
+        lines.append('END:VEVENT')
+    lines.append('END:VCALENDAR')
+    return '\r\n'.join(lines)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def calendar_view(request):
+    events = _get_calendar_events(request.user, request.GET)
     return JsonResponse(events, safe=False)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def calendar_ics_view(request):
+    events = _get_calendar_events(request.user, request.GET)
+    ics_content = _serialize_ics(events)
+    return HttpResponse(ics_content, content_type='text/calendar')
 
 
 # --- Assignment Views ---
