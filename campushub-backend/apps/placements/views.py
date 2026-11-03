@@ -320,3 +320,59 @@ def application_cv_download(request, pk):
         
     file_handle = application.cv_file.open('rb')
     return FileResponse(file_handle, as_attachment=True, filename=os.path.basename(application.cv_file.name))
+
+
+# --- Placement Outcomes ---
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def placement_outcomes(request):
+    user = request.user
+    if user.role not in ('admin', 'officer'):
+        return JsonResponse({'error': 'Only admins or placement officers can view placement outcomes'}, status=403)
+
+    department_id = request.GET.get('department_id')
+    queryset = Application.objects.all()
+    if department_id:
+        try:
+            department_id = int(department_id)
+        except ValueError:
+            return JsonResponse({'error': 'department_id must be an integer'}, status=400)
+        queryset = queryset.filter(student__department_id=department_id)
+
+    from django.db.models import Count, Q
+    dept_stats = (
+        queryset
+        .values('student__department_id', 'student__department__name', 'student__department__code')
+        .annotate(
+            total_applications=Count('id'),
+            accepted=Count('id', filter=Q(status='accepted')),
+            pending=Count('id', filter=Q(status='pending')),
+            shortlisted=Count('id', filter=Q(status='shortlisted')),
+            rejected=Count('id', filter=Q(status='rejected')),
+            withdrawn=Count('id', filter=Q(status='withdrawn')),
+            unique_applicants=Count('student_id', distinct=True),
+        )
+        .order_by('student__department__name')
+    )
+
+    data = []
+    for dept in dept_stats:
+        total = dept['total_applications']
+        accepted = dept['accepted']
+        data.append({
+            'department_id': dept['student__department_id'],
+            'department_name': dept['student__department__name'] or 'Unassigned',
+            'department_code': dept['student__department__code'] or 'N/A',
+            'total_applications': total,
+            'accepted': accepted,
+            'pending': dept['pending'],
+            'shortlisted': dept['shortlisted'],
+            'rejected': dept['rejected'],
+            'withdrawn': dept['withdrawn'],
+            'unique_applicants': dept['unique_applicants'],
+            'acceptance_rate': round(accepted / total, 4) if total > 0 else 0.0,
+        })
+
+    return JsonResponse({'count': len(data), 'results': data})
