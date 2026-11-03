@@ -19,6 +19,7 @@ urlpatterns = [
     path('enrollments/<int:pk>/', views.enrollment_drop, name='enrollment-drop'),
     path('offerings/<int:pk>/', views.offering_detail, name='offering-detail'),
     path('offerings/<int:pk>/roster/', views.offering_roster, name='offering-roster'),
+    path('offerings/<int:pk>/at-risk/', views.offering_at_risk, name='offering-at-risk'),
     path('offerings/<int:pk>/sessions/', views.offering_sessions, name='offering-sessions'),
     path('sessions/<int:pk>/', views.session_delete, name='session-delete'),
     path('sessions/<int:pk>/attendance/', views.session_attendance, name='session-attendance'),
