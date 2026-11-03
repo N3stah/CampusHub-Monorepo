@@ -1672,3 +1672,92 @@ def session_attendance(request, pk):
             'date': date_str,
             'records': _build_attendance_records(session, attendance_date),
         })
+
+
+# --- At-Risk Students ---
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def offering_at_risk(request, pk):
+    user = request.user
+    try:
+        offering = Offering.objects.get(pk=pk)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+
+    if not is_offering_lecturer(user, offering):
+        return JsonResponse({'error': 'Only the assigned lecturer or admin can view at-risk students'}, status=403)
+
+    try:
+        attendance_threshold = float(request.GET.get('attendance_threshold', '0.75'))
+    except ValueError:
+        return JsonResponse({'error': 'attendance_threshold must be a number'}, status=400)
+    try:
+        missed_threshold = int(request.GET.get('missed_threshold', '2'))
+    except ValueError:
+        return JsonResponse({'error': 'missed_threshold must be an integer'}, status=400)
+
+    enrollments = Enrollment.objects.filter(
+        course=offering.course, status='active'
+    ).select_related('student')
+
+    session_ids = list(ClassSession.objects.filter(offering=offering).values_list('id', flat=True))
+
+    now = timezone.now()
+    past_assignment_ids = list(
+        Assignment.objects.filter(offering=offering, is_published=True, due_at__lt=now)
+        .values_list('id', flat=True)
+    )
+    total_assignments = len(past_assignment_ids)
+
+    attendance_map = {}
+    for ar in AttendanceRecord.objects.filter(
+        session__in=session_ids, status__in=['present', 'late', 'absent']
+    ).values('student_id', 'status'):
+        sid = ar['student_id']
+        if sid not in attendance_map:
+            attendance_map[sid] = {'attended': 0, 'total': 0}
+        attendance_map[sid]['total'] += 1
+        if ar['status'] in ('present', 'late'):
+            attendance_map[sid]['attended'] += 1
+
+    submitted_count_map = {}
+    for aid, sid in AssignmentSubmission.objects.filter(
+        assignment_id__in=past_assignment_ids
+    ).values_list('assignment_id', 'student_id'):
+        submitted_count_map[sid] = submitted_count_map.get(sid, 0) + 1
+
+    data = []
+    for e in enrollments:
+        student = e.student
+        sid = student.id
+        att = attendance_map.get(sid, {'attended': 0, 'total': 0})
+        attended = att['attended']
+        total = att['total']
+        attendance_rate = (attended / total) if total > 0 else 1.0
+        submitted_count = submitted_count_map.get(sid, 0)
+        missed_count = total_assignments - submitted_count
+
+        reasons = []
+        if total > 0 and attendance_rate < attendance_threshold:
+            reasons.append('attendance')
+        if missed_count >= missed_threshold:
+            reasons.append('assignments')
+
+        data.append({
+            'student_id': sid,
+            'student_name': student.get_full_name(),
+            'student_email': student.email,
+            'admission_number': student.admission_number,
+            'attendance_rate': round(attendance_rate, 4),
+            'attended_sessions': attended,
+            'total_sessions': total,
+            'missed_assignments': missed_count,
+            'total_assignments': total_assignments,
+            'at_risk': len(reasons) > 0,
+            'reasons': reasons,
+        })
+
+    data.sort(key=lambda x: (not x['at_risk'], x['attendance_rate']))
+    return JsonResponse({'count': len(data), 'results': data})
