@@ -43,6 +43,7 @@
 | P1 | Fix quiz submission edit validation | Move malformed-answer validation outside the JSON decode `except` block in `apps/academics/views.py`. Reject non-dictionaries and invalid/nonexistent question or option values with a structured 400 response and integration tests. |
 | P1 | Preserve accurate assignment submission timestamps | Update `submitted_at` when a file or quiz submission is edited, or add and expose a separate `updated_at` field and UI label. Add tests covering create, edit, and due-date result calculations. |
 | P1 | Verify assignment creation contract for the dedicated frontend route | Confirm the current offering assignment POST endpoint accepts both JSON and multipart payloads, validates lecturer ownership, supported file types and size, quiz questions, due dates and maximum points. Preserve consistent error shapes for frontend display. |
+| P1 | Resolve the academics migration branch | There is an untracked generated merge migration at `campushub-backend/apps/academics/migrations/0014_merge_20261104_1444.py`, joining `0012_enrollment_is_class_prefect` and `0013_preserve_legacy_grade_release_dates`. Run Django migration checks after backend changes are finalized, keep this merge migration only if it is generated consistently, and verify the full migration chain from a clean database. |
 | 5 | Creative features (at-risk, outcomes, ICS, digest) | `[x]` | `[ ]` | `[x]` |
 | 6 | Profile pictures + lecturer placements | `[x]` | `[ ]` | `[x]` |
 | 7 | Messaging (DM + group chat) | `[x]` | `[ ]` | `[x]` |
@@ -50,8 +51,6 @@
 | Fix | Users admission/course contract | `[x]` | n/a | `[x]` |
 | Fix | profile_picture_url everywhere + prefect toggle | `[x]` | `[ ]` | `[x]` |
 | Upgrade | Next.js 16.4.4 security patch | n/a | `[x]` | `[x]` |
-
----
 
 ---
 

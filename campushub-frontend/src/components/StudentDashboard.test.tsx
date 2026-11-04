@@ -6,12 +6,14 @@ import type { CalendarEvent } from '@/types/portal';
 
 const mocks = vi.hoisted(() => ({
   getApiPage: vi.fn(),
+  api: { get: vi.fn() },
 }));
 
 vi.mock('@/lib/portal', async () => {
   const actual = await vi.importActual<typeof import('@/lib/portal')>('@/lib/portal');
   return { ...actual, getApiPage: mocks.getApiPage };
 });
+vi.mock('@/lib/api', () => ({ default: mocks.api }));
 vi.mock('next/link', async () => {
   const React = await import('react');
   return {
@@ -22,6 +24,15 @@ vi.mock('next/link', async () => {
 
 beforeEach(() => {
   vi.mocked(getApiPage).mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
+  mocks.api.get.mockResolvedValue({
+    data: {
+      courses: [],
+      upcoming_assignments: [],
+      pending_submissions_count: 0,
+      recent_grades: [],
+      groups: [],
+    },
+  });
 });
 
 describe('student dashboard', () => {

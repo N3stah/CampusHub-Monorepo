@@ -12,13 +12,17 @@ interface AssignedUnit {
   offeringId: number;
 }
 
-interface LecturerSummary {
-  unit_count: number;
-  upcoming_lesson_count: number;
-  upcoming_assignment_count: number;
-  unmarked_submission_count: number;
-  pending_assignments: { id: number; title: string; unit_code: string; unmarked_count: number }[];
-  upcoming_dates: { id: string; title: string; unit_code: string; kind: string; at: string }[];
+interface LecturerDashboardSummary {
+  taught_offerings: { id: number; course_code: string; unit_code: string; is_active: boolean }[];
+  pending_grading_count: number;
+  pending_submissions: {
+    id: number;
+    student_name: string;
+    profile_picture_url: string | null;
+    assignment_title: string;
+    submitted_at: string;
+  }[];
+  today_sessions: { id: number; offering_id: number; course_code: string; start_time: string | null; end_time: string | null; room: string | null }[];
 }
 
 const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -68,7 +72,7 @@ export default function LecturerDashboard() {
   const { user } = useAuth();
   const [units, setUnits] = useState<AcademicUnit[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [summary, setSummary] = useState<LecturerSummary | null>(null);
+  const [summary, setSummary] = useState<LecturerDashboardSummary | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState(() => dateInputValue(new Date()));
@@ -130,7 +134,7 @@ export default function LecturerDashboard() {
 
   const loadSummary = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await api.get<LecturerSummary>('/academics/lecturer/summary/', { signal });
+      const response = await api.get<LecturerDashboardSummary>('/academics/dashboard/lecturer/', { signal });
       if (signal?.aborted) return;
       setSummary(response.data);
       setSummaryError(null);
@@ -157,7 +161,7 @@ export default function LecturerDashboard() {
   const displayedDays = useMemo(() => monthDays(visibleMonth), [visibleMonth]);
   const selectedDayEvents = eventsByDate.get(selectedDate) ?? [];
   const monthLabel = visibleMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  const pendingAssignments = summary?.pending_assignments ?? [];
+  const pendingAssignments = summary?.pending_submissions ?? [];
 
   const selectedOfferingId = sessionForm.offering_id || String(assignedUnits[0]?.offeringId ?? '');
 
@@ -232,13 +236,13 @@ export default function LecturerDashboard() {
         {summaryError && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><p>{summaryError}</p><button type="button" onClick={() => void loadSummary()} className="font-semibold underline">Try again</button></div>}
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            { label: 'Assigned units', count: summary?.unit_count ?? assignedUnits.length, href: '/lecturer/units', color: 'text-blue-700', caption: 'Open your teaching units' },
-            { label: 'Upcoming lessons', count: summary?.upcoming_lesson_count ?? '—', href: '/lecturer/lessons', color: 'text-indigo-700', caption: 'Review your lesson plan' },
-            { label: 'Assignment deadlines', count: summary?.upcoming_assignment_count ?? '—', href: '/assignments', color: 'text-amber-700', caption: 'Review published work' },
-            { label: 'Submissions to mark', count: summary?.unmarked_submission_count ?? '—', href: pendingAssignments[0] ? `/lecturer/assignments/${pendingAssignments[0].id}` : '/assignments', color: 'text-emerald-700', caption: 'Review student work' },
+            { label: 'Assigned units', count: summary?.taught_offerings.length ?? assignedUnits.length, href: '/lecturer/units', color: 'text-blue-700', caption: 'Open your teaching units' },
+            { label: "Today's sessions", count: summary?.today_sessions.length ?? '—', href: '/lecturer/lessons', color: 'text-indigo-700', caption: 'Classes scheduled today' },
+            { label: 'Teaching offerings', count: summary?.taught_offerings.length ?? assignedUnits.length, href: '/lecturer/units', color: 'text-amber-700', caption: 'Active teaching allocations' },
+            { label: 'Submissions to mark', count: summary?.pending_grading_count ?? '—', href: '/assignments', color: 'text-emerald-700', caption: 'Review student work' },
           ].map((item) => <Link key={item.label} href={item.href} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"><span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</span><strong className={`mt-1 block text-2xl ${item.color}`}>{item.count}</strong><span className="mt-1 block text-xs text-slate-500">{item.caption}</span></Link>)}
         </div>
-        {pendingAssignments.length ? <section className="rounded-xl border border-amber-200 bg-amber-50/60 p-4"><h3 className="text-sm font-semibold text-amber-900">Marking queue</h3><ul className="mt-2 grid gap-2 sm:grid-cols-2">{pendingAssignments.map((assignment) => <li key={assignment.id}><Link href={`/lecturer/assignments/${assignment.id}`} className="flex items-center justify-between gap-3 rounded-lg border border-amber-100 bg-white px-3 py-2.5 text-sm hover:border-amber-300"><span className="min-w-0"><span className="block truncate font-medium text-slate-900">{assignment.title}</span><span className="text-xs text-slate-500">{assignment.unit_code}</span></span><span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900">{assignment.unmarked_count} to mark</span></Link></li>)}</ul></section> : null}
+        {pendingAssignments.length ? <section className="rounded-xl border border-amber-200 bg-amber-50/60 p-4"><h3 className="text-sm font-semibold text-amber-900">Marking queue</h3><ul className="mt-2 grid gap-2 sm:grid-cols-2">{pendingAssignments.map((submission) => <li key={submission.id}><Link href="/assignments" className="flex items-center justify-between gap-3 rounded-lg border border-amber-100 bg-white px-3 py-2.5 text-sm hover:border-amber-300"><span className="min-w-0"><span className="block truncate font-medium text-slate-900">{submission.assignment_title}</span><span className="text-xs text-slate-500">{submission.student_name}</span></span><span className="shrink-0 text-xs text-slate-500">{new Date(submission.submitted_at).toLocaleDateString()}</span></Link></li>)}</ul></section> : null}
       </section>
 
       <section aria-labelledby="lecturer-calendar-heading" className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(20rem,0.7fr)]">
