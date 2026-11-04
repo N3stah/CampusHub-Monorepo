@@ -29,6 +29,7 @@ def test_all_api_routes_are_reachable():
         '/api/admin/placement-outcomes/',
         '/api/academics/calendar.ics',
         '/api/academics/lecturer/placements/',
+        '/api/messaging/conversations/',
     ]
     
     for url in endpoints:

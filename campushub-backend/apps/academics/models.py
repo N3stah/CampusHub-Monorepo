@@ -116,6 +116,7 @@ class Enrollment(models.Model):
     )
     enrolled_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    is_class_prefect = models.BooleanField(default=False)
 
     class Meta:
         # Removed unique_together to allow re-enrollment after dropping, and to support the one-active-programme rule

@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     'apps.resources',
     'apps.placements',
     'apps.notifications',
+    'apps.messaging',
     'apps.common',
 ]
 
