@@ -6,6 +6,8 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.auth import get_user_model
 from django.db.models import F
 from django.conf import settings
+from django.db.models import Q
+from django.utils import timezone
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.academics.models import Course, Enrollment
@@ -43,6 +45,7 @@ def format_resource(r, request):
         'file_size': r.file_size,
         'download_count': r.download_count,
         'uploaded_by': r.uploaded_by.get_full_name() if r.uploaded_by else None,
+        'uploaded_by_profile_picture_url': r.uploaded_by.profile_picture.url if r.uploaded_by and r.uploaded_by.profile_picture else None,
         'created_at': r.created_at.isoformat()
     }
 
@@ -53,8 +56,12 @@ def format_announcement(a):
         'body': a.body,
         'is_pinned': a.is_pinned,
         'author': a.author.get_full_name() if a.author else None,
+        'author_profile_picture_url': a.author.profile_picture.url if a.author and a.author.profile_picture else None,
         'created_at': a.created_at.isoformat(),
-        'updated_at': a.updated_at.isoformat()
+        'updated_at': a.updated_at.isoformat(),
+        'scheduled_for': a.scheduled_for.isoformat() if a.scheduled_for else None,
+        'dispatched_at': a.dispatched_at.isoformat() if a.dispatched_at else None,
+        'group_id': a.group_id,
     }
 
 # --- Resource Views ---
@@ -226,47 +233,66 @@ def announcement_list_create(request, course_id):
     if request.method == 'GET':
         if not has_course_view_permission(user, course):
             return JsonResponse({'error': 'Permission denied'}, status=403)
-        
         announcements = Announcement.objects.filter(course=course).select_related('author')
+        announcements = announcements.filter(
+            Q(scheduled_for__isnull=True) | Q(dispatched_at__isnull=False)
+        )
+        if user.role == 'student':
+            announcements = announcements.filter(
+                Q(group__isnull=True) | Q(group__members=user)
+            )
         data = [format_announcement(a) for a in announcements]
         return JsonResponse(data, safe=False)
 
     elif request.method == 'POST':
         if not has_course_modify_permission(user, course):
             return JsonResponse({'error': 'Only lecturers or admins can post announcements'}, status=403)
-
         try:
             data = json.loads(request.body)
             title = data.get('title')
             body = data.get('body')
             is_pinned = data.get('is_pinned', False)
+            scheduled_for = data.get('scheduled_for')
+            group_id = data.get('group_id')
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
         if not title or not body:
             return JsonResponse({'error': 'Title and body are required'}, status=400)
 
-        announcement = Announcement.objects.create(
-            course=course,
-            author=user,
-            title=title,
-            body=body,
-            is_pinned=is_pinned
-        )
-        
-        # --- Notification Hook ---
-        enrolled_students = Enrollment.objects.filter(
-            course=course, status='active'
-        ).values_list('student', flat=True)
-        
-        NotificationService.notify_bulk(
-            recipients=list(enrolled_students),
-            verb='announcement_added',
-            message=f'New announcement "{announcement.title}" posted to {course.code}',
-            actor=user,
-            link=f'/courses/{course.id}/'
-        )
+        from datetime import datetime
+        sf = None
+        if scheduled_for:
+            try:
+                sf = datetime.fromisoformat(scheduled_for) if isinstance(scheduled_for, str) else scheduled_for
+            except ValueError:
+                return JsonResponse({'error': 'Invalid scheduled_for format'}, status=400)
+        grp = None
+        if group_id:
+            from apps.academics.models import StudentGroup
+            grp = StudentGroup.objects.filter(pk=group_id).first()
+            if not grp:
+                return JsonResponse({'error': 'Group not found'}, status=400)
 
+        now = timezone.now()
+        announcement = Announcement.objects.create(
+            course=course, author=user, title=title, body=body,
+            is_pinned=is_pinned, scheduled_for=sf, group=grp,
+        )
+        if not sf or sf <= now:
+            if grp:
+                recipients = list(grp.members.values_list('id', flat=True))
+            else:
+                recipients = list(Enrollment.objects.filter(
+                    course=course, status='active'
+                ).values_list('student', flat=True))
+            if recipients:
+                NotificationService.notify_bulk(
+                    recipients=recipients, verb='announcement_added',
+                    message=f'New announcement "{announcement.title}" posted to {course.code}',
+                    actor=user, link=f'/courses/{course.id}/'
+                )
+            announcement.dispatched_at = now
+            announcement.save(update_fields=['dispatched_at'])
         return JsonResponse(format_announcement(announcement), status=201)
 
 @csrf_exempt
@@ -311,3 +337,187 @@ def announcement_detail_update_delete(request, course_id, pk):
             return JsonResponse({'error': 'You do not have permission to delete this announcement'}, status=403)
         announcement.delete()
         return JsonResponse({'message': 'Announcement deleted successfully'})
+
+
+# --- Offering-Scoped Resource Views ---
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@jwt_required
+def offering_resource_list_create(request, offering_id):
+    from apps.academics.models import Offering, Enrollment, UnitTeachingAssignment
+    from apps.notifications.services import NotificationService
+    try:
+        offering = Offering.objects.get(pk=offering_id)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    course = offering.course
+    user = request.user
+    
+    # Permission: enrolled student, assigned lecturer, or admin
+    is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists() or course.lecturer_id == user.id
+    if user.role != 'admin' and not is_lecturer and not Enrollment.objects.filter(student=user, course=course, status='active').exists():
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+        
+    if request.method == 'GET':
+        resources = Resource.objects.filter(offering=offering).select_related('uploaded_by')
+        data = [format_resource(r, request) for r in resources]
+        return JsonResponse(data, safe=False)
+        
+    elif request.method == 'POST':
+        if not is_lecturer and user.role != 'admin':
+            return JsonResponse({'error': 'Only lecturers or admins can upload resources'}, status=403)
+            
+        title = request.POST.get('title')
+        description = request.POST.get('description', '')
+        category = request.POST.get('category', '')
+        uploaded_file = request.FILES.get('file')
+        
+        if not title or not uploaded_file:
+            return JsonResponse({'error': 'Title and file are required'}, status=400)
+            
+        ext = os.path.splitext(uploaded_file.name)[1][1:].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            return JsonResponse({'error': f'File type {ext} not allowed'}, status=400)
+            
+        resource = Resource.objects.create(
+            course=course,
+            offering=offering,
+            uploaded_by=user,
+            title=title,
+            description=description,
+            category=category,
+            file=uploaded_file,
+            file_type=ext,
+            file_size=uploaded_file.size
+        )
+        return JsonResponse(format_resource(resource, request), status=201)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@jwt_required
+def offering_resource_delete(request, offering_id, pk):
+    from apps.academics.models import Offering, UnitTeachingAssignment
+    try:
+        offering = Offering.objects.get(pk=offering_id)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    try:
+        resource = Resource.objects.get(pk=pk, offering=offering)
+    except Resource.DoesNotExist:
+        return JsonResponse({'error': 'Resource not found'}, status=404)
+        
+    user = request.user
+    is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists() or course.lecturer_id == user.id
+    if user.role != 'admin' and resource.uploaded_by_id != user.id and not is_lecturer:
+        return JsonResponse({'error': 'You can only delete resources you uploaded'}, status=403)
+        
+    resource.file.delete(save=False)
+    resource.delete()
+    return JsonResponse({'message': 'Resource deleted successfully'})
+
+# --- Offering-Scoped Announcement Views ---
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@jwt_required
+def offering_announcement_list_create(request, offering_id):
+    from apps.academics.models import Offering, Enrollment, UnitTeachingAssignment
+    try:
+        offering = Offering.objects.get(pk=offering_id)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+
+    course = offering.course
+    user = request.user
+
+    is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists() or course.lecturer_id == user.id
+    if user.role != 'admin' and not is_lecturer and not Enrollment.objects.filter(student=user, course=course, status='active').exists():
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    if request.method == 'GET':
+        announcements = Announcement.objects.filter(offering=offering).select_related('author')
+        announcements = announcements.filter(
+            Q(scheduled_for__isnull=True) | Q(dispatched_at__isnull=False)
+        )
+        if user.role == 'student':
+            announcements = announcements.filter(
+                Q(group__isnull=True) | Q(group__members=user)
+            )
+        data = [format_announcement(a) for a in announcements]
+        return JsonResponse(data, safe=False)
+
+    elif request.method == 'POST':
+        if not is_lecturer and user.role != 'admin':
+            return JsonResponse({'error': 'Only lecturers or admins can post announcements'}, status=403)
+        try:
+            data = json.loads(request.body)
+            title = data.get('title')
+            body = data.get('body')
+            is_pinned = data.get('is_pinned', False)
+            scheduled_for = data.get('scheduled_for')
+            group_id = data.get('group_id')
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        if not title or not body:
+            return JsonResponse({'error': 'Title and body are required'}, status=400)
+
+        from datetime import datetime
+        sf = None
+        if scheduled_for:
+            try:
+                sf = datetime.fromisoformat(scheduled_for) if isinstance(scheduled_for, str) else scheduled_for
+            except ValueError:
+                return JsonResponse({'error': 'Invalid scheduled_for format'}, status=400)
+        grp = None
+        if group_id:
+            from apps.academics.models import StudentGroup
+            grp = StudentGroup.objects.filter(pk=group_id).first()
+            if not grp:
+                return JsonResponse({'error': 'Group not found'}, status=400)
+
+        now = timezone.now()
+        announcement = Announcement.objects.create(
+            course=course, offering=offering, author=user, title=title, body=body,
+            is_pinned=is_pinned, scheduled_for=sf, group=grp,
+        )
+        if not sf or sf <= now:
+            if grp:
+                recipients = list(grp.members.values_list('id', flat=True))
+            else:
+                recipients = list(Enrollment.objects.filter(
+                    course=course, status='active'
+                ).values_list('student', flat=True))
+            if recipients:
+                NotificationService.notify_bulk(
+                    recipients=recipients, verb='announcement_added',
+                    message=f'New announcement "{announcement.title}" posted to {course.code}',
+                    actor=user, link=f'/courses/{course.id}/'
+                )
+            announcement.dispatched_at = now
+            announcement.save(update_fields=['dispatched_at'])
+        return JsonResponse(format_announcement(announcement), status=201)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+@jwt_required
+def offering_announcement_delete(request, offering_id, pk):
+    from apps.academics.models import Offering
+    try:
+        offering = Offering.objects.get(pk=offering_id)
+    except Offering.DoesNotExist:
+        return JsonResponse({'error': 'Offering not found'}, status=404)
+        
+    try:
+        announcement = Announcement.objects.get(pk=pk, offering=offering)
+    except Announcement.DoesNotExist:
+        return JsonResponse({'error': 'Announcement not found'}, status=404)
+        
+    user = request.user
+    if user.role != 'admin' and announcement.author_id != user.id and offering.course.lecturer_id != user.id:
+        return JsonResponse({'error': 'You do not have permission to delete this announcement'}, status=403)
+        
+    announcement.delete()
+    return JsonResponse({'message': 'Announcement deleted successfully'})

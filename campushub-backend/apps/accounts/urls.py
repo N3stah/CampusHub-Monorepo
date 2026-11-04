@@ -6,4 +6,5 @@ urlpatterns = [
     path('token/', views.token_view, name='token'),
     path('token/refresh/', views.token_refresh_view, name='token_refresh'),
     path('me/', views.me_view, name='me'),
+    path('me/profile-picture/', views.upload_profile_picture, name='upload-profile-picture'),
 ]

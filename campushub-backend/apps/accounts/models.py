@@ -42,6 +42,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     first_name   = models.CharField(max_length=100)
     last_name    = models.CharField(max_length=100)
     role         = models.CharField(max_length=20, choices=ROLE_CHOICES, default='student')
+    admission_number = models.CharField(max_length=30, blank=True, null=True, unique=True)
     department   = models.ForeignKey(
         'academics.Department',
         on_delete=models.SET_NULL,
@@ -57,6 +58,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active    = models.BooleanField(default=True)
     is_staff     = models.BooleanField(default=False)
     date_joined  = models.DateTimeField(auto_now_add=True)
+    profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True)
 
     objects = UserManager()
 

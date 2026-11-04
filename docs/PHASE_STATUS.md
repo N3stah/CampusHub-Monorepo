@@ -4,6 +4,7 @@
 > Format: `[x]` = complete · `[-]` = in progress · `[ ]` = not started
 
 **Last updated:** 2026-10-21 · **Backend:** complete and deployed to Render · **Frontend (Titus):** in progress
+**Last updated:** 2026-11-04 · **Backend:** complete (172 tests, 80% coverage, 26 models, 87+ endpoints, 6 apps) · **Frontend (Titus):** in progress — new features awaiting UI (see guide below)
 
 | Phase | Slice | Backend (Mark) | Frontend (Titus) | Merged to main |
 |-------|-------|---------------|-------------------|----------------|
@@ -42,6 +43,15 @@
 | P1 | Fix quiz submission edit validation | Move malformed-answer validation outside the JSON decode `except` block in `apps/academics/views.py`. Reject non-dictionaries and invalid/nonexistent question or option values with a structured 400 response and integration tests. |
 | P1 | Preserve accurate assignment submission timestamps | Update `submitted_at` when a file or quiz submission is edited, or add and expose a separate `updated_at` field and UI label. Add tests covering create, edit, and due-date result calculations. |
 | P1 | Verify assignment creation contract for the dedicated frontend route | Confirm the current offering assignment POST endpoint accepts both JSON and multipart payloads, validates lecturer ownership, supported file types and size, quiz questions, due dates and maximum points. Preserve consistent error shapes for frontend display. |
+| 5 | Creative features (at-risk, outcomes, ICS, digest) | `[x]` | `[ ]` | `[x]` |
+| 6 | Profile pictures + lecturer placements | `[x]` | `[ ]` | `[x]` |
+| 7 | Messaging (DM + group chat) | `[x]` | `[ ]` | `[x]` |
+| Fix | Assignment list leak (security) | `[x]` | n/a | `[x]` |
+| Fix | Users admission/course contract | `[x]` | n/a | `[x]` |
+| Fix | profile_picture_url everywhere + prefect toggle | `[x]` | `[ ]` | `[x]` |
+| Upgrade | Next.js 16.4.4 security patch | n/a | `[x]` | `[x]` |
+
+---
 
 ---
 
@@ -321,6 +331,35 @@ Phase 5A commit `9dbea41` removed the `user_urls` include from `config/urls.py`,
 - Weak spots: `academics/views` 18%, `resources/views` 20%, the three management commands, `pagination.py` and `error_views.py` at 0%. The Group A endpoints have no tests yet.
 - `check --deploy`: only the two optional HSTS warnings (`SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD`).
 
+
+**Group D — documentation: done**
+- `docs/ERD.md` v2.1 matches the real models (real table names, `head_id`, `status`, `created_at`, notifications and audit tables, fenced Mermaid diagram, SQL embedded from the verified files).
+- `docs/sql/01..04_*.sql` execute against a seeded database.
+- `docs/openapi.json` is hand-written and lists all 34 paths (no DRF).
+
+**Group B — partial**
+- Done: `import_students`, `cleanup_notifications --days N`, `seed_data` (idempotent), `docs/openapi.json`.
+- **Not done:** the SOLID service layer from the capstone brief. Only `ApplicationService` and `NotificationService` exist. There is no `BaseService`, `ResourceService`, `EnrollmentService` or `Notifier` interface, so resource and enrollment logic still lives in the views.
+- **Not done:** pagination and `?search=` filtering. `apps/common/pagination.py` defines `paginate_queryset`, but no view calls it. Lists return `{"count", "results"}` unpaged.
+- Coverage is below the target (see Testing results).
+
+## Phase 6A — Deploy Backend — Completed ✅
+
+**Date:** 2026-10-21
+
+- Backend deployed to Render: `https://campushub-backend-nbgc.onrender.com`.
+- Verified: `curl https://campushub-backend-nbgc.onrender.com/api/health/` returns `{"status": "ok"}`.
+- Gunicorn + Procfile, WhiteNoise for static files, a PostgreSQL database, secrets supplied only through Render environment variables (`.env` is never committed).
+- Required environment variables: `SECRET_KEY`, `JWT_SECRET`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, `DB_*`.
+- Frontend (Titus) deploys to Vercel and must point `NEXT_PUBLIC_API_URL` at the Render URL. Add the Vercel domain to `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` on Render.
+
+## Testing results — 2026-10-21
+
+- `python manage.py check`: 0 issues. `makemigrations --check --dry-run`: no changes.
+- `pytest`: **37 passed**, total coverage **63%** (the capstone brief requires 60% or more).
+- Weak spots: `academics/views` 18%, `resources/views` 20%, the three management commands, `pagination.py` and `error_views.py` at 0%. The Group A endpoints have no tests yet.
+- `check --deploy`: only the two optional HSTS warnings (`SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD`).
+
 ## Known limitations
 
 - Uploads are validated by extension and size only (no MIME sniffing).
@@ -561,3 +600,167 @@ For each route below, decide whether to add a user-facing action and connect it 
 **Tests:** 69 passed · **Coverage:** 72%
 
 ---
+
+
+---
+
+## Backend: Creative Features + Messaging — 2026-11-04
+
+**13 PRs shipped this session.** Tests: 69 → 172 (+103). Coverage: 72% → 80%. Models: 22 → 26. Endpoints: 60+ → 87+. New app: `apps/messaging`.
+
+### Next.js 16.4.4 Security Upgrade (PR #48)
+- Upgraded from 16.4.0 to 16.4.4 (known security vulnerability)
+- Verified in isolated worktree: version check, config preserved, production build passes
+
+### Calendar Fix (PR #49)
+- Calendar endpoint changed from `{'count': N, 'results': [...]}` to bare array
+- Added `from`/`to` date filtering query params
+
+### .env.local Fix
+- `NEXT_PUBLIC_API_URL` was missing `/api` suffix → auth 404s on Render
+- Fixed: `NEXT_PUBLIC_API_URL=https://campushub-backend-nbgc.onrender.com/api`
+
+### Section 1: At-Risk Students (PR #51)
+- `GET /api/academics/offerings/<id>/at-risk/?attendance_threshold=0.75&missed_threshold=2`
+- Flags students by attendance rate < threshold OR 2+ missed assignment deadlines
+- Excused absences excluded from rate; batched queries (5 total)
+- 15 tests
+
+### Section 2: Placement Outcomes (PR #52)
+- `GET /api/admin/placement-outcomes/?department_id=X`
+- Per-department aggregation: total, accepted, pending, shortlisted, rejected, withdrawn, unique applicants, acceptance rate
+- Admin or placement officer only; single DB query with Count+Q annotations
+- 10 tests
+
+### Section 3: ICS Calendar Export (PR #53)
+- `GET /api/academics/calendar.ics` — Content-Type: text/calendar
+- Same event set as calendar/ (sessions, assignments, lessons)
+- iCalendar format with CRLF line endings; hand-rolled serializer (no new dependency)
+- Refactored calendar_view to share `_get_calendar_events` helper (no duplication)
+- 10 tests
+
+### Section 4: Notification Digest (PR #54)
+- `digest_notifications` management command (`--hours` flag, default 24)
+- Groups unread notifications into single `verb='digest'` summary per user
+- Idempotent via `digested_at` field on Notification (nullable)
+- Python-side grouping (avoids ORM distinct() + Meta ordering quirk in SQLite)
+- 8 tests
+
+### Section 5: Lecturer Placements (PR #55)
+- `GET /api/academics/lecturer/placements/`
+- Shows enrolled students with their accepted placement (title, company, location, deadline) or null
+- 3 batched queries; admin sees all offerings
+- 9 tests
+
+### Security Fix: Assignment List Leak (PR #56)
+- `assignment_list` returned ALL assignments to any non-student role (lecturers saw other lecturers' drafts)
+- Now scoped: lecturer sees only own offerings, admin global, student published+active, other roles 403
+- `offering_assignments` GET: students must be enrolled + see published only
+- 8 tests with two lecturers + separate offerings
+
+### Users Admission/Course Fix (PR #57)
+- `PATCH /api/users/<id>/` rejected `admission_number` and `course_id` as "Unsupported fields"
+- Now accepts both: admission_number (validated, duplicate-checked), course_id (sets department from programme, creates/updates enrollment transactionally)
+- Response includes `admission_number` + `programme: {id, code, title}`
+- 8 tests
+
+### Section 6: Profile Pictures (PR #58 + #59)
+- `ImageField` on User (`upload_to='profile_pictures/'`)
+- `POST /api/auth/me/profile-picture/` — multipart upload
+- Shared `apps/common/file_guards.py` (10MB max, jpg/jpeg/png/webp whitelist)
+- `profile_picture_url` in `_user_dict` and `_user_data`
+- **320×320 resize**: center-crop to square + LANCZOS resize + JPEG quality 85
+- Reduces storage from multi-MB originals to ~20-30KB avatars
+- Pillow added to requirements.txt
+- 10 tests
+
+### Section 7: Messaging (PR #60)
+- New `apps/messaging` app with 3 models: Conversation, ConversationParticipant, Message
+- `is_class_prefect` on Enrollment (for group chat admin)
+- 7 endpoints:
+  - `GET /api/messaging/conversations/` — list with unread count + latest message
+  - `POST /api/messaging/conversations/direct/` — get-or-create DM (teaching relationship check)
+  - `GET /api/messaging/offerings/<id>/group-conversation/` — get-or-create + sync participants
+  - `GET/POST /api/messaging/conversations/<id>/messages/` — list with `?after=` polling + send
+  - `DELETE /api/messaging/messages/<id>/` — soft delete (sender or group admin)
+  - `PATCH /api/messaging/conversations/<id>/read/` — mark read (clears unread count)
+- Permissions: students DM only their lecturers, no student-to-student DMs, group chat restricted to enrolled + assigned
+- Notification trigger on new message
+- Polling-based v1 (not WebSocket) — documented decision
+- 15 tests
+
+### Gap Fix: profile_picture_url Everywhere + Prefect Toggle (PR #61)
+- `profile_picture_url` added to ALL user-referencing endpoints across all 5 apps (academics: at-risk, roster, lecturer-placements; messaging: sender + other user; placements: posted_by, student, reviewed_by; notifications: actor; resources: uploaded_by, author)
+- `PATCH /api/academics/enrollments/<id>/prefect/` — lecturer (must teach the course) or admin only; accepts `{is_class_prefect: bool}` or empty to toggle
+- 9 tests
+
+---
+
+## Titus Frontend Guide — New Backend Features Awaiting UI
+
+> Each section below describes the endpoint, auth, response shape, and what UI to build.
+
+### 1. At-Risk Students Dashboard
+- **Endpoint:** `GET /api/academics/offerings/<id>/at-risk/?attendance_threshold=0.75&missed_threshold=2`
+- **Auth:** Assigned lecturer or admin
+- **Response:** `{"count": N, "results": [{"student_id", "student_name", "student_email", "admission_number", "attendance_rate", "attended_sessions", "total_sessions", "missed_assignments", "total_assignments", "at_risk": bool, "reasons": ["attendance", ...], "profile_picture_url"}]}`
+- **UI:** Offering-scoped table, at-risk students first. Show attendance rate as a percentage bar, missed count, reasons as colored badges. Optional threshold sliders (attendance_threshold, missed_threshold).
+
+### 2. Placement Outcomes Dashboard
+- **Endpoint:** `GET /api/admin/placement-outcomes/?department_id=X`
+- **Auth:** Admin or placement officer
+- **Response:** `{"count": N, "results": [{"department_id", "department_name", "total_applications", "accepted", "pending", "shortlisted", "rejected", "withdrawn", "unique_applicants", "acceptance_rate"}]}`
+- **UI:** Admin/officer dashboard with department cards + bar chart for acceptance rates. Optional department filter dropdown.
+
+### 3. ICS Calendar Export
+- **Endpoint:** `GET /api/academics/calendar.ics`
+- **Auth:** Any authenticated user (same scope as calendar/)
+- **Response:** `Content-Type: text/calendar` — iCalendar VCALENDAR/VEVENT
+- **UI:** "Add to Calendar" button. Must use `fetch` with auth header → get blob → download as `.ics` file. Cannot use a plain `<a href>` (needs JWT auth).
+
+### 4. Profile Picture Upload
+- **Endpoint:** `POST /api/auth/me/profile-picture/`
+- **Auth:** Any authenticated user
+- **Request:** MULTIPART form data, field name: `profile_picture`
+- **Response:** `{"profile_picture_url": "/media/profile_pictures/user_avatar.jpg"}`
+- **IMPORTANT:**
+  - This is MULTIPART, not JSON. Use `FormData`.
+  - Backend auto-resizes to 320×320 JPEG. No need to resize on frontend.
+  - `profile_picture_url` is RELATIVE (e.g., `/media/...`). Prepend backend domain: `${API_BASE.replace('/api', '')}${url}`
+  - The URL is now in EVERY user-referencing response (roster, at-risk, messaging, placements, notifications, resources). Show avatars wherever user info appears.
+
+### 5. Messaging UI (new surface)
+- **Conversations list:** `GET /api/messaging/conversations/` — shows unread count + latest message preview. Sort by most recent.
+- **Thread view:** `GET /api/messaging/conversations/<id>/messages/?after=<last_id>` — POLL every 3-5 seconds for new messages. Only fetch messages with ID > last seen.
+- **Composer:** `POST /api/messaging/conversations/<id>/messages/` with `{"body": "text"}`
+- **Direct DM:** `POST /api/messaging/conversations/direct/` with `{"recipient_id": N}` — creates/gets a DM (students can only DM their lecturers; lecturers can only DM their enrolled students)
+- **Group chat:** `GET /api/messaging/offerings/<id>/group-conversation/` — auto-creates + syncs participants (all enrolled students + assigned lecturer). Lecturer and prefects are `is_admin=True`.
+- **Delete message:** `DELETE /api/messaging/messages/<id>/` — soft delete (sender or group admin)
+- **Mark read:** `PATCH /api/messaging/conversations/<id>/read/` — clears unread count
+- **Polling pattern:** `setInterval` with `?after=<last_message_id>` every 3-5 seconds. Stop when conversation not visible.
+- **Notifications:** New messages trigger notifications (existing system). Link notification to conversation.
+
+### 6. Lecturer Placements Screen
+- **Endpoint:** `GET /api/academics/lecturer/placements/`
+- **Auth:** Lecturer or admin
+- **Response:** `{"count": N, "results": [{"student_id", "student_name", "student_email", "admission_number", "course_code", "placement": {"id", "title", "company", "location", "deadline"} | null}]}`
+- **UI:** Table showing student name + placement info. Students without placements show "No placement" badge.
+
+### 7. Prefect Toggle
+- **Endpoint:** `PATCH /api/academics/enrollments/<id>/prefect/`
+- **Auth:** Lecturer (must teach the course) or admin
+- **Request:** `{"is_class_prefect": true/false}` (optional — empty body toggles)
+- **UI:** Badge/toggle on the roster page. Lecturer clicks to make a student class prefect. Prefects are `is_admin=True` in group chats (can delete others' messages).
+
+### 8. Users Endpoint — admission_number + course_id (FIXED)
+- **Changed:** `POST /api/users/` and `PATCH /api/users/<id>/` now accept `admission_number` and `course_id`.
+- `admission_number`: string, validated for duplicates
+- `course_id`: integer, must be an existing course. Only for student role. Sets department from the course's department. Creates/updates enrollment transactionally.
+- Response now includes `admission_number` and `programme: {id, code, title}` for students.
+- **UI:** The edit student modal should send `admission_number` and `course_id` (the Programme dropdown). The "Unsupported fields: admission_number, course_id" error is fixed — these fields are now accepted.
+
+### Frontend Fixes Still Needed
+- `<body suppressHydrationWarning>` — Grammarly extension causes hydration mismatch
+- `/dashboard/placments` → `/placements` — URL typo
+- `data-scroll-behavior="smooth"` on `<html>` — Next.js warning
+- `api.ts` `/api` suffix self-heal — so a missing `/api` in `NEXT_PUBLIC_API_URL` doesn't break auth (like it did this session)

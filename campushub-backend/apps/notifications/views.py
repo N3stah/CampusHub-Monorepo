@@ -5,6 +5,7 @@ from django.views.decorators.http import require_http_methods
 
 from apps.accounts.jwt_utils import jwt_required
 from .models import Notification
+from apps.common.pagination import paginate_queryset
 
 def format_notification(n):
     return {
@@ -16,7 +17,8 @@ def format_notification(n):
         "created_at": n.created_at.isoformat(),
         "actor": {
             "id": n.actor.id,
-            "name": n.actor.get_full_name()
+            "name": n.actor.get_full_name(),
+            "profile_picture_url": n.actor.profile_picture.url if n.actor and n.actor.profile_picture else None
         } if n.actor else None
     }
 
@@ -30,8 +32,7 @@ def notification_list(request):
     if request.GET.get('unread') == 'true':
         notifications = notifications.filter(is_read=False)
         
-    results = [format_notification(n) for n in notifications]
-    return JsonResponse({"count": len(results), "results": results})
+    return paginate_queryset(notifications, request, format_notification)
 
 @csrf_exempt
 @require_http_methods(["PATCH"])

@@ -23,6 +23,7 @@ def _json_body(request):
 def _user_dict(user):
     return {
         'id': user.id,
+        'profile_picture_url': user.profile_picture.url if user.profile_picture else None,
         'email': user.email,
         'username': user.username,
         'first_name': user.first_name,
@@ -146,3 +147,38 @@ def me_view(request):
         user.save(update_fields=changed)
 
     return JsonResponse({**_user_dict(user), 'updated': changed})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@jwt_required
+def upload_profile_picture(request):
+    user = request.user
+    from apps.common.file_guards import validate_image_upload
+    uploaded_file = request.FILES.get('profile_picture')
+    error = validate_image_upload(uploaded_file)
+    if error:
+        return error
+    # Resize to 320x320 square (center crop + LANCZOS)
+    from PIL import Image
+    import io
+    from django.core.files.base import ContentFile
+
+    img = Image.open(uploaded_file)
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+    w, h = img.size
+    min_dim = min(w, h)
+    left = (w - min_dim) // 2
+    top = (h - min_dim) // 2
+    img = img.crop((left, top, left + min_dim, top + min_dim))
+    img = img.resize((320, 320), Image.Resampling.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format='JPEG', quality=85)
+    buf.seek(0)
+    user.profile_picture.save(
+        f'{user.username}_avatar.jpg',
+        ContentFile(buf.getvalue()),
+        save=True
+    )
+    return JsonResponse({'profile_picture_url': user.profile_picture.url})

@@ -7,6 +7,7 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.auth import get_user_model
 
 from apps.accounts.jwt_utils import jwt_required
+from apps.common.pagination import paginate_queryset
 from apps.accounts.models import AuditEvent
 from .models import Placement, Application
 from .services import ApplicationService
@@ -29,7 +30,8 @@ def format_placement(p):
         "is_active": p.is_active,
         "posted_by": {
             "id": p.posted_by.id,
-            "name": p.posted_by.get_full_name()
+            "name": p.posted_by.get_full_name(),
+            "profile_picture_url": p.posted_by.profile_picture.url if p.posted_by.profile_picture else None
         } if p.posted_by else None,
         "created_at": p.created_at.isoformat()
     }
@@ -47,16 +49,18 @@ def format_application(a, request):
             "email": a.student.email,
             "first_name": a.student.first_name,
             "last_name": a.student.last_name,
-            "name": a.student.get_full_name()
+            "name": a.student.get_full_name(),
+            "profile_picture_url": a.student.profile_picture.url if a.student.profile_picture else None
         },
         "status": a.status,
         "cover_note": a.cover_note,
-        "cv_file": request.build_absolute_uri(a.cv_file.url) if a.cv_file else None,
+        "has_cv": bool(a.cv_file),
         "applied_at": a.applied_at.isoformat(),
         "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
         "reviewed_by": {
             "id": a.reviewed_by.id,
-            "name": a.reviewed_by.get_full_name()
+            "name": a.reviewed_by.get_full_name(),
+            "profile_picture_url": a.reviewed_by.profile_picture.url if a.reviewed_by and a.reviewed_by.profile_picture else None
         } if a.reviewed_by else None
     }
 
@@ -70,8 +74,7 @@ def placement_list_create(request):
 
     if request.method == "GET":
         placements = Placement.objects.filter(is_active=True).select_related('posted_by')
-        results = [format_placement(p) for p in placements]
-        return JsonResponse({"count": len(results), "results": results})
+        return paginate_queryset(placements, request, format_placement)
 
     elif request.method == "POST":
         if user.role not in ['officer', 'admin']:
@@ -215,8 +218,7 @@ def application_list(request):
     else:
         return JsonResponse({"error": "Permission denied"}, status=403)
 
-    results = [format_application(a, request) for a in applications]
-    return JsonResponse({"count": len(results), "results": results})
+    return paginate_queryset(applications, request, lambda a: format_application(a, request))
 
 @csrf_exempt
 @require_http_methods(["PATCH"])
@@ -299,3 +301,81 @@ def application_withdraw(request, pk):
     )
     
     return JsonResponse({"message": "Application withdrawn successfully"})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def application_cv_download(request, pk):
+    from django.http import FileResponse
+    user = request.user
+    try:
+        application = Application.objects.select_related('placement', 'student').get(pk=pk)
+    except Application.DoesNotExist:
+        return JsonResponse({"error": "Application not found"}, status=404)
+        
+    # Permission: student owner, placement officer, or admin
+    if user.role != 'admin' and application.student_id != user.id and application.placement.posted_by_id != user.id:
+        return JsonResponse({"error": "Not found"}, status=404)
+        
+    if not application.cv_file:
+        return JsonResponse({"error": "No CV attached"}, status=404)
+        
+    file_handle = application.cv_file.open('rb')
+    return FileResponse(file_handle, as_attachment=True, filename=os.path.basename(application.cv_file.name))
+
+
+# --- Placement Outcomes ---
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def placement_outcomes(request):
+    user = request.user
+    if user.role not in ('admin', 'officer'):
+        return JsonResponse({'error': 'Only admins or placement officers can view placement outcomes'}, status=403)
+
+    department_id = request.GET.get('department_id')
+    queryset = Application.objects.all()
+    if department_id:
+        try:
+            department_id = int(department_id)
+        except ValueError:
+            return JsonResponse({'error': 'department_id must be an integer'}, status=400)
+        queryset = queryset.filter(student__department_id=department_id)
+
+    from django.db.models import Count, Q
+    dept_stats = (
+        queryset
+        .values('student__department_id', 'student__department__name', 'student__department__code')
+        .annotate(
+            total_applications=Count('id'),
+            accepted=Count('id', filter=Q(status='accepted')),
+            pending=Count('id', filter=Q(status='pending')),
+            shortlisted=Count('id', filter=Q(status='shortlisted')),
+            rejected=Count('id', filter=Q(status='rejected')),
+            withdrawn=Count('id', filter=Q(status='withdrawn')),
+            unique_applicants=Count('student_id', distinct=True),
+        )
+        .order_by('student__department__name')
+    )
+
+    data = []
+    for dept in dept_stats:
+        total = dept['total_applications']
+        accepted = dept['accepted']
+        data.append({
+            'department_id': dept['student__department_id'],
+            'department_name': dept['student__department__name'] or 'Unassigned',
+            'department_code': dept['student__department__code'] or 'N/A',
+            'total_applications': total,
+            'accepted': accepted,
+            'pending': dept['pending'],
+            'shortlisted': dept['shortlisted'],
+            'rejected': dept['rejected'],
+            'withdrawn': dept['withdrawn'],
+            'unique_applicants': dept['unique_applicants'],
+            'acceptance_rate': round(accepted / total, 4) if total > 0 else 0.0,
+        })
+
+    return JsonResponse({'count': len(data), 'results': data})
