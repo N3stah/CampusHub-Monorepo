@@ -68,6 +68,7 @@ def _user_data(user):
         'date_joined': user.date_joined.isoformat(),
         'courses': courses,
         'admission_number': user.admission_number,
+        'profile_picture_url': user.profile_picture.url if user.profile_picture else None,
         'programme': programme,
     }
 
