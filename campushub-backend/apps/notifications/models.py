@@ -17,6 +17,7 @@ class Notification(models.Model):
     message = models.CharField(max_length=255)
     link = models.CharField(max_length=255, blank=True, null=True)
     is_read = models.BooleanField(default=False)
+    digested_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
