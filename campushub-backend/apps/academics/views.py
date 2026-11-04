@@ -946,8 +946,13 @@ def assignment_list(request):
         course_ids = Enrollment.objects.filter(student=user, status='active').values_list('course_id', flat=True)
         offering_ids = Offering.objects.filter(course_id__in=course_ids).values_list('id', flat=True)
         assignments = Assignment.objects.filter(offering_id__in=offering_ids, is_published=True)
-    else:
+    elif user.role == 'lecturer':
+        offering_ids = UnitTeachingAssignment.objects.filter(lecturer=user).values_list('offering_id', flat=True)
+        assignments = Assignment.objects.filter(offering_id__in=offering_ids)
+    elif user.role == 'admin':
         assignments = Assignment.objects.all()
+    else:
+        return JsonResponse({'error': 'Unsupported role'}, status=403)
     return paginate_queryset(assignments, request, format_assignment)
 
 @csrf_exempt
@@ -961,9 +966,20 @@ def offering_assignments(request, pk):
         return JsonResponse({'error': 'Offering not found'}, status=404)
         
     if request.method == 'GET':
-        if not is_offering_lecturer(user, offering) and user.role != 'student':
-            return JsonResponse({'error': 'Permission denied'}, status=403)
-        assignments = offering.assignments.all()
+        if user.role == 'admin':
+            pass
+        elif user.role == 'lecturer':
+            if not is_offering_lecturer(user, offering):
+                return JsonResponse({'error': 'Permission denied'}, status=403)
+        elif user.role == 'student':
+            if not Enrollment.objects.filter(student=user, course=offering.course, status='active').exists():
+                return JsonResponse({'error': 'You are not enrolled in this course'}, status=403)
+        else:
+            return JsonResponse({'error': 'Unsupported role'}, status=403)
+        if user.role == 'student':
+            assignments = offering.assignments.filter(is_published=True)
+        else:
+            assignments = offering.assignments.all()
         return paginate_queryset(assignments, request, lambda a: format_assignment(a, include_questions=True, include_correct=is_offering_lecturer(user, offering)))
         
     elif request.method == 'POST':
