@@ -100,25 +100,21 @@ beforeEach(() => {
       : { count: 0, next: null, previous: null, results: [] },
   ));
   vi.mocked(api.get).mockImplementation((endpoint: string) => Promise.resolve({
-    data: endpoint === '/academics/lecturer/summary/'
+    data: endpoint === '/academics/dashboard/lecturer/'
       ? {
-        unit_count: 1,
-        upcoming_lesson_count: 0,
-        upcoming_assignment_count: 0,
-        unmarked_submission_count: 0,
-        pending_assignments: [],
-        upcoming_dates: [],
+        taught_offerings: [],
+        pending_grading_count: 0,
+        pending_submissions: [],
+        today_sessions: [],
       }
       : [] satisfies CalendarEvent[],
   }));
   vi.mocked(api.get).mockResolvedValue({
     data: {
-      unit_count: 1,
-      upcoming_lesson_count: 0,
-      upcoming_assignment_count: 0,
-      unmarked_submission_count: 0,
-      pending_assignments: [],
-      upcoming_dates: [],
+      taught_offerings: [],
+      pending_grading_count: 0,
+      pending_submissions: [],
+      today_sessions: [],
     },
   });
 });

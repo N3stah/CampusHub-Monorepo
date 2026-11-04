@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/portal';
+import { getApiPage } from '@/lib/portal';
 import type { AdminStats } from '@/types/portal';
 
 const adminMetrics: { key: keyof AdminStats; label: string; detail: string }[] = [
+  { key: 'active_users', label: 'Active users', detail: 'Active platform accounts' },
   { key: 'students', label: 'Students', detail: 'Active student accounts' },
   { key: 'lecturers', label: 'Lecturers', detail: 'Active lecturer accounts' },
   { key: 'placement_officers', label: 'Placement officers', detail: 'Active officer accounts' },
@@ -15,6 +17,7 @@ const adminMetrics: { key: keyof AdminStats; label: string; detail: string }[] =
   { key: 'units', label: 'Units', detail: 'Active shared units' },
   { key: 'active_enrollments', label: 'Active admissions', detail: 'Students assigned to programmes' },
   { key: 'placements', label: 'Placements', detail: 'Active opportunities' },
+  { key: 'open_placements', label: 'Open placements', detail: 'Open opportunities with upcoming deadlines' },
   { key: 'applications', label: 'Applications', detail: 'Applications received' },
   { key: 'pending_applications', label: 'Pending applications', detail: 'Awaiting review' },
 ];
@@ -27,7 +30,51 @@ export default function AdminCampusStats() {
   const loadAdminStats = useCallback(async (signal?: AbortSignal) => {
     try {
       const response = await api.get<AdminStats>('/admin/stats/', { signal });
-      setAdminStats(response.data);
+      const stats = response.data;
+      const [
+        studentUsers,
+        lecturerUsers,
+        officerUsers,
+        allUsers,
+        schools,
+        departments,
+        courses,
+        units,
+        enrollments,
+        placements,
+        applications,
+      ] = await Promise.all([
+        getApiPage<{ role: string; is_active: boolean }>('/users/', { role: 'student' }, signal),
+        getApiPage<{ role: string; is_active: boolean }>('/users/', { role: 'lecturer' }, signal),
+        getApiPage<{ role: string; is_active: boolean }>('/users/', { role: 'officer' }, signal),
+        getApiPage<{ role: string; is_active: boolean }>('/users/', {}, signal),
+        getApiPage<unknown>('/academics/schools/', {}, signal),
+        getApiPage<unknown>('/academics/departments/', {}, signal),
+        getApiPage<{ is_active: boolean }>('/academics/courses/', {}, signal),
+        getApiPage<{ is_active: boolean }>('/academics/units/', {}, signal),
+        getApiPage<{ status: string }>('/academics/admin/enrollments/', {}, signal),
+        getApiPage<{ is_active: boolean }>('/placements/', {}, signal),
+        getApiPage<unknown>('/applications/', {}, signal),
+      ].map((request) => request.catch(() => null)));
+      const activeCount = (page: { results: unknown[] } | null) => page?.results.filter((item) =>
+        typeof item === 'object' && item !== null && 'is_active' in item && item.is_active === true
+      ).length;
+      setAdminStats({
+        ...stats,
+        active_users: stats.active_users ?? activeCount(allUsers) ?? 0,
+        students: stats.students ?? activeCount(studentUsers) ?? 0,
+        lecturers: stats.lecturers ?? activeCount(lecturerUsers) ?? 0,
+        placement_officers: stats.placement_officers ?? activeCount(officerUsers) ?? 0,
+        schools: stats.schools ?? schools?.count ?? 0,
+        departments: stats.departments ?? departments?.count ?? 0,
+        courses: stats.courses ?? activeCount(courses) ?? 0,
+        units: stats.units ?? activeCount(units) ?? 0,
+        active_enrollments: stats.active_enrollments ?? enrollments?.results.filter((enrollment) =>
+          typeof enrollment === 'object' && enrollment !== null && 'status' in enrollment && enrollment.status === 'active'
+        ).length ?? 0,
+        applications: stats.applications ?? applications?.count ?? 0,
+        placements: stats.placements ?? activeCount(placements) ?? 0,
+      });
       setStatsError(null);
     } catch (error) {
       if (!signal?.aborted) setStatsError(getApiErrorMessage(error));

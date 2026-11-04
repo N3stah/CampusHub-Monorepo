@@ -9,14 +9,13 @@ const api = axios.create({
   },
 });
 
-// Request interceptor: Attach access token to every request
 api.interceptors.request.use(
   (config) => {
     if (typeof window !== 'undefined') {
       const apiBase = new URL(config.baseURL ?? apiBaseUrl, window.location.origin);
-      const apiOrigin = apiBase.origin;
       const requestUrl = new URL(config.url ?? '', apiBase);
-      if (requestUrl.origin === apiOrigin) {
+
+      if (requestUrl.origin === apiBase.origin) {
         const token = localStorage.getItem('access_token');
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
@@ -30,13 +29,11 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor: Auto-refresh on 401 Unauthorized
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    // Prevent infinite loops: if refresh endpoint fails, don't retry
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
@@ -46,7 +43,6 @@ api.interceptors.response.use(
           throw new Error('No refresh token available');
         }
 
-        // Fetch new access token
         const response = await axios.post(
           `${process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000/api'}/auth/token/refresh/`,
           { refresh: refreshToken }
@@ -54,16 +50,13 @@ api.interceptors.response.use(
 
         const newAccessToken = response.data.access;
         localStorage.setItem('access_token', newAccessToken);
-
-        // Update the header and retry the original request
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh failed: log the user out
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         if (typeof window !== 'undefined') {
-          window.location.href = '/login';
+          window.location.replace(`${window.location.origin}/login`);
         }
         return Promise.reject(refreshError);
       }
