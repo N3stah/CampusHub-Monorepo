@@ -32,6 +32,7 @@ def _serialize_message(msg):
         'id': msg.id,
         'sender_id': msg.sender_id,
         'sender_name': msg.sender.get_full_name(),
+        'sender_profile_picture_url': msg.sender.profile_picture.url if msg.sender.profile_picture else None,
         'body': msg.body,
         'created_at': msg.created_at.isoformat(),
         'is_deleted': msg.deleted_at is not None,
@@ -57,6 +58,7 @@ def _serialize_conversation(conv, user):
     else:
         other = ConversationParticipant.objects.filter(conversation=conv).exclude(user=user).select_related('user').first()
         data['title'] = other.user.get_full_name() if other else 'Direct'
+        data['other_profile_picture_url'] = other.user.profile_picture.url if other and other.user.profile_picture else None
     return data
 
 

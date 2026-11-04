@@ -249,6 +249,7 @@ def course_roster(request, pk):
             'id': e.id,
             'student_id': e.student.id,
             'student_name': e.student.get_full_name(),
+            'profile_picture_url': e.student.profile_picture.url if e.student.profile_picture else None,
             'student_email': e.student.email,
             'status': e.status,
             'enrolled_at': e.enrolled_at.isoformat()
@@ -574,6 +575,7 @@ def admin_enrollment_list_create(request):
                 'id': e.id,
                 'student_id': e.student_id,
                 'student_name': e.student.get_full_name(),
+            'profile_picture_url': e.student.profile_picture.url if e.student.profile_picture else None,
                 'admission_number': e.student.admission_number,
                 'course_id': e.course_id,
                 'course_code': e.course.code,
@@ -724,6 +726,7 @@ def offering_roster(request, pk):
             'id': e.id,
             'student_id': e.student.id,
             'student_name': e.student.get_full_name(),
+            'profile_picture_url': e.student.profile_picture.url if e.student.profile_picture else None,
             'student_email': e.student.email,
             'admission_number': e.student.admission_number
         } for e in enrollments
@@ -1142,6 +1145,7 @@ def assignment_submissions_list(request, pk):
             'id': s.id,
             'student_id': s.student_id,
             'student_name': s.student.get_full_name(),
+            'profile_picture_url': s.student.profile_picture.url if s.student.profile_picture else None,
             'submitted_at': s.submitted_at.isoformat(),
             'score': str(s.score) if s.score else None,
             'feedback': s.feedback,
@@ -1459,6 +1463,7 @@ def lecturer_dashboard(request):
     ).select_related('student', 'assignment').order_by('-submitted_at')
     pending_data = [
         {'id': s.id, 'student_name': s.student.get_full_name(),
+            'profile_picture_url': s.student.profile_picture.url if s.student.profile_picture else None,
          'assignment_title': s.assignment.title, 'submitted_at': s.submitted_at.isoformat()}
         for s in pending_qs[:20]
     ]
@@ -1663,6 +1668,7 @@ def _build_attendance_records(session, attendance_date):
         records.append({
             'student_id': e.student_id,
             'student_name': e.student.get_full_name(),
+            'profile_picture_url': e.student.profile_picture.url if e.student.profile_picture else None,
             'admission_number': e.student.admission_number or None,
             'course_code': session.offering.course.code,
             'course_title': session.offering.course.title,
@@ -1807,6 +1813,7 @@ def offering_at_risk(request, pk):
         data.append({
             'student_id': sid,
             'student_name': student.get_full_name(),
+            'profile_picture_url': student.profile_picture.url if student.profile_picture else None,
             'student_email': student.email,
             'admission_number': student.admission_number,
             'attendance_rate': round(attendance_rate, 4),
@@ -1866,6 +1873,7 @@ def lecturer_placements(request):
         data.append({
             'student_id': student.id,
             'student_name': student.get_full_name(),
+            'profile_picture_url': student.profile_picture.url if student.profile_picture else None,
             'student_email': student.email,
             'admission_number': student.admission_number,
             'course_code': e.course.code,
@@ -1880,3 +1888,50 @@ def lecturer_placements(request):
 
     data.sort(key=lambda x: (x['course_code'], x['student_name']))
     return JsonResponse({'count': len(data), 'results': data})
+
+
+# --- Class Prefect Toggle ---
+
+@csrf_exempt
+@require_http_methods(["PATCH"])
+@jwt_required
+def toggle_prefect(request, pk):
+    """PATCH /api/academics/enrollments/<id>/prefect/ — lecturer or admin only.
+    Body: {"is_class_prefect": true/false} to set explicitly, or empty to toggle.
+    """
+    import json as _json
+    user = request.user
+    if user.role not in ('lecturer', 'admin'):
+        return JsonResponse({'error': 'Only lecturers or admins can set prefect status'}, status=403)
+
+    try:
+        enrollment = Enrollment.objects.select_related('student', 'course').get(pk=pk)
+    except Enrollment.DoesNotExist:
+        return JsonResponse({'error': 'Enrollment not found'}, status=404)
+
+    # Lecturer must teach an offering in this enrollment's course
+    if user.role == 'lecturer':
+        teaches = UnitTeachingAssignment.objects.filter(
+            lecturer=user, offering__course=enrollment.course
+        ).exists()
+        if not teaches:
+            return JsonResponse({'error': 'You can only set prefects for your own courses'}, status=403)
+
+    try:
+        data = _json.loads(request.body) if request.body else {}
+    except _json.JSONDecodeError:
+        data = {}
+
+    if 'is_class_prefect' in data:
+        enrollment.is_class_prefect = bool(data['is_class_prefect'])
+    else:
+        enrollment.is_class_prefect = not enrollment.is_class_prefect
+    enrollment.save(update_fields=['is_class_prefect'])
+
+    return JsonResponse({
+        'id': enrollment.id,
+        'student_id': enrollment.student_id,
+        'student_name': enrollment.student.get_full_name(),
+        'course_id': enrollment.course_id,
+        'is_class_prefect': enrollment.is_class_prefect,
+    })
