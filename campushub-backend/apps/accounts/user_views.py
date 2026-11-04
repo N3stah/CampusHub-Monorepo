@@ -11,7 +11,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from apps.academics.models import Department
+from apps.academics.models import Department, Course, Enrollment
 from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
 
@@ -19,7 +19,7 @@ User = get_user_model()
 VALID_ROLES = {choice[0] for choice in User.ROLE_CHOICES}
 EDITABLE_FIELDS = {
     'email', 'username', 'first_name', 'last_name', 'role', 'department',
-    'gpa', 'phone_number', 'title', 'bio', 'office_hours', 'is_active',
+    'gpa', 'phone_number', 'title', 'bio', 'office_hours', 'is_active', 'admission_number',
 }
 TEXT_LIMITS = {
     'username': 50,
@@ -46,6 +46,11 @@ def _user_data(user):
     if user.role == 'lecturer':
         courses = list(user.taught_courses.values('id', 'title'))
         courses = [{'id': course['id'], 'name': course['title']} for course in courses]
+    programme = None
+    if user.role == 'student':
+        enrollment = Enrollment.objects.filter(student=user, status='active').select_related('course').first()
+        if enrollment:
+            programme = {'id': enrollment.course.id, 'code': enrollment.course.code, 'title': enrollment.course.title}
     return {
         'id': user.id,
         'email': user.email,
@@ -62,6 +67,8 @@ def _user_data(user):
         'is_active': user.is_active,
         'date_joined': user.date_joined.isoformat(),
         'courses': courses,
+        'admission_number': user.admission_number,
+        'programme': programme,
     }
 
 
@@ -117,6 +124,16 @@ def _set_user_fields(user, data, *, creating=False, forced_role=None):
                     value = Department.objects.get(pk=int(value))
                 except (TypeError, ValueError, Department.DoesNotExist) as error:
                     raise ValueError('department must be the ID of an existing department.') from error
+        elif field == 'admission_number':
+            if value in (None, ''):
+                value = None
+            else:
+                value = str(value).strip()
+                if not value:
+                    value = None
+            if value is not None:
+                if User.objects.filter(admission_number=value).exclude(pk=user.pk).exists():
+                    raise ValueError('admission_number already exists.')
         elif field == 'gpa':
             if value in (None, ''):
                 value = None
@@ -193,6 +210,30 @@ def _visible_users(request):
     return users
 
 
+
+
+def _handle_course_enrollment(user, course_id):
+    """Validate course_id, set department from course, manage student enrollment."""
+    if course_id is None:
+        return
+    try:
+        course = Course.objects.get(pk=int(course_id))
+    except (TypeError, ValueError, Course.DoesNotExist):
+        raise ValueError('course_id must be the ID of an existing course.')
+    if user.role != 'student':
+        raise ValueError('course_id can only be set for student accounts.')
+    user.department = course.department
+    user.save(update_fields=['department'])
+    existing = Enrollment.objects.filter(student=user, status='active').first()
+    if existing:
+        if existing.course_id != course.id:
+            existing.status = 'dropped'
+            existing.save(update_fields=['status'])
+            Enrollment.objects.create(student=user, course=course, status='active')
+    else:
+        Enrollment.objects.create(student=user, course=course, status='active')
+
+
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
 @jwt_required
@@ -212,11 +253,13 @@ def user_list_create(request):
     data, error = _json_data(request)
     if error:
         return error
+    course_id = data.pop('course_id', None)
     user = User()
     try:
         with transaction.atomic():
             _set_user_fields(user, data, creating=True)
             user.save()
+            _handle_course_enrollment(user, course_id)
             AuditEvent.objects.create(
                 actor=request.user,
                 action='user.created',
@@ -270,6 +313,7 @@ def user_detail_update_deactivate(request, pk):
     data, error = _json_data(request)
     if error:
         return error
+    course_id = data.pop('course_id', None)
     if 'role' in data and user.is_superuser and data['role'] != 'admin':
         if User.objects.filter(is_superuser=True, is_active=True).count() <= 1:
             return JsonResponse({'error': 'The last active superuser cannot be demoted.'}, status=400)
@@ -277,13 +321,15 @@ def user_detail_update_deactivate(request, pk):
         if User.objects.filter(is_superuser=True, is_active=True).count() <= 1:
             return JsonResponse({'error': 'The last active superuser cannot be deactivated.'}, status=400)
     try:
-        _set_user_fields(user, data)
-        user.save()
-        AuditEvent.objects.create(
-            actor=request.user,
-            action='user.updated',
-            description=f'Updated {user.role} account for {user.get_full_name()}.',
-        )
+        with transaction.atomic():
+            _set_user_fields(user, data)
+            user.save()
+            _handle_course_enrollment(user, course_id)
+            AuditEvent.objects.create(
+                actor=request.user,
+                action='user.updated',
+                description=f'Updated {user.role} account for {user.get_full_name()}.',
+            )
     except ValueError as validation_error:
         return JsonResponse({'error': str(validation_error)}, status=400)
     except IntegrityError:
