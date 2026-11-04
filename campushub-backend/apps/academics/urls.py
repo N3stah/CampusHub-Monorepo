@@ -39,4 +39,5 @@ urlpatterns = [
     path('lessons/<int:pk>/', views.lesson_detail, name='lesson-detail'),
     path('dashboard/student/', views.student_dashboard, name='student-dashboard'),
     path('dashboard/lecturer/', views.lecturer_dashboard, name='lecturer-dashboard'),
+    path('lecturer/placements/', views.lecturer_placements, name='lecturer-placements'),
 ]
