@@ -10,8 +10,9 @@ interface Department {
   id: number;
   name: string;
   code: string;
-  school_id: number;
-  school__name: string;
+  school_id?: number | null;
+  school?: number | { id?: number } | null;
+  school__name?: string;
 }
 
 interface CourseForm {
@@ -74,7 +75,7 @@ export default function AdminCourses() {
     setForm({
       title: course.title,
       code: course.code,
-      school_id: department ? String(department.school_id) : '',
+      school_id: department ? String(department.school_id ?? (typeof department.school === 'number' ? department.school : department.school?.id ?? '')) : '',
       department_id: String(course.department_id),
       credits: String(course.credits),
       description: course.description ?? '',
@@ -146,7 +147,16 @@ export default function AdminCourses() {
     }
   }
 
-  const departmentNames = new Map(departments.map((department) => [department.id, `${department.school__name} / ${department.code} — ${department.name}`]));
+  const departmentSchoolId = (department: Department) =>
+    department.school_id ?? (typeof department.school === 'number' ? department.school : department.school?.id);
+  const departmentsForSelectedSchool = departments.filter((department) => {
+    const schoolId = departmentSchoolId(department);
+    return schoolId === undefined || schoolId === null || String(schoolId) === form.school_id;
+  });
+  const departmentNames = new Map(departments.map((department) => [
+    department.id,
+    `${department.school__name ? `${department.school__name} / ` : ''}${department.code} — ${department.name}`,
+  ]));
 
   return (
     <section className="space-y-6">
@@ -189,7 +199,7 @@ export default function AdminCourses() {
             Department
             <select required value={form.department_id} onChange={(event) => setForm({ ...form, department_id: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
               <option value="">Choose department</option>
-              {departments.filter((department) => String(department.school_id) === form.school_id).map((department) => <option key={department.id} value={department.id}>{department.code} — {department.name}</option>)}
+              {departmentsForSelectedSchool.map((department) => <option key={department.id} value={department.id}>{department.code} — {department.name}</option>)}
             </select>
           </label>
           <label className="block text-sm font-medium text-slate-700">
