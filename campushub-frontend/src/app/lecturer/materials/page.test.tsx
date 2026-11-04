@@ -65,7 +65,9 @@ beforeEach(() => {
         }],
       };
     }
-    return { count: 0, next: null, previous: null, results: [] };
+    return endpoint.endsWith('/lessons/')
+      ? { count: 1, next: null, previous: null, results: [lesson] }
+      : { count: 0, next: null, previous: null, results: [] };
   });
   mocks.api.get.mockResolvedValue({ data: [lesson] });
   mocks.api.post.mockResolvedValue({ data: {} });

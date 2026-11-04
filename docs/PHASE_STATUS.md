@@ -3,6 +3,7 @@
 > Update this file at the end of every work session.  
 > Format: `[x]` = complete · `[-]` = in progress · `[ ]` = not started
 
+**Last updated:** 2026-10-21 · **Backend:** complete and deployed to Render · **Frontend (Titus):** in progress
 **Last updated:** 2026-11-04 · **Backend:** complete (172 tests, 80% coverage, 26 models, 87+ endpoints, 6 apps) · **Frontend (Titus):** in progress — new features awaiting UI (see guide below)
 
 | Phase | Slice | Backend (Mark) | Frontend (Titus) | Merged to main |
@@ -22,6 +23,26 @@
 | Completion | Backend completion (Groups A–D) | `[-]` Groups A, C, D done · Group B partial | n/a | `[x]` |
 | 6A | Deploy backend to Render | `[x]` | n/a | `[x]` |
 | 6B | Frontend polish & deploy to Vercel | n/a | `[-]` | `[ ]` |
+
+---
+
+## Frontend deployment and assignment workflow follow-up — 2026-11-04
+
+### Frontend pushed separately
+
+- Frontend production API: `https://campushub-backend-nbgc.onrender.com/api`.
+- Assignment creation moved from lecturer unit pages to the dedicated `/assignments/new/[offeringId]` route.
+- Existing assignment edit and delete controls are shown only on the dedicated lecturer assignment detail page.
+- Unit pages retain assignment review and submissions management.
+
+### Backend work required
+
+| Priority | Backend follow-up | Completion criteria |
+|---|---|---|
+| P0 | Allow the deployed frontend origin | Add the final Vercel origin to Render environment variables for both `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS`; verify browser requests and credentialed authentication from that origin succeed. |
+| P1 | Fix quiz submission edit validation | Move malformed-answer validation outside the JSON decode `except` block in `apps/academics/views.py`. Reject non-dictionaries and invalid/nonexistent question or option values with a structured 400 response and integration tests. |
+| P1 | Preserve accurate assignment submission timestamps | Update `submitted_at` when a file or quiz submission is edited, or add and expose a separate `updated_at` field and UI label. Add tests covering create, edit, and due-date result calculations. |
+| P1 | Verify assignment creation contract for the dedicated frontend route | Confirm the current offering assignment POST endpoint accepts both JSON and multipart payloads, validates lecturer ownership, supported file types and size, quiz questions, due dates and maximum points. Preserve consistent error shapes for frontend display. |
 | 5 | Creative features (at-risk, outcomes, ICS, digest) | `[x]` | `[ ]` | `[x]` |
 | 6 | Profile pictures + lecturer placements | `[x]` | `[ ]` | `[x]` |
 | 7 | Messaging (DM + group chat) | `[x]` | `[ ]` | `[x]` |
@@ -281,6 +302,35 @@ Phase 5A commit `9dbea41` removed the `user_urls` include from `config/urls.py`,
 - DB constraints: `user_gpa_range`, `user_valid_role`, `placement_slots_gte_1`, `unique_student_placement`, `application_valid_status`.
 - Indexes: Enrollment(course, status), Resource(course, -created_at), Application(placement, status), Application(student, -applied_at), Notification(recipient, is_read, -created_at).
 - Empty `tests.py` stubs removed (they conflicted with the `tests/` packages).
+
+**Group D — documentation: done**
+- `docs/ERD.md` v2.1 matches the real models (real table names, `head_id`, `status`, `created_at`, notifications and audit tables, fenced Mermaid diagram, SQL embedded from the verified files).
+- `docs/sql/01..04_*.sql` execute against a seeded database.
+- `docs/openapi.json` is hand-written and lists all 34 paths (no DRF).
+
+**Group B — partial**
+- Done: `import_students`, `cleanup_notifications --days N`, `seed_data` (idempotent), `docs/openapi.json`.
+- **Not done:** the SOLID service layer from the capstone brief. Only `ApplicationService` and `NotificationService` exist. There is no `BaseService`, `ResourceService`, `EnrollmentService` or `Notifier` interface, so resource and enrollment logic still lives in the views.
+- **Not done:** pagination and `?search=` filtering. `apps/common/pagination.py` defines `paginate_queryset`, but no view calls it. Lists return `{"count", "results"}` unpaged.
+- Coverage is below the target (see Testing results).
+
+## Phase 6A — Deploy Backend — Completed ✅
+
+**Date:** 2026-10-21
+
+- Backend deployed to Render: `https://campushub-backend-nbgc.onrender.com`.
+- Verified: `curl https://campushub-backend-nbgc.onrender.com/api/health/` returns `{"status": "ok"}`.
+- Gunicorn + Procfile, WhiteNoise for static files, a PostgreSQL database, secrets supplied only through Render environment variables (`.env` is never committed).
+- Required environment variables: `SECRET_KEY`, `JWT_SECRET`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, `DB_*`.
+- Frontend (Titus) deploys to Vercel and must point `NEXT_PUBLIC_API_URL` at the Render URL. Add the Vercel domain to `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` on Render.
+
+## Testing results — 2026-10-21
+
+- `python manage.py check`: 0 issues. `makemigrations --check --dry-run`: no changes.
+- `pytest`: **37 passed**, total coverage **63%** (the capstone brief requires 60% or more).
+- Weak spots: `academics/views` 18%, `resources/views` 20%, the three management commands, `pagination.py` and `error_views.py` at 0%. The Group A endpoints have no tests yet.
+- `check --deploy`: only the two optional HSTS warnings (`SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD`).
+
 
 **Group D — documentation: done**
 - `docs/ERD.md` v2.1 matches the real models (real table names, `head_id`, `status`, `created_at`, notifications and audit tables, fenced Mermaid diagram, SQL embedded from the verified files).

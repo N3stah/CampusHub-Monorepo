@@ -94,7 +94,11 @@ beforeEach(() => {
     logout: vi.fn(),
     updateUser: vi.fn(),
   });
-  vi.mocked(getApiPage).mockResolvedValue({ count: units.length, next: null, previous: null, results: units });
+  vi.mocked(getApiPage).mockImplementation((endpoint: string) => Promise.resolve(
+    endpoint === '/academics/units/'
+      ? { count: units.length, next: null, previous: null, results: units }
+      : { count: 0, next: null, previous: null, results: [] },
+  ));
   vi.mocked(api.get).mockImplementation((endpoint: string) => Promise.resolve({
     data: endpoint === '/academics/lecturer/summary/'
       ? {
@@ -107,6 +111,16 @@ beforeEach(() => {
       }
       : [] satisfies CalendarEvent[],
   }));
+  vi.mocked(api.get).mockResolvedValue({
+    data: {
+      unit_count: 1,
+      upcoming_lesson_count: 0,
+      upcoming_assignment_count: 0,
+      unmarked_submission_count: 0,
+      pending_assignments: [],
+      upcoming_dates: [],
+    },
+  });
 });
 
 describe('lecturer overview', () => {
@@ -141,18 +155,11 @@ describe('lecturer overview', () => {
       location: 'Lab 2',
       due_at: null,
     };
-    vi.mocked(api.get).mockImplementation((endpoint: string) => Promise.resolve({
-      data: endpoint === '/academics/lecturer/summary/'
-        ? {
-          unit_count: 1,
-          upcoming_lesson_count: 0,
-          upcoming_assignment_count: 0,
-          unmarked_submission_count: 0,
-          pending_assignments: [],
-          upcoming_dates: [],
-        }
-        : [event],
-    }));
+    vi.mocked(getApiPage).mockImplementation((endpoint: string) => Promise.resolve(
+      endpoint === '/academics/units/'
+        ? { count: units.length, next: null, previous: null, results: units }
+        : { count: 1, next: null, previous: null, results: [event] },
+    ));
     render(<LecturerDashboard />);
 
     const activityDay = await screen.findByRole('button', { name: /1 activity/ });
@@ -164,15 +171,13 @@ describe('lecturer overview', () => {
     const nextMonthLabel = nextMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
     fireEvent.click(screen.getByRole('button', { name: 'Next month' }));
     expect(await screen.findByRole('heading', { name: nextMonthLabel })).toBeInTheDocument();
-    await waitFor(() => expect(api.get).toHaveBeenCalledWith(
+    await waitFor(() => expect(getApiPage).toHaveBeenCalledWith(
       '/academics/calendar/',
-      expect.objectContaining({
-        params: {
-          from: `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`,
-          to: `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-${String(new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate()).padStart(2, '0')}`,
-        },
-        signal: expect.any(AbortSignal),
-      }),
+      {
+        from: `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`,
+        to: `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-${String(new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate()).padStart(2, '0')}`,
+      },
+      expect.any(AbortSignal),
     ));
   });
 });

@@ -10,24 +10,29 @@ import { DownloadResourceButton } from '@/components/MyCourses';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
-import type { ClassSession, Course, CourseAnnouncement, CourseResource, CourseRosterEntry, UnitAssignment, UnitGroupSet } from '@/types/portal';
+import type { AcademicUnit, ClassSession, Course, CourseAnnouncement, CourseResource, CourseRosterEntry, UnitAssignment, UnitGroup } from '@/types/portal';
 
 const allowedResourceExtensions = new Set(['pdf', 'docx', 'pptx', 'xlsx', 'png', 'jpg']);
 const maxResourceSize = 10 * 1024 * 1024;
 
 function StudentUnitPanel({
   offeringId,
+  unitCode,
 }: {
   offeringId: number;
+  unitCode: string;
 }) {
   const [resources, setResources] = useState<CourseResource[]>([]);
   const [announcements, setAnnouncements] = useState<CourseAnnouncement[]>([]);
   const [assignments, setAssignments] = useState<UnitAssignment[]>([]);
   const [sessions, setSessions] = useState<ClassSession[]>([]);
-  const [groupSet, setGroupSet] = useState<UnitGroupSet | null>(null);
+  const [groups, setGroups] = useState<UnitGroup[]>([]);
+  const [selectedGroupMember, setSelectedGroupMember] = useState<UnitGroup['members'][number] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
+  const [expandedResourceId, setExpandedResourceId] = useState<number | null>(null);
+  const [showAllAssignments, setShowAllAssignments] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -36,14 +41,14 @@ function StudentUnitPanel({
       getApiPage<CourseAnnouncement>(`/resources/offerings/${offeringId}/announcements/`, {}, controller.signal),
       getApiPage<UnitAssignment>(`/academics/offerings/${offeringId}/assignments/`, {}, controller.signal),
       getApiPage<ClassSession>(`/academics/offerings/${offeringId}/sessions/`, {}, controller.signal),
-      api.get<UnitGroupSet | null>(`/academics/offerings/${offeringId}/groups/`, { signal: controller.signal }),
-    ]).then(([resourcePage, announcementPage, assignmentPage, sessionPage, groupResponse]) => {
+      getApiPage<UnitGroup>(`/academics/offerings/${offeringId}/groups/`, {}, controller.signal),
+    ]).then(([resourcePage, announcementPage, assignmentPage, sessionPage, groupPage]) => {
       if (controller.signal.aborted) return;
       setResources(resourcePage.results);
       setAnnouncements(announcementPage.results);
       setAssignments(assignmentPage.results);
       setSessions(sessionPage.results);
-      setGroupSet(groupResponse.data);
+      setGroups(groupPage.results);
       setError(null);
     }).catch((requestError: unknown) => {
       if (!controller.signal.aborted) setError(getApiErrorMessage(requestError));
@@ -65,6 +70,15 @@ function StudentUnitPanel({
   if (loading) return <p role="status" className="mt-4 text-sm text-slate-500">Loading unit activities…</p>;
   if (error) return <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>;
 
+  const orderedAssignments = [...assignments].sort((left, right) => (
+    Date.parse(left.due_at) - Date.parse(right.due_at)
+  ));
+  const nextAssignment = orderedAssignments.find((assignment) => Date.parse(assignment.due_at) >= now)
+    ?? orderedAssignments[0];
+  const visibleAssignments = showAllAssignments
+    ? orderedAssignments
+    : nextAssignment ? [nextAssignment] : [];
+
   return (
     <div className="mt-4 space-y-4 rounded-xl bg-slate-50 p-4">
       {sessions.length > 0 && (
@@ -75,19 +89,70 @@ function StudentUnitPanel({
           </ul>
         </section>
       )}
-      {groupSet?.groups.map((group) => (
+      {groups.map((group) => (
         <section key={group.id} aria-label={`Your group ${group.name}`}>
           <h3 className="text-sm font-semibold">Your group: {group.name}</h3>
           <ul className="mt-2 flex flex-wrap gap-2">
-            {group.students.map((student) => <li key={student.id} className="rounded-full bg-white px-3 py-1 text-xs text-slate-700">{student.name}</li>)}
+            {group.members.map((member) => <li key={member.id}><button type="button" aria-label={`View ${member.first_name} ${member.last_name} profile`} onClick={() => setSelectedGroupMember(member)} className="rounded-full bg-white px-3 py-1 text-xs text-blue-800 underline decoration-blue-200 underline-offset-2 hover:bg-blue-50">{`${member.first_name} ${member.last_name}`.trim()}</button></li>)}
           </ul>
         </section>
       ))}
+      {selectedGroupMember && <div role="presentation" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={() => setSelectedGroupMember(null)}>
+        <section role="dialog" aria-modal="true" aria-labelledby="group-member-profile-heading" className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Group member</p>
+              <h3 id="group-member-profile-heading" className="mt-1 text-lg font-semibold">{`${selectedGroupMember.first_name} ${selectedGroupMember.last_name}`.trim()}</h3>
+            </div>
+            <button type="button" aria-label="Close profile" onClick={() => setSelectedGroupMember(null)} className="rounded-md px-2 py-1 text-slate-500 hover:bg-slate-100">✕</button>
+          </div>
+          <dl className="mt-4 space-y-3 border-t border-slate-100 pt-4 text-sm">
+            <div><dt className="text-xs font-medium text-slate-500">Registration number</dt><dd className="mt-0.5 font-medium text-slate-800">{selectedGroupMember.admission_number || 'Not provided'}</dd></div>
+            <div><dt className="text-xs font-medium text-slate-500">Mobile</dt><dd className="mt-0.5 font-medium text-slate-800">{selectedGroupMember.phone_number || 'Not provided'}</dd></div>
+            <div><dt className="text-xs font-medium text-slate-500">Programme</dt><dd className="mt-0.5 font-medium text-slate-800">{selectedGroupMember.programme_code && selectedGroupMember.programme_title ? `${selectedGroupMember.programme_code} · ${selectedGroupMember.programme_title}` : 'Not assigned'}</dd></div>
+          </dl>
+        </section>
+      </div>}
+      {announcements.length > 0 && (
+        <section aria-label="Unit announcements">
+          <h3 className="text-sm font-semibold">Updates from this unit&apos;s lecturers</h3>
+          <ul className="mt-2 space-y-2">
+            {announcements.map((announcement) => <li key={announcement.id} className="rounded-lg border border-slate-200 bg-white p-3"><p className="text-xs font-semibold uppercase tracking-wide text-blue-700">{unitCode}</p><p className="mt-1 text-sm font-semibold">{announcement.title}</p><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{announcement.body}</p><p className="mt-2 text-xs text-slate-500">{[announcement.author, announcement.created_at && new Date(announcement.created_at).toLocaleString()].filter(Boolean).join(' · ')}</p></li>)}
+          </ul>
+        </section>
+      )}
+      {resources.length > 0 && (
+        <section aria-label="Unit learning materials">
+          <h3 className="text-sm font-semibold">Learning materials and notes</h3>
+          <ul className="mt-2 space-y-2">
+            {resources.map((resource) => {
+              const isExpanded = expandedResourceId === resource.id;
+              return <li key={resource.id} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <button type="button" aria-expanded={isExpanded} aria-controls={`unit-resource-${resource.id}`} onClick={() => setExpandedResourceId(isExpanded ? null : resource.id)} className="flex w-full flex-wrap items-center justify-between gap-2 p-3 text-left hover:bg-slate-50">
+                  <span><span className="block text-sm font-semibold text-slate-900">{resource.title}</span><span className="mt-1 block text-xs text-slate-500">{[resource.file_type?.toUpperCase(), resource.created_at && `Uploaded ${new Date(resource.created_at).toLocaleDateString()}`].filter(Boolean).join(' · ') || 'Learning material'}</span></span>
+                  <span className="text-sm font-semibold text-blue-700">{isExpanded ? 'Hide details' : 'View details'}</span>
+                </button>
+                {isExpanded && <div id={`unit-resource-${resource.id}`} className="border-t border-slate-100 px-3 py-3">
+                  {resource.description && <p className="text-sm text-slate-700">{resource.description}</p>}
+                  <p className="mt-1 text-xs text-slate-500">{[resource.uploaded_by, resource.file_size ? `${(resource.file_size / (1024 * 1024)).toFixed(1)} MB` : null].filter(Boolean).join(' · ')}</p>
+                  {resource.file_url && <a href={resource.file_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-sm font-semibold text-blue-700 hover:underline">Open file</a>}
+                </div>}
+              </li>;
+            })}
+          </ul>
+        </section>
+      )}
       {assignments.length > 0 && (
         <section aria-label="Unit assignments">
-          <h3 className="text-sm font-semibold">Assignments</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold">Assignments</h3>
+              <p className="mt-0.5 text-xs text-slate-500">{assignments.length} {assignments.length === 1 ? 'assignment' : 'assignments'}</p>
+            </div>
+            {assignments.length > 1 && <button type="button" aria-expanded={showAllAssignments} onClick={() => setShowAllAssignments((current) => !current)} className="text-sm font-semibold text-blue-700 hover:underline">{showAllAssignments ? 'Show next due only' : `See all ${assignments.length} assignments`}</button>}
+          </div>
           <ul className="mt-2 space-y-2">
-            {assignments.map((assignment) => {
+            {visibleAssignments.map((assignment) => {
               const remaining = new Date(assignment.due_at).getTime() - now;
               const dueLabel = remaining <= 0
                 ? 'Past due'
@@ -95,7 +160,7 @@ function StudentUnitPanel({
               return (
                 <li key={assignment.id} className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="flex flex-wrap justify-between gap-2">
-                    <p className="text-sm font-semibold">{assignment.title}</p>
+                    <Link href={`/assignments#assignment-${assignment.id}`} className="text-sm font-semibold text-blue-700 hover:underline">{assignment.title}</Link>
                     <p className="text-xs font-semibold text-amber-800">{dueLabel}</p>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">Due {new Date(assignment.due_at).toLocaleString()} · {assignment.max_points} points</p>
@@ -106,23 +171,7 @@ function StudentUnitPanel({
           </ul>
         </section>
       )}
-      {announcements.length > 0 && (
-        <section aria-label="Unit announcements">
-          <h3 className="text-sm font-semibold">Unit announcements</h3>
-          <ul className="mt-2 space-y-2">
-            {announcements.map((announcement) => <li key={announcement.id} className="rounded-lg border border-slate-200 bg-white p-3"><p className="text-sm font-semibold">{announcement.title}</p><p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{announcement.body}</p></li>)}
-          </ul>
-        </section>
-      )}
-      {resources.length > 0 && (
-        <section aria-label="Unit learning materials">
-          <h3 className="text-sm font-semibold">Learning materials and notes</h3>
-          <ul className="mt-2 space-y-2">
-            {resources.map((resource) => <li key={resource.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3"><div><p className="text-xs font-semibold uppercase text-blue-700">{resource.category ?? 'Resource'}</p><p className="mt-1 text-sm font-medium">{resource.title}</p><p className="mt-1 text-xs text-slate-500">{resource.description}</p></div>{resource.file_url && <a href={resource.file_url} target="_blank" rel="noreferrer" className="text-sm font-semibold text-blue-700 hover:underline">Open file</a>}</li>)}
-          </ul>
-        </section>
-      )}
-      {!sessions.length && !assignments.length && !announcements.length && !resources.length && !groupSet?.groups.length && <p className="text-sm text-slate-500">No unit activities have been posted yet.</p>}
+      {!sessions.length && !assignments.length && !announcements.length && !resources.length && !groups.length && <p className="text-sm text-slate-500">No unit activities have been posted yet.</p>}
     </div>
   );
 }
@@ -181,8 +230,22 @@ function CourseDetailContent() {
 
   const loadCourse = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await api.get<Course>(`/academics/courses/${courseId}/`, { signal });
-      setCourse(response.data);
+      const [response, unitPage] = await Promise.all([
+        api.get<Course>(`/academics/courses/${courseId}/`, { signal }),
+        getApiPage<AcademicUnit>('/academics/units/', {}, signal),
+      ]);
+      if (signal?.aborted) return;
+      const units = unitPage.results.flatMap((unit) => unit.offerings
+        .filter((offering) => offering.course_id === Number(courseId))
+        .map((offering) => ({
+          id: unit.id,
+          offering_id: offering.offering_id,
+          code: unit.code,
+          title: unit.title,
+          credits: unit.credits,
+          lecturers: offering.lecturers,
+        })));
+      setCourse({ ...response.data, units });
       setCourseError(null);
     } catch (requestError) {
       if (!signal?.aborted) setCourseError(getApiErrorMessage(requestError));
@@ -190,6 +253,18 @@ function CourseDetailContent() {
       if (!signal?.aborted) setCourseLoading(false);
     }
   }, [courseId]);
+
+  const selectedUnitMatch = course && typeof window !== 'undefined'
+    ? window.location.hash.match(/^#unit-(\d+)$/)
+    : null;
+  const selectedUnitId = selectedUnitMatch ? Number(selectedUnitMatch[1]) : null;
+  const selectedUnit = course?.units?.find((unit) => unit.id === selectedUnitId) ?? null;
+
+  useEffect(() => {
+    if (!selectedUnit) return;
+    const target = document.getElementById(`unit-${selectedUnit.id}`);
+    window.requestAnimationFrame(() => target?.scrollIntoView?.({ block: 'start' }));
+  }, [selectedUnit]);
 
   const loadResources = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -390,17 +465,21 @@ function CourseDetailContent() {
         ) : course ? (
           <>
             <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <p className="text-sm font-bold uppercase tracking-wide text-blue-700">{course.code}</p>
-              <h1 className="mt-1 text-3xl font-bold tracking-tight">{course.title}</h1>
-              {course.description && <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">{course.description}</p>}
+              <p className="text-sm font-bold uppercase tracking-wide text-blue-700">{selectedUnit?.code ?? course.code}</p>
+              <h1 className="mt-1 text-3xl font-bold tracking-tight">{selectedUnit?.title ?? course.title}</h1>
+              {!selectedUnit && course.description && <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">{course.description}</p>}
               <div className="mt-5 flex flex-wrap gap-3 text-sm">
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700">{course.credits} credits</span>
+                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700">{selectedUnit?.credits ?? course.credits} credits</span>
                 <span className="rounded-full bg-blue-50 px-3 py-1.5 text-blue-800">{course.school_name} · {course.department_name}</span>
               </div>
               {courseError && <p role="status" className="mt-3 text-xs text-amber-700">Course data loaded, but additional lecturer details are unavailable: {courseError}</p>}
             </header>
 
-            {!!course.units?.length && (
+            {selectedUnit && user?.role === 'student' && selectedUnit.offering_id !== undefined && (
+              <StudentUnitPanel offeringId={selectedUnit.offering_id} unitCode={selectedUnit.code} />
+            )}
+
+            {!selectedUnit && !!course.units?.length && (
               <section aria-labelledby="programme-units-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="border-b border-slate-100 px-5 py-4">
                   <h2 id="programme-units-heading" className="font-semibold">Course units</h2>
@@ -420,7 +499,7 @@ function CourseDetailContent() {
                             <span className="text-sm font-semibold text-blue-700 group-open:hidden">View unit ↓</span>
                             <span className="hidden text-sm font-semibold text-blue-700 group-open:inline">Close unit ↑</span>
                           </summary>
-                          {unit.offering_id !== undefined && <StudentUnitPanel offeringId={unit.offering_id} />}
+                          {unit.offering_id !== undefined && <StudentUnitPanel offeringId={unit.offering_id} unitCode={unit.code} />}
                         </details>
                       ) : (
                         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -598,7 +677,7 @@ function CourseDetailContent() {
               </section>
             )}
 
-            <section aria-labelledby="resources-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            {!selectedUnit && <section aria-labelledby="resources-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
                 <h2 id="resources-heading" className="font-semibold">Course resources</h2>
                 <p className="mt-1 text-xs text-slate-500">Notes, slides, and other files shared for this course</p>
@@ -633,9 +712,9 @@ function CourseDetailContent() {
               ) : (
                 <p className="p-6 text-center text-sm text-slate-500">No resources have been added for this course yet.</p>
               )}
-            </section>
+            </section>}
 
-            <section aria-labelledby="announcements-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            {!selectedUnit && <section aria-labelledby="announcements-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
                 <h2 id="announcements-heading" className="font-semibold">Lecturer updates</h2>
                 <p className="mt-1 text-xs text-slate-500">Announcements and updates for this course</p>
@@ -668,7 +747,7 @@ function CourseDetailContent() {
               ) : (
                 <p className="p-6 text-center text-sm text-slate-500">No lecturer updates yet.</p>
               )}
-            </section>
+            </section>}
           </>
         ) : null}
       </section>

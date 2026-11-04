@@ -115,11 +115,11 @@ export default function LecturerDashboard() {
 
   const loadCalendar = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await api.get<CalendarEvent[]>('/academics/calendar/', {
-        params: { from: monthStartValue(visibleMonth), to: monthEndValue(visibleMonth) },
-        signal,
-      });
-      setEvents(response.data);
+      const page = await getApiPage<CalendarEvent>('/academics/calendar/', {
+        from: monthStartValue(visibleMonth),
+        to: monthEndValue(visibleMonth),
+      }, signal);
+      setEvents(page.results);
       setCalendarError(null);
     } catch (requestError) {
       if (!signal?.aborted) setCalendarError(getApiErrorMessage(requestError));

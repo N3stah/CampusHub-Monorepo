@@ -85,8 +85,8 @@ export default function AdminUnits() {
       title: unit.title,
       credits: String(unit.credits),
       description: unit.description,
-      department_ids: unit.department_ids,
-      course_ids: unit.course_ids,
+      department_ids: unit.department_ids ?? unit.departments.map((department) => department.id),
+      course_ids: unit.course_ids ?? unit.offerings.map((offering) => offering.course_id),
     });
     setError(null);
     setNotice(null);

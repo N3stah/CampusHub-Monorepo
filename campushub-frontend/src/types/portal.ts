@@ -109,7 +109,7 @@ export interface Course {
   school_name?: string;
   lecturer_id: number | null;
   lecturer_ids?: number[];
-  units?: { id: number; offering_id: number; code: string; title: string; lecturers: { id: number; name: string }[] }[];
+  units?: { id: number; offering_id: number; code: string; title: string; credits: number; lecturers: { id: number; name: string }[] }[];
   lecturer?: LecturerProfile | null;
   credits: number;
   description?: string;
@@ -221,6 +221,7 @@ export interface AssignmentSubmission {
   feedback: string;
   graded_at: string | null;
   grade_released?: boolean;
+  answers?: Record<string, number>;
 }
 
 export interface ClassSession {
@@ -271,6 +272,20 @@ export interface UnitGroupSet {
     id: number;
     name: string;
     students: { id: number; name: string; admission_number?: string | null }[];
+  }[];
+}
+
+export interface UnitGroup {
+  id: number;
+  name: string;
+  members: {
+    id: number;
+    first_name: string;
+    last_name: string;
+    admission_number?: string | null;
+    phone_number?: string;
+    programme_code?: string | null;
+    programme_title?: string | null;
   }[];
 }
 

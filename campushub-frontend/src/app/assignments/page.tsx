@@ -50,6 +50,7 @@ export default function AssignmentsPage() {
   const [submissionLoading, setSubmissionLoading] = useState<Record<number, boolean>>({});
   const [submissionErrors, setSubmissionErrors] = useState<Record<number, string>>({});
   const [submitting, setSubmitting] = useState<Record<number, boolean>>({});
+  const [editingSubmission, setEditingSubmission] = useState<Record<number, boolean>>({});
   const [submitErrors, setSubmitErrors] = useState<Record<number, string>>({});
   const [submitNotices, setSubmitNotices] = useState<Record<number, string>>({});
 
@@ -57,11 +58,25 @@ export default function AssignmentsPage() {
     try {
       const [page, unitsPage] = await Promise.all([
         getApiPage<UnitAssignment>('/academics/assignments/', {}, signal),
-        user?.role === 'lecturer'
+        user?.role === 'lecturer' || user?.role === 'student'
           ? getApiPage<AcademicUnit>('/academics/units/', {}, signal)
           : Promise.resolve(null),
       ]);
-      setAssignments(page.results);
+      const offeringDetails = new Map(unitsPage?.results.flatMap((unit) => unit.offerings.map((offering) => [
+        offering.offering_id,
+        {
+          unit_id: unit.id,
+          unit_code: unit.code,
+          unit_title: unit.title,
+          course_id: offering.course_id,
+          course_code: offering.course_code,
+          course_title: offering.course_title,
+        },
+      ] as const)) ?? []);
+      setAssignments(page.results.map((assignment) => ({
+        ...assignment,
+        ...offeringDetails.get(assignment.offering_id),
+      })));
       setTeachingUnits(unitsPage?.results.flatMap((unit) => unit.offerings
         .filter((offering) => offering.lecturers.some((lecturer) => lecturer.id === user?.id))
         .map((offering) => ({
@@ -83,6 +98,16 @@ export default function AssignmentsPage() {
     void Promise.resolve().then(() => loadAssignments(controller.signal));
     return () => controller.abort();
   }, [loadAssignments]);
+
+  useEffect(() => {
+    if (loading) return;
+    const match = window.location.hash.match(/^#assignment-(\d+)$/);
+    if (!match || !assignments.some((assignment) => assignment.id === Number(match[1]))) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(`assignment-${match[1]}`)?.scrollIntoView({ block: 'center' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [assignments, loading]);
 
   useEffect(() => {
     if (user?.role !== 'student' || !assignments.length) return;
@@ -128,6 +153,7 @@ export default function AssignmentsPage() {
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
+    const currentSubmission = submissions[assignment.id];
     setSubmitting((current) => ({ ...current, [assignment.id]: true }));
     setSubmitErrors((current) => ({ ...current, [assignment.id]: '' }));
     setSubmitNotices((current) => ({ ...current, [assignment.id]: '' }));
@@ -140,24 +166,57 @@ export default function AssignmentsPage() {
           if (typeof answer !== 'string') throw new Error('Answer every question before submitting.');
           answers[String(question.id)] = Number(answer);
         }
-        response = await api.post<{ submission: AssignmentSubmission }>(
-          `/academics/assignments/${assignment.id}/submission/`,
-          { answers },
-        );
+        response = currentSubmission
+          ? await api.patch<{ submission: AssignmentSubmission }>(
+            `/academics/assignments/${assignment.id}/submission/`,
+            { answers },
+          )
+          : await api.post<{ submission: AssignmentSubmission }>(
+            `/academics/assignments/${assignment.id}/submission/`,
+            { answers },
+          );
       } else {
         const file = formData.get('file');
-        if (!(file instanceof File) || !file.size) throw new Error('Choose a file to submit.');
+        if (!(file instanceof File) || !file.size) {
+          throw new Error(currentSubmission ? 'Choose a replacement file.' : 'Choose a file to submit.');
+        }
         const payload = new FormData();
         payload.append('file', file);
-        response = await api.post<{ submission: AssignmentSubmission }>(
-          `/academics/assignments/${assignment.id}/submission/`,
-          payload,
-          { headers: { 'Content-Type': 'multipart/form-data' } },
-        );
+        response = currentSubmission
+          ? await api.patch<{ submission: AssignmentSubmission }>(
+            `/academics/assignments/${assignment.id}/submission/`,
+            payload,
+            { headers: { 'Content-Type': 'multipart/form-data' } },
+          )
+          : await api.post<{ submission: AssignmentSubmission }>(
+            `/academics/assignments/${assignment.id}/submission/`,
+            payload,
+            { headers: { 'Content-Type': 'multipart/form-data' } },
+          );
       }
       setSubmissions((current) => ({ ...current, [assignment.id]: response.data.submission }));
-      setSubmitNotices((current) => ({ ...current, [assignment.id]: 'Your work has been submitted.' }));
+      setEditingSubmission((current) => ({ ...current, [assignment.id]: false }));
+      setSubmitNotices((current) => ({
+        ...current,
+        [assignment.id]: currentSubmission ? 'Your submission has been updated.' : 'Your work has been submitted.',
+      }));
       form.reset();
+    } catch (requestError) {
+      setSubmitErrors((current) => ({ ...current, [assignment.id]: getApiErrorMessage(requestError) }));
+    } finally {
+      setSubmitting((current) => ({ ...current, [assignment.id]: false }));
+    }
+  }
+
+  async function deleteSubmission(assignment: UnitAssignment) {
+    if (!window.confirm(`Delete your submission for "${assignment.title}"? You can submit again before the deadline.`)) return;
+    setSubmitting((current) => ({ ...current, [assignment.id]: true }));
+    setSubmitErrors((current) => ({ ...current, [assignment.id]: '' }));
+    try {
+      await api.delete(`/academics/assignments/${assignment.id}/submission/`);
+      setSubmissions((current) => ({ ...current, [assignment.id]: null }));
+      setEditingSubmission((current) => ({ ...current, [assignment.id]: false }));
+      setSubmitNotices((current) => ({ ...current, [assignment.id]: 'Your submission was deleted.' }));
     } catch (requestError) {
       setSubmitErrors((current) => ({ ...current, [assignment.id]: getApiErrorMessage(requestError) }));
     } finally {
@@ -168,7 +227,7 @@ export default function AssignmentsPage() {
   async function downloadSubmission(assignment: UnitAssignment, submission: AssignmentSubmission) {
     try {
       const response = await api.get<Blob>(
-        `/academics/assignments/${assignment.id}/submission/download/`,
+        `/academics/submissions/${submission.id}/download/`,
         { responseType: 'blob' },
       );
       downloadBlob(
@@ -198,6 +257,7 @@ export default function AssignmentsPage() {
   const orderedAssignments = [...assignments]
     .filter((assignment) => !selectedOfferingId || String(assignment.offering_id) === selectedOfferingId)
     .sort((a, b) => Date.parse(a.due_at) - Date.parse(b.due_at));
+  const selectedTeachingUnit = teachingUnits.find((unit) => String(unit.offeringId) === selectedOfferingId);
 
   return (
     <PortalShell roles={['student', 'lecturer']}>
@@ -222,35 +282,47 @@ export default function AssignmentsPage() {
               <ul className="mt-4 flex flex-wrap gap-2">
                 {teachingUnits.map((unit) => {
                   const count = assignments.filter((assignment) => assignment.offering_id === unit.offeringId).length;
-                  return <li key={unit.offeringId}><button type="button" onClick={() => setSelectedOfferingId(String(unit.offeringId))} aria-pressed={selectedOfferingId === String(unit.offeringId)} className={`rounded-xl border px-4 py-3 text-left ${selectedOfferingId === String(unit.offeringId) ? 'border-blue-700 bg-blue-50 text-blue-900' : 'border-slate-200 hover:border-blue-300'}`}><span className="block text-xs font-bold uppercase tracking-wide text-blue-700">{unit.code} · {unit.courseCode}</span><span className="mt-1 block text-sm font-semibold">{unit.title}</span><span className="mt-1 block text-xs text-slate-500">{count} {count === 1 ? 'assignment' : 'assignments'}</span></button></li>;
+                  return <li key={unit.offeringId}>
+                    <button type="button" onClick={() => setSelectedOfferingId(String(unit.offeringId))} aria-pressed={selectedOfferingId === String(unit.offeringId)} className={`rounded-xl border px-4 py-3 text-left ${selectedOfferingId === String(unit.offeringId) ? 'border-blue-700 bg-blue-50 text-blue-900' : 'border-slate-200 hover:border-blue-300'}`}><span className="block text-xs font-bold uppercase tracking-wide text-blue-700">{unit.code} · {unit.courseCode}</span><span className="mt-1 block text-sm font-semibold">{unit.title}</span><span className="mt-1 block text-xs text-slate-500">{count} {count === 1 ? 'assignment' : 'assignments'}</span></button>
+                  </li>;
                 })}
               </ul>
             </section>
+          )}
+          {user?.role === 'lecturer' && selectedTeachingUnit && (
+            <div className="flex justify-end">
+              <Link href={`/assignments/new/${selectedTeachingUnit.offeringId}`} className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800">
+                Add assignment
+              </Link>
+            </div>
           )}
           {orderedAssignments.length ? <ol className="space-y-3">
             {orderedAssignments.map((assignment) => {
               const isPastDue = Date.parse(assignment.due_at) <= now;
               const submission = submissions[assignment.id];
               const isLecturer = user?.role === 'lecturer';
+              const canChangeSubmission = !isPastDue && !(
+                assignment.assignment_type === 'file' && submission?.graded_at
+              );
               return (
-                <li key={assignment.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <li id={`assignment-${assignment.id}`} key={assignment.id} className="scroll-mt-24 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                   {isLecturer ? (
-                    <Link
-                      href={`/lecturer/assignments/${assignment.id}`}
-                      aria-label={`Open ${assignment.title}`}
-                      className="flex w-full flex-wrap items-start justify-between gap-4 p-5 text-left transition hover:bg-slate-50"
-                    >
-                      <div className="min-w-0">
+                    <div className="flex flex-wrap items-start justify-between gap-4 p-5">
+                      <Link
+                        href={`/lecturer/assignments/${assignment.id}`}
+                        aria-label={`Open ${assignment.title}`}
+                        className="min-w-0 flex-1 text-left transition hover:text-blue-800"
+                      >
                         <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{assignment.unit_code} · {assignment.course_code}</p>
                         <h2 className="mt-1 text-lg font-semibold text-slate-900">{assignment.title}</h2>
                         <p className="mt-1 text-sm text-slate-600">{assignment.unit_title} · {assignment.max_points} points · {assignment.assignment_type === 'quiz' ? 'Multiple-choice quiz' : 'File submission'}</p>
-                      </div>
+                        <span className="mt-2 block text-xs font-semibold text-blue-700">Open assignment →</span>
+                      </Link>
                       <div className="text-left sm:text-right">
                         <p className="text-xs text-slate-500">Due {new Date(assignment.due_at).toLocaleString()}</p>
                         <p className={`mt-1 text-sm font-bold ${isPastDue ? 'text-red-700' : 'text-amber-800'}`} aria-live="polite">{countdown(assignment.due_at, now)}</p>
-                        <span className="mt-2 block text-xs font-semibold text-blue-700">Open assignment →</span>
                       </div>
-                    </Link>
+                    </div>
                   ) : (
                     <div className="p-5">
                       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -258,6 +330,7 @@ export default function AssignmentsPage() {
                           <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{assignment.unit_code} · {assignment.course_code}</p>
                           <h2 className="mt-1 text-lg font-semibold">{assignment.title}</h2>
                           <p className="mt-1 text-sm text-slate-600">{assignment.unit_title} · {assignment.max_points} points · {assignment.assignment_type === 'quiz' ? 'Multiple-choice quiz' : 'File submission'}</p>
+                          <p className="mt-1 text-xs text-slate-500">Posted {new Date(assignment.created_at).toLocaleDateString()}</p>
                         </div>
                         <div className="text-left sm:text-right">
                           <p className="text-xs text-slate-500">Due {new Date(assignment.due_at).toLocaleString()}</p>
@@ -288,11 +361,15 @@ export default function AssignmentsPage() {
                               )}
                               {submission.score !== null && <p className="mt-2 text-sm font-semibold text-emerald-900">Score: {submission.score} / {assignment.max_points}</p>}
                               {submission.feedback && <p className="mt-2 whitespace-pre-wrap text-sm text-emerald-900"><span className="font-semibold">Lecturer feedback: </span>{submission.feedback}</p>}
+                              {canChangeSubmission ? <div className="mt-3 flex flex-wrap gap-3">
+                                <button type="button" onClick={() => setEditingSubmission((current) => ({ ...current, [assignment.id]: !current[assignment.id] }))} className="text-sm font-semibold text-blue-700 underline">{editingSubmission[assignment.id] ? 'Cancel edit' : 'Edit submission'}</button>
+                                <button type="button" disabled={submitting[assignment.id]} onClick={() => void deleteSubmission(assignment)} className="text-sm font-semibold text-red-700 underline disabled:opacity-50">Delete submission</button>
+                              </div> : <p className="mt-3 text-xs text-slate-600">{isPastDue ? 'Submission changes are closed after the deadline.' : 'A graded submission can no longer be changed.'}</p>}
                             </div>
                           )}
                           {submitNotices[assignment.id] && <p role="status" className="mb-3 text-sm text-emerald-700">{submitNotices[assignment.id]}</p>}
                           {submitErrors[assignment.id] && <p role="alert" className="mb-3 text-sm text-red-700">{submitErrors[assignment.id]}</p>}
-                          <form onSubmit={(event) => void submitAssignment(event, assignment)} className="space-y-4">
+                          {(!submission || editingSubmission[assignment.id]) && <form onSubmit={(event) => void submitAssignment(event, assignment)} className="space-y-4">
                             {assignment.assignment_type === 'quiz' ? (
                               <fieldset className="space-y-4">
                                 <legend className="text-sm font-semibold text-slate-800">Multiple-choice quiz</legend>
@@ -301,7 +378,7 @@ export default function AssignmentsPage() {
                                     <legend className="px-1 text-sm font-medium">{questionIndex + 1}. {question.prompt}</legend>
                                     {question.options.map((option, optionIndex) => (
                                       <label key={optionIndex} className="flex items-start gap-2 text-sm text-slate-700">
-                                        <input required type="radio" name={`question-${question.id}`} value={optionIndex} className="mt-1" />
+                                        <input required type="radio" name={`question-${question.id}`} value={optionIndex} defaultChecked={submission?.answers?.[String(question.id)] === optionIndex} className="mt-1" />
                                         <span>{option}</span>
                                       </label>
                                     ))}
@@ -312,15 +389,15 @@ export default function AssignmentsPage() {
                               <>
                                 <p className="text-sm text-slate-600">Accepted formats: {assignment.allowed_file_types.map((fileType) => fileType.toUpperCase()).join(', ')} · Maximum 20MB</p>
                                 <label className="block text-sm font-medium text-slate-700">
-                                  Finished work
+                                  {submission ? 'Replacement work' : 'Finished work'}
                                   <input required type="file" accept={assignment.allowed_file_types.map((fileType) => `.${fileType}`).join(',')} name="file" className="mt-1.5 block w-full text-sm" />
                                 </label>
                               </>
                             )}
-                            <button type="submit" disabled={submitting[assignment.id]} className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
-                              {submitting[assignment.id] ? 'Submitting…' : submission ? 'Resubmit work' : 'Submit work'}
+                            <button type="submit" disabled={submitting[assignment.id] || isPastDue} className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
+                              {submitting[assignment.id] ? 'Saving…' : submission ? 'Save changes' : 'Submit work'}
                             </button>
-                          </form>
+                          </form>}
                         </>
                       )}
                     </section>
@@ -333,12 +410,13 @@ export default function AssignmentsPage() {
                 </li>
               );
             })}
-          </ol> : <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center"><p className="font-semibold">No assignments for this unit yet</p><p className="mt-1 text-sm text-slate-500">Choose another unit or publish an assignment from this unit page.</p></div>}
+          </ol> : <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center"><p className="font-semibold">{selectedTeachingUnit ? `No assignments have been added to ${selectedTeachingUnit.title} yet.` : 'No assignments have been added yet.'}</p>{selectedTeachingUnit ? <Link href={`/assignments/new/${selectedTeachingUnit.offeringId}`} className="mt-4 inline-flex rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800">Add assignment</Link> : <p className="mt-1 text-sm text-slate-500">Choose a unit above to view or create assignments.</p>}</div>}
           </>
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
             <p className="font-semibold">No assignments to show</p>
-            <p className="mt-1 text-sm text-slate-500">{user?.role === 'student' ? 'Your lecturers have not published any assignments for your units.' : 'Create an assignment from one of your unit pages.'}</p>
+            <p className="mt-1 text-sm text-slate-500">{user?.role === 'student' ? 'Your lecturers have not published any assignments for your units.' : selectedTeachingUnit ? `No assignments have been added to ${selectedTeachingUnit.title} yet.` : 'Choose a unit above to view or create an assignment.'}</p>
+            {user?.role === 'lecturer' && selectedTeachingUnit && <Link href={`/assignments/new/${selectedTeachingUnit.offeringId}`} className="mt-4 inline-flex rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800">Add assignment</Link>}
           </div>
         )}
       </section>

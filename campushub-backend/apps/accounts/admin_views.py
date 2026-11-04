@@ -6,6 +6,7 @@ from django.views.decorators.http import require_http_methods
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
+from apps.academics.models import Course, Department, Enrollment, School, Unit
 from apps.placements.models import Application, Placement
 
 User = get_user_model()
@@ -20,7 +21,16 @@ def admin_stats(request):
 
     return JsonResponse({
         'active_users': User.objects.filter(is_active=True).count(),
+        'students': User.objects.filter(role='student', is_active=True).count(),
         'lecturers': User.objects.filter(role='lecturer', is_active=True).count(),
+        'placement_officers': User.objects.filter(role='officer', is_active=True).count(),
+        'schools': School.objects.count(),
+        'departments': Department.objects.count(),
+        'courses': Course.objects.filter(is_active=True).count(),
+        'units': Unit.objects.filter(is_active=True).count(),
+        'active_enrollments': Enrollment.objects.filter(status='active').count(),
+        'placements': Placement.objects.filter(is_active=True).count(),
+        'applications': Application.objects.count(),
         'open_placements': Placement.objects.filter(is_active=True, deadline__gte=timezone.localdate()).count(),
         'pending_applications': Application.objects.filter(status='pending').count(),
     })

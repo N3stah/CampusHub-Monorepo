@@ -2,9 +2,8 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import api from '@/lib/api';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
-import type { CalendarEvent, CourseAnnouncement, Enrollment, Placement, StudentApplication } from '@/types/portal';
+import type { AcademicUnit, CalendarEvent, CourseAnnouncement, Enrollment, Placement, StudentApplication } from '@/types/portal';
 
 interface StudentAnnouncement extends CourseAnnouncement {
   course_code: string;
@@ -46,6 +45,7 @@ function monthDays(value: Date) {
 
 export default function StudentDashboard() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [units, setUnits] = useState<AcademicUnit[]>([]);
   const [announcements, setAnnouncements] = useState<StudentAnnouncement[]>([]);
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [applications, setApplications] = useState<StudentApplication[]>([]);
@@ -64,9 +64,13 @@ export default function StudentDashboard() {
 
   const loadCoursesAndUpdates = useCallback(async (signal?: AbortSignal) => {
     try {
-      const enrollmentPage = await getApiPage<Enrollment>('/academics/enrollments/', {}, signal);
+      const [enrollmentPage, unitPage] = await Promise.all([
+        getApiPage<Enrollment>('/academics/enrollments/', {}, signal),
+        getApiPage<AcademicUnit>('/academics/units/', {}, signal),
+      ]);
       const activeCourses = enrollmentPage.results.filter((enrollment) => enrollment.status === 'active');
       setEnrollments(enrollmentPage.results);
+      setUnits(unitPage.results);
       setCourseError(null);
       setLoadingCourses(false);
 
@@ -132,11 +136,8 @@ export default function StudentDashboard() {
     const from = dateInputValue(startOfMonth(visibleMonth));
     const to = dateInputValue(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0));
     try {
-      const response = await api.get<CalendarEvent[]>('/academics/calendar/', {
-        params: { from, to },
-        signal,
-      });
-      setCalendarEvents(response.data);
+      const page = await getApiPage<CalendarEvent>('/academics/calendar/', { from, to }, signal);
+      setCalendarEvents(page.results);
       setCalendarError(null);
     } catch (requestError) {
       if (!signal?.aborted) setCalendarError(getApiErrorMessage(requestError));
@@ -162,6 +163,10 @@ export default function StudentDashboard() {
   }, [loadCalendar]);
 
   const activeCourses = enrollments.filter((enrollment) => enrollment.status === 'active');
+  const activeCourseIds = new Set(activeCourses.map((enrollment) => enrollment.course_id));
+  const activeUnits = units.flatMap((unit) => unit.offerings
+    .filter((offering) => activeCourseIds.has(offering.course_id))
+    .map((offering) => ({ unit, offering })));
   const eventsByDate = useMemo(() => {
     const grouped = new Map<string, CalendarEvent[]>();
     for (const event of calendarEvents) {
@@ -297,10 +302,10 @@ export default function StudentDashboard() {
         <section aria-labelledby="student-courses-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <div>
-              <h2 id="student-courses-heading" className="font-semibold">My courses</h2>
-              <p className="mt-1 text-xs text-slate-500">Open a course for resources and lecturer details</p>
+              <h2 id="student-courses-heading" className="font-semibold">My units</h2>
+              <p className="mt-1 text-xs text-slate-500">Units in your active programme</p>
             </div>
-            <Link href="/courses" className="text-sm font-semibold text-blue-700 hover:underline">All courses</Link>
+            <Link href="/courses" className="text-sm font-semibold text-blue-700 hover:underline">All units</Link>
           </div>
           {loadingCourses ? (
             <p role="status" className="p-6 text-center text-sm text-slate-500">Loading your courses…</p>
@@ -309,22 +314,23 @@ export default function StudentDashboard() {
               <p role="alert" className="text-sm text-red-700">{courseError}</p>
               <button type="button" onClick={() => { setLoadingCourses(true); setCourseError(null); void loadCoursesAndUpdates(); }} className="mt-2 text-sm font-semibold text-blue-700 hover:underline">Try again</button>
             </div>
-          ) : activeCourses.length ? (
+          ) : activeUnits.length ? (
             <ul className="divide-y divide-slate-100">
-              {activeCourses.slice(0, 4).map((enrollment) => (
-                <li key={enrollment.id}>
-                  <Link href={`/courses/${enrollment.course_id}`} className="flex items-center justify-between gap-3 px-5 py-4 hover:bg-slate-50">
+              {activeUnits.slice(0, 4).map(({ unit, offering }) => (
+                <li key={offering.offering_id}>
+                  <Link href={`/courses/${offering.course_id}#unit-${unit.id}`} className="flex items-center justify-between gap-3 px-5 py-4 hover:bg-slate-50">
                     <div>
-                      <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{enrollment.course_code}</p>
-                      <p className="mt-1 text-sm font-semibold text-slate-900">{enrollment.course_title}</p>
+                      <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{unit.code} · {unit.credits} credits</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">{unit.title}</p>
+                      <p className="mt-1 text-xs text-slate-500">{offering.course_code} · {offering.course_title}</p>
                     </div>
-                    <span className="text-sm font-semibold text-blue-700">Open →</span>
+                    <span className="text-sm font-semibold text-blue-700">Open unit →</span>
                   </Link>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="p-6 text-center text-sm text-slate-500">You do not have any active courses yet.</p>
+            <p className="p-6 text-center text-sm text-slate-500">No units have been added to your active programme yet.</p>
           )}
         </section>
 
