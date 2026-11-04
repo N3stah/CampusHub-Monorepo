@@ -26,7 +26,7 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 );
 
 api.interceptors.response.use(
@@ -43,10 +43,8 @@ api.interceptors.response.use(
           throw new Error('No refresh token available');
         }
 
-        const response = await axios.post(
-          `${process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000/api'}/auth/token/refresh/`,
-          { refresh: refreshToken }
-        );
+        const refreshUrl = `${process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000/api'}/auth/token/refresh/`;
+        const response = await axios.post(refreshUrl, { refresh: refreshToken });
 
         const newAccessToken = response.data.access;
         localStorage.setItem('access_token', newAccessToken);
@@ -63,7 +61,7 @@ api.interceptors.response.use(
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 export default api;

@@ -21,6 +21,16 @@ interface LecturerForm {
   password: string;
 }
 
+interface DepartmentOption {
+  id: number;
+  code: string;
+  name: string;
+  school_id?: number | null;
+  school?: number | { id?: number; name?: string; code?: string } | null;
+  school__name?: string;
+  school_name?: string;
+}
+
 const emptyForm: LecturerForm = {
   first_name: '',
   last_name: '',
@@ -37,7 +47,7 @@ const emptyForm: LecturerForm = {
 export default function LecturersPage() {
   const { user } = useAuth();
   const [schools, setSchools] = useState<School[]>([]);
-  const [departments, setDepartments] = useState<{ id: number; code: string; name: string; school_id: number; school__name: string }[]>([]);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [editingLecturer, setEditingLecturer] = useState<Lecturer | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -52,11 +62,20 @@ export default function LecturersPage() {
     let active = true;
     void Promise.all([
       getApiPage<School>('/academics/schools/', {}),
-      getApiPage<{ id: number; code: string; name: string; school_id: number; school__name: string }>('/academics/departments/', {}),
+      getApiPage<DepartmentOption>('/academics/departments/', {}),
     ]).then(([schoolPage, departmentPage]) => {
       if (!active) return;
       setSchools(schoolPage.results);
-      setDepartments(departmentPage.results);
+      void Promise.allSettled(
+        departmentPage.results.map((department) =>
+          api.get<DepartmentOption>(`/academics/departments/${department.id}/`)),
+      ).then((detailResults) => {
+        if (!active) return;
+        setDepartments(departmentPage.results.map((department, index) => {
+          const detail = detailResults[index].status === 'fulfilled' ? detailResults[index].value.data : null;
+          return detail ? { ...department, ...detail } : department;
+        }));
+      });
     }).catch((error: unknown) => {
       if (active) setFormError(getApiErrorMessage(error));
     });
@@ -132,6 +151,7 @@ export default function LecturersPage() {
     } catch (error) {
       setFormError(getApiErrorMessage(error));
     }
+
   }
 
   async function reactivateLecturer(lecturer: Lecturer) {
@@ -144,6 +164,28 @@ export default function LecturersPage() {
       setFormError(getApiErrorMessage(error));
     }
   }
+
+  function departmentSchoolId(department: DepartmentOption) {
+    return department.school_id ??
+      (typeof department.school === 'number' ? department.school : department.school?.id);
+  }
+
+  function departmentSchoolName(department: DepartmentOption) {
+    return department.school__name ?? department.school_name ??
+      (typeof department.school === 'object' ? department.school?.name ?? department.school?.code : undefined);
+  }
+
+  const selectedSchool = schools.find((school) => String(school.id) === form.school_id);
+  const departmentsForSelectedSchool = departments.filter((department) => {
+    const schoolId = departmentSchoolId(department);
+    if (schoolId !== undefined && schoolId !== null) {
+      return String(schoolId) === form.school_id;
+    }
+    const schoolName = departmentSchoolName(department)?.trim().toLowerCase();
+    return Boolean(selectedSchool && schoolName &&
+      (schoolName === selectedSchool.name.trim().toLowerCase() ||
+        schoolName === selectedSchool.code.trim().toLowerCase()));
+  });
 
   return (
     <PortalShell roles={['admin']}>
@@ -291,10 +333,11 @@ export default function LecturersPage() {
                   </select>
                 </label>
                 <label className="text-sm font-medium text-slate-700">Home department
-                  <select required value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100">
+                  <select required disabled={!form.school_id} value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-500">
                     <option value="">Choose department</option>
-                    {departments.filter((department) => String(department.school_id) === form.school_id).map((department) => <option key={department.id} value={department.id}>{department.code} — {department.name}</option>)}
+                    {departmentsForSelectedSchool.map((department) => <option key={department.id} value={department.id}>{department.code} — {department.name}</option>)}
                   </select>
+                  <span className="mt-1 block text-xs font-normal text-slate-500">One home department. Additional teaching departments are assigned through unit teaching.</span>
                 </label>
                 <label className="text-sm font-medium text-slate-700">Job title
                   <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />

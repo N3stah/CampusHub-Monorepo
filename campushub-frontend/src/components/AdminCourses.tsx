@@ -11,8 +11,9 @@ interface Department {
   name: string;
   code: string;
   school_id?: number | null;
-  school?: number | { id?: number } | null;
+  school?: number | { id?: number; name?: string; code?: string } | null;
   school__name?: string;
+  school_name?: string;
 }
 
 interface CourseForm {
@@ -54,7 +55,17 @@ export default function AdminCourses() {
     if (signal?.aborted) return;
 
     if (results[0].status === 'fulfilled') setCourses(results[0].value.results);
-    if (results[1].status === 'fulfilled') setDepartments(results[1].value.results);
+    if (results[1].status === 'fulfilled') {
+      const departmentRows = results[1].value.results;
+      const detailResults = await Promise.allSettled(
+        departmentRows.map((department) => api.get<Department>(`/academics/departments/${department.id}/`)),
+      );
+      if (signal?.aborted) return;
+      setDepartments(departmentRows.map((department, index) => {
+        const detail = detailResults[index].status === 'fulfilled' ? detailResults[index].value.data : null;
+        return detail ? { ...department, ...detail } : department;
+      }));
+    }
     if (results[2].status === 'fulfilled') setSchools(results[2].value.results);
     const errors = results.flatMap((result, index) => result.status === 'rejected'
       ? [`${['Programmes', 'Departments', 'Schools'][index]}: ${getApiErrorMessage(result.reason)}`]
@@ -71,11 +82,24 @@ export default function AdminCourses() {
 
   function startEditing(course: Course) {
     const department = departments.find((item) => item.id === course.department_id);
+    const departmentSchool = department && (
+      department.school_id ??
+      (typeof department.school === 'number' ? department.school : department.school?.id)
+    );
+    const departmentSchoolName = department?.school__name ?? department?.school_name ??
+      (typeof department?.school === 'object' ? department.school?.name ?? department.school?.code : undefined);
+    const schoolByName = departmentSchoolName
+      ? schools.find((school) => {
+          const normalizedDepartmentSchoolName = departmentSchoolName.trim().toLowerCase();
+          return normalizedDepartmentSchoolName === school.name.trim().toLowerCase() ||
+            normalizedDepartmentSchoolName === school.code.trim().toLowerCase();
+        })
+      : undefined;
     setEditing(course);
     setForm({
       title: course.title,
       code: course.code,
-      school_id: department ? String(department.school_id ?? (typeof department.school === 'number' ? department.school : department.school?.id ?? '')) : '',
+      school_id: String(departmentSchool ?? schoolByName?.id ?? ''),
       department_id: String(course.department_id),
       credits: String(course.credits),
       description: course.description ?? '',
@@ -149,9 +173,18 @@ export default function AdminCourses() {
 
   const departmentSchoolId = (department: Department) =>
     department.school_id ?? (typeof department.school === 'number' ? department.school : department.school?.id);
+  const departmentSchoolName = (department: Department) =>
+    department.school__name ?? department.school_name ??
+    (typeof department.school === 'object' ? department.school?.name ?? department.school?.code : undefined);
+  const selectedSchool = schools.find((school) => String(school.id) === form.school_id);
   const departmentsForSelectedSchool = departments.filter((department) => {
     const schoolId = departmentSchoolId(department);
-    return schoolId === undefined || schoolId === null || String(schoolId) === form.school_id;
+    if (schoolId !== undefined && schoolId !== null) return String(schoolId) === form.school_id;
+    const schoolName = departmentSchoolName(department)?.trim().toLowerCase();
+    return selectedSchool && schoolName
+      ? schoolName === selectedSchool.name.trim().toLowerCase() ||
+        schoolName === selectedSchool.code.trim().toLowerCase()
+      : false;
   });
   const departmentNames = new Map(departments.map((department) => [
     department.id,
@@ -197,7 +230,7 @@ export default function AdminCourses() {
           </label>
           <label className="block text-sm font-medium text-slate-700">
             Department
-            <select required value={form.department_id} onChange={(event) => setForm({ ...form, department_id: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
+            <select required disabled={!form.school_id} value={form.department_id} onChange={(event) => setForm({ ...form, department_id: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 disabled:bg-slate-100 disabled:text-slate-500">
               <option value="">Choose department</option>
               {departmentsForSelectedSchool.map((department) => <option key={department.id} value={department.id}>{department.code} — {department.name}</option>)}
             </select>
