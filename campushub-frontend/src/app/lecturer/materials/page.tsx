@@ -68,9 +68,9 @@ export default function LecturerMaterialsPage() {
         ? null
         : new URLSearchParams(window.location.search).get('offeringId');
       const results = await Promise.all(assigned.map(async (offering) => {
-        const [resourcePage, lessonResponse] = await Promise.all([
+        const [resourcePage, lessonPage] = await Promise.all([
           getApiPage<CourseResource>(`/resources/offerings/${offering.id}/resources/`, {}, signal),
-          api.get<UnitLesson[]>(`/academics/offerings/${offering.id}/lessons/`, { signal }),
+          getApiPage<UnitLesson>(`/academics/offerings/${offering.id}/lessons/`, {}, signal),
         ]);
         return {
           offerings: offering,
@@ -82,7 +82,7 @@ export default function LecturerMaterialsPage() {
             courseCode: offering.courseCode,
             courseTitle: offering.courseTitle,
           })),
-          lessons: lessonResponse.data.map((lesson) => ({ ...lesson, offering_id: offering.id })),
+          lessons: lessonPage.results.map((lesson) => ({ ...lesson, offering_id: offering.id })),
         };
       }));
       if (signal?.aborted) return;

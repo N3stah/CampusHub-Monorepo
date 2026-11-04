@@ -1,7 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import StudentDashboard from '@/components/StudentDashboard';
 import { getApiPage } from '@/lib/portal';
+import type { CalendarEvent } from '@/types/portal';
 
 const mocks = vi.hoisted(() => ({
   getApiPage: vi.fn(),
@@ -27,7 +28,7 @@ describe('student dashboard', () => {
   it('keeps the overview calendar without a link to a full calendar page', async () => {
     render(<StudentDashboard />);
 
-    expect(await screen.findByRole('heading', { name: 'My courses' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'My units' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'My calendar' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next month' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /full calendar/i })).not.toBeInTheDocument();
@@ -38,36 +39,34 @@ describe('student dashboard', () => {
     ));
   });
 
-  it('renders calendar events from the paginated results envelope', async () => {
-    const today = new Date();
+  it('renders events from a paginated calendar response', async () => {
+    const eventDate = new Date(new Date().getFullYear(), new Date().getMonth(), 15);
     const date = [
-      today.getFullYear(),
-      String(today.getMonth() + 1).padStart(2, '0'),
-      String(today.getDate()).padStart(2, '0'),
+      eventDate.getFullYear(),
+      String(eventDate.getMonth() + 1).padStart(2, '0'),
+      String(eventDate.getDate()).padStart(2, '0'),
     ].join('-');
-    vi.mocked(getApiPage).mockImplementation(async (endpoint) => ({
-      count: endpoint === '/academics/calendar/' ? 1 : 0,
-      next: null,
-      previous: null,
-      results: endpoint === '/academics/calendar/'
-        ? [{
-          id: 'class-1',
-          kind: 'class',
-          title: 'Database lecture',
-          unit_code: 'CS101',
-          offering_id: 1,
-          date,
-          start_time: '10:00',
-          end_time: '11:00',
-          location: 'Room 2',
-          due_at: null,
-        }]
-        : [],
-    }));
+    const event: CalendarEvent = {
+      id: 'class-1',
+      kind: 'class',
+      title: 'Systems lecture',
+      unit_code: 'CS101',
+      offering_id: 1,
+      date,
+      start_time: '10:00',
+      end_time: '11:00',
+      location: 'Room 2',
+      due_at: null,
+    };
+    vi.mocked(getApiPage).mockImplementation((endpoint: string) => Promise.resolve(
+      endpoint === '/academics/calendar/'
+        ? { count: 1, next: null, previous: null, results: [event] }
+        : { count: 0, next: null, previous: null, results: [] },
+    ));
 
     render(<StudentDashboard />);
 
-    expect(await screen.findByText('Database lecture')).toBeInTheDocument();
-    expect(screen.getByText('Room 2')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /1 activity/ }));
+    expect(await screen.findByText('Systems lecture')).toBeInTheDocument();
   });
 });

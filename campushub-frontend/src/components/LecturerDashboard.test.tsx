@@ -94,11 +94,22 @@ beforeEach(() => {
     logout: vi.fn(),
     updateUser: vi.fn(),
   });
-  vi.mocked(getApiPage).mockImplementation(async (endpoint) => ({
-    count: endpoint === '/academics/units/' ? units.length : 0,
-    next: null,
-    previous: null,
-    results: endpoint === '/academics/units/' ? units : [],
+  vi.mocked(getApiPage).mockImplementation((endpoint: string) => Promise.resolve(
+    endpoint === '/academics/units/'
+      ? { count: units.length, next: null, previous: null, results: units }
+      : { count: 0, next: null, previous: null, results: [] },
+  ));
+  vi.mocked(api.get).mockImplementation((endpoint: string) => Promise.resolve({
+    data: endpoint === '/academics/lecturer/summary/'
+      ? {
+        unit_count: 1,
+        upcoming_lesson_count: 0,
+        upcoming_assignment_count: 0,
+        unmarked_submission_count: 0,
+        pending_assignments: [],
+        upcoming_dates: [],
+      }
+      : [] satisfies CalendarEvent[],
   }));
   vi.mocked(api.get).mockResolvedValue({
     data: {
@@ -144,12 +155,11 @@ describe('lecturer overview', () => {
       location: 'Lab 2',
       due_at: null,
     };
-    vi.mocked(getApiPage).mockImplementation(async (endpoint) => ({
-      count: endpoint === '/academics/units/' ? units.length : 1,
-      next: null,
-      previous: null,
-      results: endpoint === '/academics/units/' ? units : [event],
-    }));
+    vi.mocked(getApiPage).mockImplementation((endpoint: string) => Promise.resolve(
+      endpoint === '/academics/units/'
+        ? { count: units.length, next: null, previous: null, results: units }
+        : { count: 1, next: null, previous: null, results: [event] },
+    ));
     render(<LecturerDashboard />);
 
     const activityDay = await screen.findByRole('button', { name: /1 activity/ });

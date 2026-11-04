@@ -88,8 +88,9 @@ describe('lecturer assignment detail page', () => {
     expect(await screen.findByText('Ada Student')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'See submissions' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete assignment' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Edit assignment' }));
-    expect(screen.getByText('Complete and submit the practical exercise.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close editing' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete assignment' })).toBeInTheDocument();
   });
@@ -133,7 +134,6 @@ describe('lecturer assignment detail page', () => {
     mocks.api.delete.mockResolvedValue({ data: { message: 'Assignment deleted.' } });
     render(<LecturerAssignmentPage />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit assignment' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Delete assignment' }));
 
     await waitFor(() => expect(mocks.api.delete).toHaveBeenCalledWith('/academics/assignments/8/'));

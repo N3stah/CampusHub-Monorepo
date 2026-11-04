@@ -31,7 +31,7 @@ CampusHub is a university learning and administration portal. This Next.js app p
    npm run dev
    ```
 
-   Open [http://localhost:3000](http://localhost:3000). The API defaults to `http://127.0.0.1:8000/api`. To use another API URL, set `NEXT_PUBLIC_API_URL` in a local `.env.local` file in this directory.
+   Open [http://localhost:3000](http://localhost:3000). The API defaults to `http://127.0.0.1:8000/api`. To use another API URL, set `NEXT_PUBLIC_API_URL` in a local `.env.local` file in this directory. Production builds use `https://campushub-backend-nbgc.onrender.com/api`.
 
 ## Checks
 

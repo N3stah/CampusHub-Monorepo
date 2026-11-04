@@ -68,8 +68,8 @@ export default function LecturerLessonsPage() {
         ? null
         : new URLSearchParams(window.location.search).get('offeringId');
       const lessonPages = await Promise.all(assigned.map(async (offering) => {
-        const response = await api.get<UnitLesson[]>(`/academics/offerings/${offering.id}/lessons/`, { signal });
-        return response.data.map((lesson) => ({
+        const page = await getApiPage<UnitLesson>(`/academics/offerings/${offering.id}/lessons/`, {}, signal);
+        return page.results.map((lesson) => ({
           ...lesson,
           offering_id: offering.id,
           unitCode: offering.unitCode,

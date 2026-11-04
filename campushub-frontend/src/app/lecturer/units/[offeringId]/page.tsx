@@ -16,6 +16,7 @@ import type {
   CourseRosterEntry,
   UnitLesson,
   UnitAssignment,
+  UnitGroup,
   UnitGroupSet,
 } from '@/types/portal';
 
@@ -38,6 +39,32 @@ interface AssignmentQuestionDraft {
   prompt: string;
   options: string[];
   correct_option: number;
+}
+
+interface GroupListResponse {
+  count: number;
+  results: UnitGroup[];
+}
+
+function toUnitGroupSet(
+  offeringId: number,
+  response: GroupListResponse,
+  namingScheme: 'letters' | 'numbers' = 'letters',
+  studentsPerGroup = 0,
+): UnitGroupSet {
+  return {
+    offering_id: offeringId,
+    naming_scheme: namingScheme,
+    students_per_group: studentsPerGroup,
+    groups: response.results.map((group) => ({
+      id: group.id,
+      name: group.name,
+      students: group.members.map((member) => ({
+        id: member.id,
+        name: `${member.first_name} ${member.last_name}`.trim(),
+      })),
+    })),
+  };
 }
 
 function createQuestionDraft(): AssignmentQuestionDraft {
@@ -369,7 +396,7 @@ function LecturerUnitContent() {
         sessionPage,
         rosterPage,
         groupResponse,
-        lessonResponse,
+        lessonPage,
       ] = await Promise.all([
         api.get<UnitOffering>(`/academics/offerings/${offeringId}/`, { signal }),
         getApiPage<CourseResource>(`/resources/offerings/${offeringId}/resources/`, {}, signal),
@@ -377,18 +404,18 @@ function LecturerUnitContent() {
         getApiPage<UnitAssignment>(`/academics/offerings/${offeringId}/assignments/`, {}, signal),
         getApiPage<ClassSession>(`/academics/offerings/${offeringId}/sessions/`, {}, signal),
         getApiPage<CourseRosterEntry>(`/academics/offerings/${offeringId}/roster/`, {}, signal),
-        api.get<UnitGroupSet | null>(`/academics/offerings/${offeringId}/groups/`, { signal }),
-        api.get<UnitLesson[]>(`/academics/offerings/${offeringId}/lessons/`, { signal }),
+        api.get<GroupListResponse>(`/academics/offerings/${offeringId}/groups/`, { signal }),
+        getApiPage<UnitLesson>(`/academics/offerings/${offeringId}/lessons/`, {}, signal),
       ]);
       if (signal?.aborted) return;
       setUnit(unitResponse.data);
       setResources(resourcePage.results);
-      setLessons(lessonResponse.data);
+      setLessons(lessonPage.results);
       setAnnouncements(announcementPage.results);
       setAssignments(assignmentPage.results);
       setSessions(sessionPage.results);
       setRoster(rosterPage.results);
-      setGroups(groupResponse.data);
+      setGroups(toUnitGroupSet(Number(offeringId), groupResponse.data));
       setError(null);
     } catch (requestError) {
       if (!signal?.aborted) setError(getApiErrorMessage(requestError));
@@ -524,12 +551,17 @@ function LecturerUnitContent() {
     setFormError(null);
     setNotice(null);
     try {
-      const response = await api.post<UnitGroupSet>(`/academics/offerings/${offeringId}/groups/`, {
+      const response = await api.post<GroupListResponse>(`/academics/offerings/${offeringId}/groups/`, {
         naming_scheme: groupScheme,
         students_per_group: Number(studentsPerGroup),
       });
-      setGroups(response.data);
-      setNotice(`Created ${response.data.groups.length} groups for ${roster.length} enrolled students.`);
+      setGroups(toUnitGroupSet(
+        Number(offeringId),
+        response.data,
+        groupScheme,
+        Number(studentsPerGroup),
+      ));
+      setNotice(`Created ${response.data.count} groups for ${roster.length} enrolled students.`);
     } catch (requestError) {
       setFormError(getApiErrorMessage(requestError));
     } finally {
@@ -543,18 +575,6 @@ function LecturerUnitContent() {
     try {
       await api.delete(`/resources/offerings/${offeringId}/announcements/${announcement.id}/`);
       setNotice('Announcement deleted.');
-      await loadUnit();
-    } catch (requestError) {
-      setFormError(getApiErrorMessage(requestError));
-    }
-  }
-
-  async function deleteAssignment(assignment: UnitAssignment) {
-    if (!window.confirm(`Delete assignment "${assignment.title}"?`)) return;
-    setFormError(null);
-    try {
-      await api.delete(`/academics/assignments/${assignment.id}/`);
-      setNotice('Assignment deleted.');
       await loadUnit();
     } catch (requestError) {
       setFormError(getApiErrorMessage(requestError));
@@ -803,7 +823,6 @@ function LecturerUnitContent() {
                               >
                                 {submissionsOpen ? 'Close manager' : 'Manage'}
                               </button>
-                              <button type="button" onClick={() => void deleteAssignment(assignment)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Delete</button>
                             </div>
                           </div>
                           {submissionsOpen && <AssignmentSubmissionsPanel assignment={assignment} />}
@@ -813,7 +832,7 @@ function LecturerUnitContent() {
                   </ul>
                 ) : <p className="p-6 text-sm text-slate-500">No assignments have been published for this unit.</p>}
               </div>
-              <form onSubmit={createAssignment} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <form onSubmit={createAssignment} className="hidden">
                 <h3 className="font-semibold">Create assignment</h3>
                 <label className="block text-sm font-medium text-slate-700">Title<input required maxLength={200} value={assignmentTitle} onChange={(event) => setAssignmentTitle(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5" /></label>
                 <label className="block text-sm font-medium text-slate-700">Submission type<select value={assignmentType} onChange={(event) => { setAssignmentType(event.target.value as 'file' | 'quiz'); if (event.target.value === 'quiz') setAssignmentAttachment(null); }} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5"><option value="file">File upload</option><option value="quiz">Multiple-choice quiz</option></select></label>

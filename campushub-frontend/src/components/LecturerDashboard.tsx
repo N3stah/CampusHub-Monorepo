@@ -115,11 +115,10 @@ export default function LecturerDashboard() {
 
   const loadCalendar = useCallback(async (signal?: AbortSignal) => {
     try {
-      const page = await getApiPage<CalendarEvent>(
-        '/academics/calendar/',
-        { from: monthStartValue(visibleMonth), to: monthEndValue(visibleMonth) },
-        signal,
-      );
+      const page = await getApiPage<CalendarEvent>('/academics/calendar/', {
+        from: monthStartValue(visibleMonth),
+        to: monthEndValue(visibleMonth),
+      }, signal);
       setEvents(page.results);
       setCalendarError(null);
     } catch (requestError) {

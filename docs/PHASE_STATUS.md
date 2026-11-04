@@ -25,6 +25,24 @@
 
 ---
 
+## Frontend deployment and assignment workflow follow-up — 2026-11-04
+
+### Frontend pushed separately
+
+- Frontend production API: `https://campushub-backend-nbgc.onrender.com/api`.
+- Assignment creation moved from lecturer unit pages to the dedicated `/assignments/new/[offeringId]` route.
+- Existing assignment edit and delete controls are shown only on the dedicated lecturer assignment detail page.
+- Unit pages retain assignment review and submissions management.
+
+### Backend work required
+
+| Priority | Backend follow-up | Completion criteria |
+|---|---|---|
+| P0 | Allow the deployed frontend origin | Add the final Vercel origin to Render environment variables for both `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS`; verify browser requests and credentialed authentication from that origin succeed. |
+| P1 | Fix quiz submission edit validation | Move malformed-answer validation outside the JSON decode `except` block in `apps/academics/views.py`. Reject non-dictionaries and invalid/nonexistent question or option values with a structured 400 response and integration tests. |
+| P1 | Preserve accurate assignment submission timestamps | Update `submitted_at` when a file or quiz submission is edited, or add and expose a separate `updated_at` field and UI label. Add tests covering create, edit, and due-date result calculations. |
+| P1 | Verify assignment creation contract for the dedicated frontend route | Confirm the current offering assignment POST endpoint accepts both JSON and multipart payloads, validates lecturer ownership, supported file types and size, quiz questions, due dates and maximum points. Preserve consistent error shapes for frontend display. |
+
 ---
 
 ## Phase 1A — Completed ✅

@@ -31,11 +31,13 @@ const lesson = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(getApiPage).mockResolvedValue({
-    count: 1,
-    next: null,
-    previous: null,
-    results: [{
+  vi.mocked(getApiPage).mockImplementation((endpoint: string) => Promise.resolve(endpoint.endsWith('/lessons/')
+    ? { count: 1, next: null, previous: null, results: [lesson] }
+    : {
+      count: 1,
+      next: null,
+      previous: null,
+      results: [{
       id: 2,
       code: 'BIT01104',
       title: 'Computer Applications',
@@ -53,8 +55,8 @@ beforeEach(() => {
         is_active: true,
         lecturers: [{ id: 5, name: 'Lecturer Example' }],
       }],
-    }],
-  });
+      }],
+    }));
   mocks.api.get.mockResolvedValue({ data: [lesson] });
   mocks.api.post.mockResolvedValue({ data: {} });
   mocks.api.patch.mockResolvedValue({ data: {} });

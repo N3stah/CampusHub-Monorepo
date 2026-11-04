@@ -5,21 +5,49 @@ import { useCallback, useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
 import { downloadBlob, getDownloadFilename } from '@/lib/application-files';
-import type { Enrollment } from '@/types/portal';
+import type { AcademicUnit, Enrollment } from '@/types/portal';
 
 interface MyCoursesProps {
   compact?: boolean;
 }
 
 export default function MyCourses({ compact = false }: MyCoursesProps) {
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [units, setUnits] = useState<{
+    id: number;
+    offering_id: number;
+    code: string;
+    title: string;
+    credits: number;
+    course_id: number;
+    course_code: string;
+    course_title: string;
+    lecturers: { id: number; name: string }[];
+  }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadCourses = useCallback(async (signal?: AbortSignal) => {
     try {
-      const result = await getApiPage<Enrollment>('/academics/enrollments/', {}, signal);
-      setEnrollments(result.results);
+      const [enrollmentPage, unitPage] = await Promise.all([
+        getApiPage<Enrollment>('/academics/enrollments/', {}, signal),
+        getApiPage<AcademicUnit>('/academics/units/', {}, signal),
+      ]);
+      const activeCourseIds = new Set(enrollmentPage.results
+        .filter((enrollment) => enrollment.status === 'active')
+        .map((enrollment) => enrollment.course_id));
+      setUnits(unitPage.results.flatMap((unit) => unit.offerings
+        .filter((offering) => activeCourseIds.has(offering.course_id))
+        .map((offering) => ({
+          id: unit.id,
+          offering_id: offering.offering_id,
+          code: unit.code,
+          title: unit.title,
+          credits: unit.credits,
+          course_id: offering.course_id,
+          course_code: offering.course_code,
+          course_title: offering.course_title,
+          lecturers: offering.lecturers,
+        }))));
       setError(null);
     } catch (requestError) {
       if (signal?.aborted) return;
@@ -35,16 +63,14 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
     return () => controller.abort();
   }, [loadCourses]);
 
-  const courses = enrollments.filter((enrollment) => enrollment.status === 'active');
-
   return (
     <section aria-labelledby="my-courses-heading" className="rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
         <div>
-          <h2 id="my-courses-heading" className="font-semibold">My courses</h2>
-          <p className="mt-1 text-xs text-slate-500">Courses assigned to your student account</p>
+          <h2 id="my-courses-heading" className="font-semibold">My units</h2>
+          <p className="mt-1 text-xs text-slate-500">Units in your active programme</p>
         </div>
-        {courses.length > 0 && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{courses.length}</span>}
+        {units.length > 0 && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{units.length}</span>}
       </div>
       {loading ? (
         <p role="status" className="px-5 py-8 text-center text-sm text-slate-500">Loading your courses…</p>
@@ -53,15 +79,17 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
           <p role="alert" className="text-sm text-red-700">{error}</p>
           <button type="button" onClick={() => { setLoading(true); setError(null); void loadCourses(); }} className="mt-2 text-sm font-semibold text-blue-700 hover:underline">Try again</button>
         </div>
-      ) : courses.length ? (
+      ) : units.length ? (
         <ul className={compact ? 'divide-y divide-slate-100' : 'grid gap-3 p-4 sm:grid-cols-2'}>
-          {courses.map((enrollment) => (
-            <li key={enrollment.id}>
+          {units.map((unit) => (
+            <li key={unit.offering_id}>
               <div className={`${compact ? 'py-4 first:pt-1 last:pb-1' : 'h-full rounded-xl border border-slate-200 p-4'}`}>
-                <Link href={`/courses/${enrollment.course_id}`} className="min-w-0 flex-1 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-700">
-                  <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{enrollment.course_code}</p>
-                  <p className="mt-1 font-semibold text-slate-900">{enrollment.course_title}</p>
-                  <span className="mt-3 inline-flex text-sm font-semibold text-blue-700">Open course →</span>
+                <Link href={`/courses/${unit.course_id}#unit-${unit.id}`} className="block rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-700">
+                  <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{unit.code} · {unit.credits} credits</p>
+                  <p className="mt-1 font-semibold text-slate-900">{unit.title}</p>
+                  <p className="mt-1 text-xs text-slate-500">{unit.course_code} · {unit.course_title}</p>
+                  <p className="mt-1 text-xs text-slate-500">{unit.lecturers.map((lecturer) => lecturer.name).join(', ') || 'Lecturer not assigned'}</p>
+                  <span className="mt-3 inline-flex text-sm font-semibold text-blue-700">Open unit →</span>
                 </Link>
               </div>
             </li>
@@ -69,8 +97,8 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
         </ul>
       ) : (
         <div className="px-5 py-8 text-center">
-          <p className="text-sm font-medium text-slate-700">No course enrolments yet</p>
-          <p className="mt-1 text-sm text-slate-500">The administration will add your courses after registration.</p>
+          <p className="text-sm font-medium text-slate-700">No units in your active programme</p>
+          <p className="mt-1 text-sm text-slate-500">Units will appear here once they are added to your programme.</p>
         </div>
       )}
     </section>

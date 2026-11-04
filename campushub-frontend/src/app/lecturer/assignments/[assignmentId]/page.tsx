@@ -135,7 +135,10 @@ function LecturerAssignmentContent() {
               <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{assignment.unit_code} · {assignment.course_code}</p>
               <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
                 <h1 className="text-3xl font-bold tracking-tight">{assignment.title}</h1>
-                <button type="button" onClick={() => setEditing((current) => !current)} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-50">{editing ? 'Cancel editing' : 'Edit assignment'}</button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setEditing((current) => !current)} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-50">{editing ? 'Close editing' : 'Edit assignment'}</button>
+                  <button type="button" onClick={() => void deleteAssignment()} disabled={deleting} className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">{deleting ? 'Deleting…' : 'Delete assignment'}</button>
+                </div>
               </div>
               <p className="mt-2 text-sm text-slate-600">{assignment.unit_title} · {assignment.course_title}</p>
               <dl className="mt-5 grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -162,7 +165,6 @@ function LecturerAssignmentContent() {
                   <span><span className="block font-semibold">Published</span><span className="mt-0.5 block text-xs text-slate-500">When unpublished, students cannot view or submit this assignment.</span></span>
                 </label>
                 <button type="submit" disabled={saving} className="rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">{saving ? 'Saving…' : 'Save changes'}</button>
-                <button type="button" onClick={() => void deleteAssignment()} disabled={deleting} className="rounded-lg border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">{deleting ? 'Deleting…' : 'Delete assignment'}</button>
               </form>}
 
             <AssignmentSubmissionsPanel assignment={assignment} />
