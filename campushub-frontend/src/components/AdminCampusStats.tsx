@@ -6,6 +6,7 @@ import { getApiErrorMessage } from '@/lib/portal';
 import type { AdminStats } from '@/types/portal';
 
 const adminMetrics: { key: keyof AdminStats; label: string; detail: string }[] = [
+  { key: 'active_users', label: 'Active users', detail: 'Active platform accounts' },
   { key: 'students', label: 'Students', detail: 'Active student accounts' },
   { key: 'lecturers', label: 'Lecturers', detail: 'Active lecturer accounts' },
   { key: 'placement_officers', label: 'Placement officers', detail: 'Active officer accounts' },
@@ -15,6 +16,7 @@ const adminMetrics: { key: keyof AdminStats; label: string; detail: string }[] =
   { key: 'units', label: 'Units', detail: 'Active shared units' },
   { key: 'active_enrollments', label: 'Active admissions', detail: 'Students assigned to programmes' },
   { key: 'placements', label: 'Placements', detail: 'Active opportunities' },
+  { key: 'open_placements', label: 'Open placements', detail: 'Open opportunities with upcoming deadlines' },
   { key: 'applications', label: 'Applications', detail: 'Applications received' },
   { key: 'pending_applications', label: 'Pending applications', detail: 'Awaiting review' },
 ];

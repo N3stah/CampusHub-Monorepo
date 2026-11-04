@@ -3,11 +3,20 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
+import api from '@/lib/api';
 import type { AcademicUnit, CalendarEvent, CourseAnnouncement, Enrollment, Placement, StudentApplication } from '@/types/portal';
 
 interface StudentAnnouncement extends CourseAnnouncement {
   course_code: string;
   course_title: string;
+}
+
+interface StudentDashboardSummary {
+  courses: { id: number; code: string; title: string }[];
+  upcoming_assignments: { id: number; title: string; due_at: string; offering_id: number; assignment_type: string }[];
+  pending_submissions_count: number;
+  recent_grades: { assignment_id: number; assignment_title: string; score: string | null; max_points: string | number; released_at: string }[];
+  groups: { group_id: number; group_name: string; offering_id: number; members_count: number }[];
 }
 
 const applicationStatusStyle: Record<string, string> = {
@@ -61,6 +70,8 @@ export default function StudentDashboard() {
   const [loadingApplications, setLoadingApplications] = useState(true);
   const [calendarLoading, setCalendarLoading] = useState(true);
   const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [dashboardSummary, setDashboardSummary] = useState<StudentDashboardSummary | null>(null);
+  const [dashboardSummaryError, setDashboardSummaryError] = useState<string | null>(null);
 
   const loadCoursesAndUpdates = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -146,15 +157,28 @@ export default function StudentDashboard() {
     }
   }, [visibleMonth]);
 
+  const loadDashboardSummary = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const response = await api.get<StudentDashboardSummary>('/academics/dashboard/student/', { signal });
+      if (!signal?.aborted) {
+        setDashboardSummary(response.data);
+        setDashboardSummaryError(null);
+      }
+    } catch (requestError) {
+      if (!signal?.aborted) setDashboardSummaryError(getApiErrorMessage(requestError));
+    }
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     void Promise.resolve().then(() => {
       void loadCoursesAndUpdates(controller.signal);
       void loadPlacements(controller.signal);
       void loadApplications(controller.signal);
+      void loadDashboardSummary(controller.signal);
     });
     return () => controller.abort();
-  }, [loadCoursesAndUpdates, loadPlacements, loadApplications]);
+  }, [loadCoursesAndUpdates, loadPlacements, loadApplications, loadDashboardSummary]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -193,6 +217,65 @@ export default function StudentDashboard() {
         <h1 className="mt-1 text-3xl font-bold tracking-tight">Your learning at a glance</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">Courses, lecturer announcements, resources, and your internship applications in one place.</p>
       </div>
+
+      <section aria-labelledby="student-summary-heading">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="student-summary-heading" className="font-semibold">Learning summary</h2>
+          <button type="button" onClick={() => void loadDashboardSummary()} className="text-xs font-semibold text-blue-700 hover:underline">Refresh</button>
+        </div>
+        {dashboardSummaryError && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{dashboardSummaryError}</p>}
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { label: 'Active courses', count: dashboardSummary?.courses.length ?? activeCourses.length, href: '/courses' },
+            { label: 'Due this week', count: dashboardSummary?.upcoming_assignments.length ?? '—', href: '/assignments' },
+            { label: 'Pending submissions', count: dashboardSummary?.pending_submissions_count ?? '—', href: '/assignments' },
+            { label: 'Study groups', count: dashboardSummary?.groups.length ?? '—', href: '/courses' },
+          ].map((item) => <Link key={item.label} href={item.href} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-blue-200"><span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</span><strong className="mt-1 block text-2xl text-blue-700">{item.count}</strong></Link>)}
+        </div>
+        {dashboardSummary && (
+          <div className="mt-3 grid gap-3 lg:grid-cols-3">
+            <section className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="text-sm font-semibold">Upcoming assignments</h3>
+              {dashboardSummary.upcoming_assignments.length ? (
+                <ul className="mt-3 divide-y divide-slate-100">
+                  {dashboardSummary.upcoming_assignments.slice(0, 5).map((assignment) => (
+                    <li key={assignment.id} className="py-2 text-sm">
+                      <p className="font-medium text-slate-900">{assignment.title}</p>
+                      <p className="text-xs text-slate-500">Due {new Date(assignment.due_at).toLocaleString()}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="mt-3 text-sm text-slate-500">No assignments due this week.</p>}
+            </section>
+            <section className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="text-sm font-semibold">Recent grades</h3>
+              {dashboardSummary.recent_grades.length ? (
+                <ul className="mt-3 divide-y divide-slate-100">
+                  {dashboardSummary.recent_grades.map((grade) => (
+                    <li key={grade.assignment_id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                      <span className="min-w-0 truncate font-medium text-slate-900">{grade.assignment_title}</span>
+                      <span className="shrink-0 text-blue-700">{grade.score ?? '—'} / {grade.max_points}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="mt-3 text-sm text-slate-500">No released grades yet.</p>}
+            </section>
+            <section className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="text-sm font-semibold">Study groups</h3>
+              {dashboardSummary.groups.length ? (
+                <ul className="mt-3 divide-y divide-slate-100">
+                  {dashboardSummary.groups.map((group) => (
+                    <li key={group.group_id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                      <span className="font-medium text-slate-900">{group.group_name}</span>
+                      <span className="text-xs text-slate-500">{group.members_count} members</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="mt-3 text-sm text-slate-500">You are not in any study groups.</p>}
+            </section>
+          </div>
+        )}
+      </section>
 
       <section aria-labelledby="student-calendar-heading" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
