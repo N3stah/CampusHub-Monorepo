@@ -1804,3 +1804,63 @@ def offering_at_risk(request, pk):
 
     data.sort(key=lambda x: (not x['at_risk'], x['attendance_rate']))
     return JsonResponse({'count': len(data), 'results': data})
+
+
+# --- Lecturer Placements ---
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def lecturer_placements(request):
+    user = request.user
+    if user.role not in ('lecturer', 'admin'):
+        return JsonResponse({'error': 'Only lecturers or admins can view this'}, status=403)
+
+    if user.role == 'admin':
+        offering_ids = list(Offering.objects.values_list('id', flat=True))
+    else:
+        offering_ids = list(
+            UnitTeachingAssignment.objects.filter(lecturer=user)
+            .values_list('offering_id', flat=True)
+        )
+
+    course_ids = list(
+        Offering.objects.filter(id__in=offering_ids)
+        .values_list('course_id', flat=True)
+    )
+
+    enrollments = list(
+        Enrollment.objects.filter(course_id__in=course_ids, status='active')
+        .select_related('student', 'course')
+    )
+
+    student_ids = [e.student_id for e in enrollments]
+
+    from apps.placements.models import Application
+    accepted_apps = {}
+    for app in Application.objects.filter(
+        student_id__in=student_ids, status='accepted'
+    ).select_related('placement'):
+        accepted_apps[app.student_id] = app
+
+    data = []
+    for e in enrollments:
+        student = e.student
+        app = accepted_apps.get(student.id)
+        data.append({
+            'student_id': student.id,
+            'student_name': student.get_full_name(),
+            'student_email': student.email,
+            'admission_number': student.admission_number,
+            'course_code': e.course.code,
+            'placement': {
+                'id': app.placement.id,
+                'title': app.placement.title,
+                'company': app.placement.company,
+                'location': app.placement.location,
+                'deadline': app.placement.deadline.isoformat(),
+            } if app else None
+        })
+
+    data.sort(key=lambda x: (x['course_code'], x['student_name']))
+    return JsonResponse({'count': len(data), 'results': data})
