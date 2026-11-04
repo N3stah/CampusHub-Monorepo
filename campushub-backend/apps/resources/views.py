@@ -45,6 +45,7 @@ def format_resource(r, request):
         'file_size': r.file_size,
         'download_count': r.download_count,
         'uploaded_by': r.uploaded_by.get_full_name() if r.uploaded_by else None,
+        'uploaded_by_profile_picture_url': r.uploaded_by.profile_picture.url if r.uploaded_by and r.uploaded_by.profile_picture else None,
         'created_at': r.created_at.isoformat()
     }
 
@@ -55,6 +56,7 @@ def format_announcement(a):
         'body': a.body,
         'is_pinned': a.is_pinned,
         'author': a.author.get_full_name() if a.author else None,
+        'author_profile_picture_url': a.author.profile_picture.url if a.author and a.author.profile_picture else None,
         'created_at': a.created_at.isoformat(),
         'updated_at': a.updated_at.isoformat(),
         'scheduled_for': a.scheduled_for.isoformat() if a.scheduled_for else None,

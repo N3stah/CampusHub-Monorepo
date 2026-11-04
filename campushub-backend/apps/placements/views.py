@@ -30,7 +30,8 @@ def format_placement(p):
         "is_active": p.is_active,
         "posted_by": {
             "id": p.posted_by.id,
-            "name": p.posted_by.get_full_name()
+            "name": p.posted_by.get_full_name(),
+            "profile_picture_url": p.posted_by.profile_picture.url if p.posted_by.profile_picture else None
         } if p.posted_by else None,
         "created_at": p.created_at.isoformat()
     }
@@ -48,7 +49,8 @@ def format_application(a, request):
             "email": a.student.email,
             "first_name": a.student.first_name,
             "last_name": a.student.last_name,
-            "name": a.student.get_full_name()
+            "name": a.student.get_full_name(),
+            "profile_picture_url": a.student.profile_picture.url if a.student.profile_picture else None
         },
         "status": a.status,
         "cover_note": a.cover_note,
@@ -57,7 +59,8 @@ def format_application(a, request):
         "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
         "reviewed_by": {
             "id": a.reviewed_by.id,
-            "name": a.reviewed_by.get_full_name()
+            "name": a.reviewed_by.get_full_name(),
+            "profile_picture_url": a.reviewed_by.profile_picture.url if a.reviewed_by and a.reviewed_by.profile_picture else None
         } if a.reviewed_by else None
     }
 

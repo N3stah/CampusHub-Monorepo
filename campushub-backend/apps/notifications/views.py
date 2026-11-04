@@ -17,7 +17,8 @@ def format_notification(n):
         "created_at": n.created_at.isoformat(),
         "actor": {
             "id": n.actor.id,
-            "name": n.actor.get_full_name()
+            "name": n.actor.get_full_name(),
+            "profile_picture_url": n.actor.profile_picture.url if n.actor and n.actor.profile_picture else None
         } if n.actor else None
     }
 

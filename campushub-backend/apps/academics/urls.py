@@ -17,6 +17,7 @@ urlpatterns = [
     path('admin/enrollments/<int:pk>/', views.admin_enrollment_update, name='admin-enrollment-update'),
     path('enrollments/', views.enrollment_list_create, name='enrollment-list-create'),
     path('enrollments/<int:pk>/', views.enrollment_drop, name='enrollment-drop'),
+    path('enrollments/<int:pk>/prefect/', views.toggle_prefect, name='toggle-prefect'),
     path('offerings/<int:pk>/', views.offering_detail, name='offering-detail'),
     path('offerings/<int:pk>/roster/', views.offering_roster, name='offering-roster'),
     path('offerings/<int:pk>/at-risk/', views.offering_at_risk, name='offering-at-risk'),
