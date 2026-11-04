@@ -74,3 +74,28 @@ def test_user_detail_includes_url(client, admin_user, user):
     r = client.get(f'/api/users/{user.id}/', **_headers(admin_user))
     assert r.status_code == 200
     assert 'profile_picture_url' in r.json()
+
+
+# --- Resize tests ---
+
+def test_upload_resizes_to_320(client, user):
+    """Uploaded image is resized to 320x320."""
+    img = Image.new('RGB', (500, 500), 'red')
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    uploaded = SimpleUploadedFile('big.png', buf.getvalue(), content_type='image/png')
+    client.post('/api/auth/me/profile-picture/', {'profile_picture': uploaded}, **_headers(user))
+    user.refresh_from_db()
+    stored = Image.open(user.profile_picture.path)
+    assert stored.size == (320, 320)
+
+def test_upload_non_square_crops_to_320(client, user):
+    """Non-square image is center-cropped to 320x320."""
+    img = Image.new('RGB', (600, 400), 'blue')
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    uploaded = SimpleUploadedFile('wide.png', buf.getvalue(), content_type='image/png')
+    client.post('/api/auth/me/profile-picture/', {'profile_picture': uploaded}, **_headers(user))
+    user.refresh_from_db()
+    stored = Image.open(user.profile_picture.path)
+    assert stored.size == (320, 320)
