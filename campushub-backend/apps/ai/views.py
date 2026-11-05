@@ -268,3 +268,63 @@ def ai_task_execute(request):
         'provider': result['provider'],
         'warning': 'This is a DRAFT. Review and apply through the existing endpoint.',
     })
+
+
+# --- AI Analytics (admin-only) ---
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def ai_analytics(request):
+    """GET /api/ai/analytics/ — admin-only. Usage stats + model status.
+    Honestly reports 'not yet trained: N/200 rows' when models are untrained."""
+    import os
+    from django.utils import timezone
+    from datetime import timedelta
+    user = request.user
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Admin only'}, status=403)
+
+    min_rows = getattr(settings, 'AI_AT_RISK_MIN_TRAINING_ROWS', 200)
+    from apps.academics.models import AttendanceRecord
+    from apps.placements.models import Application
+
+    # AI usage stats
+    total_logs = AITaskLog.objects.count()
+    logs_today = AITaskLog.objects.filter(created_at__gte=timezone.now() - timedelta(hours=24)).count()
+    by_provider = {}
+    for log in AITaskLog.objects.all():
+        by_provider[log.provider] = by_provider.get(log.provider, 0) + 1
+
+    # Model status
+    at_risk_rows = AttendanceRecord.objects.count()
+    at_risk_offerings = AttendanceRecord.objects.values('session__offering_id').distinct().count()
+    placement_rows = Application.objects.count()
+
+    ml_dir = os.path.join(settings.BASE_DIR, 'apps', 'ai', 'ml_models')
+    at_risk_trained = os.path.exists(os.path.join(ml_dir, 'at_risk_model.pkl'))
+    placement_trained = os.path.exists(os.path.join(ml_dir, 'placement_model.pkl'))
+
+    return JsonResponse({
+        'usage': {
+            'total_task_calls': total_logs,
+            'calls_today': logs_today,
+            'by_provider': by_provider,
+        },
+        'models': {
+            'at_risk': {
+                'trained': at_risk_trained,
+                'available_rows': at_risk_rows,
+                'required_rows': min_rows,
+                'available_offerings': at_risk_offerings,
+                'required_offerings': 3,
+                'status': 'trained' if at_risk_trained else f'not yet trained: {at_risk_rows}/{min_rows} rows, {at_risk_offerings}/3 offerings',
+            },
+            'placement': {
+                'trained': placement_trained,
+                'available_rows': placement_rows,
+                'required_rows': min_rows,
+                'status': 'trained' if placement_trained else f'not yet trained: {placement_rows}/{min_rows} rows',
+            },
+        },
+    })
