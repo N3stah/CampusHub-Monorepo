@@ -6,7 +6,7 @@ from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 from datetime import timedelta
 from apps.accounts.jwt_utils import jwt_required
-from apps.ai.models import AIInsight, AIConversation, AIMessage
+from apps.ai.models import AIInsight, AIConversation, AIMessage, AITaskLog
 from apps.ai.router import AIRouter
 from apps.ai.context_builder import build_feed_context
 
@@ -160,4 +160,111 @@ def ai_chat_history(request, pk):
     ]
     return JsonResponse({
         'conversation_id': conv.id, 'title': conv.title, 'messages': data,
+    })
+
+
+# --- AI Tasks (drafts only — never auto-execute) ---
+
+TASK_REGISTRY = {
+    'student': [
+        {'type': 'study_plan', 'description': 'Generate a personalized study plan', 'required_params': ['topics']},
+        {'type': 'assignment_help', 'description': 'Get hints for an assignment (not the answer)', 'required_params': ['question']},
+        {'type': 'placement_match', 'description': 'Find matching placements based on programme + GPA', 'required_params': []},
+    ],
+    'lecturer': [
+        {'type': 'draft_announcement', 'description': 'Draft a course announcement', 'required_params': ['topic']},
+        {'type': 'generate_quiz', 'description': 'Generate quiz questions with answers', 'required_params': ['topic']},
+        {'type': 'intervention_plan', 'description': 'Suggest intervention for at-risk student', 'required_params': []},
+        {'type': 'grade_analysis', 'description': 'Analyze assignment grades + common mistakes', 'required_params': []},
+    ],
+    'officer': [
+        {'type': 'match_students', 'description': 'Match best-fit students to a placement', 'required_params': ['placement_id']},
+        {'type': 'outcome_forecast', 'description': 'Forecast placement outcomes', 'required_params': []},
+        {'type': 'outreach_email', 'description': 'Draft employer outreach email', 'required_params': ['employer']},
+    ],
+    'admin': [
+        {'type': 'system_report', 'description': 'Generate system health report', 'required_params': []},
+        {'type': 'resource_allocation', 'description': 'Suggest resource allocation', 'required_params': []},
+        {'type': 'anomaly_detection', 'description': 'Detect unusual patterns', 'required_params': []},
+    ],
+}
+
+TASK_PROMPTS = {
+    'study_plan': "Create a personalized study plan. Topics: {topics}. Include a schedule.",
+    'assignment_help': "Provide hints (NOT the answer) for: {question}. Guide the student toward the solution.",
+    'placement_match': "Suggest suitable placements based on the student's programme and GPA.",
+    'draft_announcement': "Draft a course announcement about: {topic}. Professional tone, under 200 words.",
+    'generate_quiz': "Generate 5 quiz questions about: {topic}. Include correct answers marked.",
+    'intervention_plan': "Suggest intervention steps for an at-risk student based on the lecturer's data.",
+    'grade_analysis': "Analyze the grade distribution and suggest improvements. Identify common mistakes.",
+    'match_students': "Suggest the best-fit students for placement ID: {placement_id}. Rank by GPA and relevance.",
+    'outcome_forecast': "Forecast placement outcomes for the next cycle based on current data.",
+    'outreach_email': "Draft a professional outreach email to {employer} about a placement opportunity.",
+    'system_report': "Generate a system health report based on the admin context data.",
+    'resource_allocation': "Suggest resource allocation — which courses need more support based on the data.",
+    'anomaly_detection': "Detect any unusual patterns in the data (grade inflation, attendance drops, etc.).",
+}
+
+
+def _execute_task(user, task_type, params):
+    """Execute an AI task. Returns DRAFT only — never saves/sends anything."""
+    from apps.ai.context_builder import build_feed_context
+    import json as _json
+    context = build_feed_context(user)
+    system_prompt = (
+        f"You are CampusHub AI assisting a {context['role']}. "
+        f"User context: {_json.dumps(context, default=str)}. "
+        f"Generate a DRAFT for the task '{task_type}'. "
+        f"This is a DRAFT only — the user will review and apply it through the existing system."
+    )
+    template = TASK_PROMPTS.get(task_type, f"Execute task: {task_type}")
+    user_prompt = template.format(**{k: params.get(k, '') for k in params}) if params else template
+    router = AIRouter()
+    result = router.generate(user_prompt, system_prompt=system_prompt)
+    # Log the task
+    AITaskLog.objects.create(
+        user=user, task_type=task_type,
+        input_summary=_json.dumps(params, default=str)[:500],
+        output_summary=result['content'][:500],
+        provider=result['provider'], success=result['error'] is None,
+    )
+    return result
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def ai_tasks_list(request):
+    """GET /api/ai/tasks/ — list available tasks for the user's role."""
+    user = request.user
+    tasks = TASK_REGISTRY.get(user.role, [])
+    return JsonResponse({'count': len(tasks), 'results': tasks})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@jwt_required
+def ai_task_execute(request):
+    """POST /api/ai/task/ — execute an AI task. Returns DRAFT only.
+    The user must manually apply the result through the existing endpoint."""
+    import json as _json
+    user = request.user
+    try:
+        data = _json.loads(request.body)
+        task_type = data.get('task_type')
+        params = data.get('params', {})
+    except (_json.JSONDecodeError, TypeError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    if not task_type:
+        return JsonResponse({'error': 'task_type is required'}, status=400)
+    # Check task is available for this role
+    available = TASK_REGISTRY.get(user.role, [])
+    if not any(t['type'] == task_type for t in available):
+        return JsonResponse({'error': f'Task not available for role: {user.role}'}, status=403)
+    result = _execute_task(user, task_type, params)
+    return JsonResponse({
+        'task_type': task_type,
+        'draft': result['content'],
+        'provider': result['provider'],
+        'warning': 'This is a DRAFT. Review and apply through the existing endpoint.',
     })
