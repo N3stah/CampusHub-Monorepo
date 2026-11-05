@@ -34,10 +34,11 @@ The API is fully documented in [`campushub-backend/docs/openapi.json`](campushub
 | Users | `/api/users/` | Admin user management (CRUD, roles) |
 | Lecturers | `/api/lecturers/` | Lecturer directory management |
 | Admin | `/api/admin/` | Stats and audit logs |
-| Academics | `/api/academics/` | Departments, Courses, Enrollments, Bulk assign |
+| Academics | `/api/academics/` | Departments, Courses, Offerings, Assignments & Attachments, Lessons, Attendance |
 | Resources | `/api/resources/` | File uploads, announcements, downloads |
 | Placements | `/api/placements/` | Job listings and applications |
 | Notifications | `/api/notifications/` | User notifications, unread counts |
+| Messaging | `/api/messaging/` | Direct messages & offering group conversations |
 | Health | `/api/health/` | Render health check |
 
 ---
@@ -47,7 +48,7 @@ The API is fully documented in [`campushub-backend/docs/openapi.json`](campushub
 The academics module implements a 4-level hierarchy: **School -> Department -> Unit -> Offering**.
 
 - **Offering** links a Unit to a Course, with teaching assignments, class sessions, assignments, and student groups
-- **Assignments** support both `quiz` (auto-marked) and `file` (lecturer-graded) types
+- **Assignments** support both `quiz` (auto-marked) and `file` (lecturer-graded) types, optional reference document attachments, authenticated downloads (`GET /assignments/<id>/attachment/`), and full lecturer management (`GET/PATCH/DELETE /assignments/<id>/`)
 - **Grade release**: scores hidden from students until `released_at` is set
 - **Lessons**: `GET/POST /offerings/<id>/lessons/`, `PATCH/DELETE /lessons/<id>/` with overlap validation
 - **Attendance**: `GET/PUT /sessions/<id>/attendance/?date=YYYY-MM-DD` — one row per enrolled student, upsert on PUT

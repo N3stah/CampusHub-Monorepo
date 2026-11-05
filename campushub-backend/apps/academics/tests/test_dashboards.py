@@ -41,6 +41,18 @@ def test_lecturer_dashboard(client, setup_data):
     assert len(data['taught_offerings']) >= 1
 
 
+def test_lecturer_units_response_matches_portal_shape(client, setup_data):
+    lec_token, _ = make_pair(setup_data['lecturer'])
+    headers = {'HTTP_AUTHORIZATION': f'Bearer {lec_token}'}
+    resp = client.get('/api/academics/units/', **headers)
+    assert resp.status_code == 200
+    unit = next(row for row in resp.json()['results'] if row['id'] == setup_data['offering'].unit_id)
+    offering = unit['offerings'][0]
+    assert offering['offering_id'] == setup_data['offering'].id
+    assert offering['lecturers'][0]['id'] == setup_data['lecturer'].id
+    assert offering['lecturers'][0]['name'] == setup_data['lecturer'].get_full_name()
+
+
 def test_dashboard_role_guard(client, setup_data):
     stu_token, _ = make_pair(setup_data['student'])
     headers = {'HTTP_AUTHORIZATION': f'Bearer {stu_token}'}

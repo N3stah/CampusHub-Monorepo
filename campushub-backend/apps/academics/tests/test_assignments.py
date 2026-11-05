@@ -96,3 +96,84 @@ def test_file_assignment_and_grade(client, setup_data):
     )
     assert response.status_code == 200
     assert response.json()['score'] == '15.50'
+
+
+def test_file_assignment_with_attachment(client, setup_data):
+    import io
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    lec_token, _ = make_pair(setup_data['lecturer'])
+    lec_headers = {'HTTP_AUTHORIZATION': f'Bearer {lec_token}'}
+    attachment = SimpleUploadedFile(
+        'assignment.pdf', io.BytesIO(b'%PDF-1.4').read(),
+        content_type='application/pdf',
+    )
+    response = client.post(
+        f'/api/academics/offerings/{setup_data["offering"].id}/assignments/',
+        data={
+            'title': 'Attached Assignment',
+            'instructions': 'Complete the attached work',
+            'assignment_type': 'file',
+            'allowed_file_types': '["pdf"]',
+            'questions': '[]',
+            'due_at': (timezone.now() + timedelta(days=7)).isoformat(),
+            'max_points': '20',
+            'is_published': 'true',
+            'attachment': attachment,
+        },
+        **lec_headers
+    )
+    assert response.status_code == 201
+    assert response.json()['is_published'] is True
+    assignment_id = response.json()['id']
+    assert response.json()['attachment_name'].startswith('assignment')
+    assert response.json()['attachment_name'].endswith('.pdf')
+    assert response.json()['attachment_url'] == f'/api/academics/assignments/{assignment_id}/attachment/'
+
+    # Download attachment
+    dl_resp = client.get(f'/api/academics/assignments/{assignment_id}/attachment/', **lec_headers)
+    assert dl_resp.status_code == 200
+    assert b'%PDF-1.4' in dl_resp.getvalue()
+
+    # Get assignment detail
+    detail_resp = client.get(f'/api/academics/assignments/{assignment_id}/', **lec_headers)
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()['title'] == 'Attached Assignment'
+
+    # Patch assignment
+    patch_resp = client.patch(
+        f'/api/academics/assignments/{assignment_id}/',
+        data={'title': 'Updated Title', 'max_points': 25},
+        content_type='application/json',
+        **lec_headers
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()['title'] == 'Updated Title'
+    assert patch_resp.json()['max_points'] == 25
+
+    # Delete assignment
+    del_resp = client.delete(f'/api/academics/assignments/{assignment_id}/', **lec_headers)
+    assert del_resp.status_code == 200
+
+
+def test_assignment_create_json_without_attachment(client, setup_data):
+    lec_token, _ = make_pair(setup_data['lecturer'])
+    lec_headers = {'HTTP_AUTHORIZATION': f'Bearer {lec_token}'}
+    response = client.post(
+        f'/api/academics/offerings/{setup_data["offering"].id}/assignments/',
+        data={
+            'title': 'No Attachment Assignment',
+            'instructions': 'Just instructions',
+            'assignment_type': 'file',
+            'allowed_file_types': ['pdf'],
+            'questions': [],
+            'due_at': (timezone.now() + timedelta(days=7)).isoformat(),
+            'max_points': 100,
+            'is_published': True,
+        },
+        content_type='application/json',
+        **lec_headers
+    )
+    assert response.status_code == 201
+    assert response.json()['attachment_name'] is None
+    assert response.json()['attachment_url'] is None
