@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.accounts.jwt_utils import make_pair
 from apps.placements.models import Application, Placement
@@ -97,6 +98,73 @@ def test_student_can_apply_with_multipart_form_and_see_application(client):
     assert listed.status_code == 200
     assert listed.json()['count'] == 1
     assert Application.objects.filter(student=student, placement=placement).exists()
+
+
+def test_student_can_apply_with_valid_pdf_cv(client):
+    student = make_user('cv-student@example.test', 'cv-student', 'student')
+    officer = make_user('cv-officer@example.test', 'cv-officer', 'officer')
+    placement = Placement.objects.create(
+        posted_by=officer,
+        deadline=date.today() + timedelta(days=30),
+        **{key: value for key, value in placement_data().items() if key != 'deadline'},
+    )
+
+    response = client.post(
+        f'/api/placements/{placement.id}/apply/',
+        data={
+            'cover_note': 'Please consider my application.',
+            'cv_file': SimpleUploadedFile('resume.pdf', b'%PDF-1.4 sample', content_type='application/pdf'),
+        },
+        **auth_header(student),
+    )
+
+    assert response.status_code == 201
+    assert Application.objects.get(student=student, placement=placement).cv_file.name.endswith('.pdf')
+
+
+@pytest.mark.parametrize('filename', ['resume.txt', 'resume'])
+def test_student_cannot_apply_with_unsupported_cv_type(client, filename):
+    student = make_user('cv-student@example.test', 'cv-student', 'student')
+    officer = make_user('cv-officer@example.test', 'cv-officer', 'officer')
+    placement = Placement.objects.create(
+        posted_by=officer,
+        deadline=date.today() + timedelta(days=30),
+        **{key: value for key, value in placement_data().items() if key != 'deadline'},
+    )
+
+    response = client.post(
+        f'/api/placements/{placement.id}/apply/',
+        data={
+            'cover_note': 'Please consider my application.',
+            'cv_file': SimpleUploadedFile(filename, b'not a CV'),
+        },
+        **auth_header(student),
+    )
+
+    assert response.status_code == 400
+    assert 'CV type not allowed' in response.json()['error']
+
+
+def test_student_cannot_apply_with_cv_over_10mb(client):
+    student = make_user('cv-student@example.test', 'cv-student', 'student')
+    officer = make_user('cv-officer@example.test', 'cv-officer', 'officer')
+    placement = Placement.objects.create(
+        posted_by=officer,
+        deadline=date.today() + timedelta(days=30),
+        **{key: value for key, value in placement_data().items() if key != 'deadline'},
+    )
+
+    response = client.post(
+        f'/api/placements/{placement.id}/apply/',
+        data={
+            'cover_note': 'Please consider my application.',
+            'cv_file': SimpleUploadedFile('large.pdf', b'x' * (10 * 1024 * 1024 + 1)),
+        },
+        **auth_header(student),
+    )
+
+    assert response.status_code == 400
+    assert '10MB' in response.json()['error']
 
 
 def test_officer_can_review_only_applications_for_their_placements(client):
