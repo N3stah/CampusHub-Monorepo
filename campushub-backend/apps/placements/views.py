@@ -7,6 +7,7 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.auth import get_user_model
 
 from apps.accounts.jwt_utils import jwt_required
+from apps.common.file_guards import MAX_FILE_SIZE
 from apps.common.pagination import paginate_queryset
 from apps.accounts.models import AuditEvent
 from .models import Placement, Application
@@ -16,6 +17,7 @@ from django.core.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+ALLOWED_CV_TYPES = {'pdf', 'doc', 'docx'}
 
 def format_placement(p):
     return {
@@ -189,6 +191,16 @@ def apply_to_placement(request, pk):
             return JsonResponse({"error": "Cover note is required"}, status=400)
         
         cv_file = request.FILES.get('cv_file') # Optional
+        if cv_file:
+            if cv_file.size > MAX_FILE_SIZE:
+                return JsonResponse({'error': 'CV file size exceeds 10MB limit'}, status=400)
+            ext = cv_file.name.rsplit('.', 1)[-1].lower() if '.' in cv_file.name else ''
+            if ext not in ALLOWED_CV_TYPES:
+                accepted = ', '.join(sorted(ALLOWED_CV_TYPES))
+                return JsonResponse(
+                    {'error': f'CV type not allowed. Accepted: {accepted}'},
+                    status=400,
+                )
         
         application = ApplicationService.submit(
             student=user,

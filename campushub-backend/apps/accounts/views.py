@@ -7,6 +7,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django_ratelimit.decorators import ratelimit
 import jwt
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 
 from .jwt_utils import make_pair, make_token, decode_token, jwt_required
 
@@ -135,14 +137,39 @@ def me_view(request):
     if err:
         return err
 
+    has_current_password = 'current_password' in data
+    has_new_password = 'new_password' in data
+    if has_current_password != has_new_password:
+        return JsonResponse(
+            {'error': 'Both current_password and new_password are required to change password'},
+            status=400,
+        )
+
+    password_change = has_current_password and has_new_password
+    if password_change:
+        current_password = data['current_password']
+        new_password = data['new_password']
+        if not isinstance(current_password, str) or not user.check_password(current_password):
+            return JsonResponse({'error': 'Current password is incorrect'}, status=400)
+        if not isinstance(new_password, str):
+            return JsonResponse({'error': 'New password must be a string'}, status=400)
+        try:
+            validate_password(new_password, user)
+        except ValidationError as error:
+            return JsonResponse({'error': ' '.join(error.messages)}, status=400)
+        user.set_password(new_password)
+
     model_fields = {f.name for f in User._meta.get_fields()}
     allowed = [
         f for f in ('first_name', 'last_name', 'phone_number', 'title', 'bio', 'office_hours')
         if f in model_fields
     ]
     changed = [f for f in allowed if f in data]
-    for f in changed:
-        setattr(user, f, data[f])
+    if password_change:
+        changed.append('password')
+    for f in allowed:
+        if f in data:
+            setattr(user, f, data[f])
     if changed:
         user.save(update_fields=changed)
 

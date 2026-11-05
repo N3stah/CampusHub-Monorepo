@@ -151,3 +151,57 @@ def test_me_patch_cannot_update_gpa(client, existing_user, user_data):
     assert response.status_code == 200
     existing_user.refresh_from_db()
     assert existing_user.gpa == original_gpa
+
+
+def test_me_patch_changes_password_after_current_password_check(client, existing_user):
+    access_token, _ = make_pair(existing_user)
+    response = client.patch(
+        '/api/auth/me/',
+        data={
+            'current_password': 'StrongPass123!',
+            'new_password': 'New-Secure-Pass-321!',
+        },
+        content_type='application/json',
+        HTTP_AUTHORIZATION=f'Bearer {access_token}',
+    )
+    assert response.status_code == 200
+    existing_user.refresh_from_db()
+    assert existing_user.check_password('New-Secure-Pass-321!')
+    assert not existing_user.check_password('StrongPass123!')
+
+
+def test_me_patch_rejects_wrong_current_password(client, existing_user):
+    access_token, _ = make_pair(existing_user)
+    response = client.patch(
+        '/api/auth/me/',
+        data={'current_password': 'Wrong-Current-Password!', 'new_password': 'New-Secure-Pass-321!'},
+        content_type='application/json',
+        HTTP_AUTHORIZATION=f'Bearer {access_token}',
+    )
+    assert response.status_code == 400
+    assert response.json()['error'] == 'Current password is incorrect'
+
+
+def test_me_patch_rejects_partial_password_change(client, existing_user):
+    access_token, _ = make_pair(existing_user)
+    response = client.patch(
+        '/api/auth/me/',
+        data={'new_password': 'New-Secure-Pass-321!'},
+        content_type='application/json',
+        HTTP_AUTHORIZATION=f'Bearer {access_token}',
+    )
+    assert response.status_code == 400
+    assert 'Both current_password and new_password' in response.json()['error']
+
+
+def test_me_patch_rejects_short_new_password(client, existing_user):
+    access_token, _ = make_pair(existing_user)
+    response = client.patch(
+        '/api/auth/me/',
+        data={'current_password': 'StrongPass123!', 'new_password': 'short'},
+        content_type='application/json',
+        HTTP_AUTHORIZATION=f'Bearer {access_token}',
+    )
+    assert response.status_code == 400
+    existing_user.refresh_from_db()
+    assert existing_user.check_password('StrongPass123!')

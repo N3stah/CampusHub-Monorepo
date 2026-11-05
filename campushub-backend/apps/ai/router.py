@@ -19,7 +19,9 @@ class GeminiProvider(AIProvider):
     
     def __init__(self, api_key):
         self.api_key = api_key
-        self.url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+        # Verify the model ID against Google's current model list before the demo:
+        # https://ai.google.dev/gemini-api/docs/models
+        self.url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
     
     def generate(self, prompt, system_prompt="", max_tokens=500):
         import requests
