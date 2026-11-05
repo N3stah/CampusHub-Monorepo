@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import type { User } from '@/types';
 import { isRoleAllowed } from '@/lib/role-access';
+import api from '@/lib/api';
 
 interface PortalShellProps {
   children: ReactNode;
@@ -40,9 +41,31 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
   const pathname = usePathname();
   const hasAccess = isRoleAllowed(user?.role, roles);
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const availableNavigation = user
     ? navigation.filter((item) => item.roles.includes(user.role))
     : [];
+
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const loadUnreadCount = async () => {
+      try {
+        const response = await api.get<{ count: number }>('/notifications/unread-count/');
+        if (active) setUnreadNotificationCount(response.data.count);
+      } catch {
+        // Keep the last known count if the unread-count request fails.
+      }
+    };
+    void loadUnreadCount();
+    const interval = window.setInterval(() => void loadUnreadCount(), 30_000);
+    window.addEventListener('campushub:notifications-updated', loadUnreadCount);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('campushub:notifications-updated', loadUnreadCount);
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
@@ -93,6 +116,11 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12a2 2 0 0 0 4 0" />
               </svg>
+              {unreadNotificationCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white">
+                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                </span>
+              )}
             </Link>
             {user.role === 'lecturer' && (
               <Link
