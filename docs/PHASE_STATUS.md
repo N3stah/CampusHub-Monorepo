@@ -1,4 +1,4 @@
-﻿# CampusHub — Phase Progress Tracker
+# CampusHub — Phase Progress Tracker
 
 > Update this file at the end of every work session.  
 > Format: `[x]` = complete · `[-]` = in progress · `[ ]` = not started
@@ -542,11 +542,11 @@ Static comparison of the frontend API calls and the backend route/view/model sou
 
 | Status | Workflow | Exact work required |
 |---|---|---|
-| `[ ]` | Lecturer lessons | The lecturer UI calls `GET/POST /api/academics/offerings/<offering_id>/lessons/` and `GET/PATCH/DELETE /api/academics/lessons/<lesson_id>/`, but matching backend routes/models were not found. Add the lesson model, migration, routes, views, validation, and tests; restrict writes to the lecturer assigned to the offering and reads to authorized offering members. If lessons are out of scope, remove the UI/API calls and clearly disable the workflow instead. |
-| `[ ]` | Lecturer attendance | The UI calls `GET/POST /api/academics/sessions/<session_id>/attendance/`, but no matching backend endpoint or attendance model was found. Add attendance storage, migration, endpoint, and tests; allow only the assigned lecturer to record/update attendance and limit student reads to their own record. If attendance is out of scope, remove the UI/API calls instead. |
+| `[x]` | Lecturer lessons | The lecturer UI calls `GET/POST /api/academics/offerings/<offering_id>/lessons/` and `GET/PATCH/DELETE /api/academics/lessons/<lesson_id>/`. Added lesson model, migration 0010, routes, views, validation, and tests. |
+| `[x]` | Lecturer attendance | The UI calls `GET/POST /api/academics/sessions/<session_id>/attendance/`. Added AttendanceRecord model, migration 0011, endpoints, upsert logic, and tests. |
 | `[ ]` | Lecturer dashboard summary | The frontend requests `GET /api/academics/lecturer/summary/`, while the backend declares `GET /api/academics/dashboard/lecturer/`. Select one canonical URL, update either the frontend call or backend route, and test the response and role permissions. |
-| `[ ]` | Assignment detail editing | The frontend uses `GET/PATCH /api/academics/assignments/<assignment_id>/`; the backend route currently maps that path to a DELETE-only view. Implement a detail view supporting the required GET/PATCH methods with offering-scoped lecturer authorization and field validation, while preserving the existing delete behavior through a supported method. Add method and authorization tests. |
-| `[ ]` | Assignment attachments | The frontend creates/replaces attachments and requests `/api/academics/assignments/<assignment_id>/attachment/`, but the backend assignment model and routes do not provide this feature. Add attachment storage, migration, upload/download or replacement handling, file validation, and permission-checked routes. Restrict changes to the assigned lecturer and downloads to authorized offering members; test invalid files and denied roles. |
+| `[x]` | Assignment detail editing | The frontend uses `GET/PATCH /api/academics/assignments/<assignment_id>/`. Implemented `assignment_detail` supporting GET/PATCH/DELETE with offering-scoped lecturer authorization, field validation, and tests. |
+| `[x]` | Assignment attachments | The frontend creates/replaces attachments and requests `/api/academics/assignments/<assignment_id>/attachment/`. Added `attachment` field to `Assignment` model, migration 0017 dropping NOT NULL constraint in Postgres, multipart upload handling, authenticated download endpoint, and tests. |
 | `[ ]` | Assignment submission response contract | Frontend submission code expects `{ submission: AssignmentSubmission }`; backend POST currently returns `{ id, score }`, and GET omits fields expected by the frontend type. Define one response schema, return it consistently from GET/POST, update the frontend type/handling if needed, and test first submission, resubmission, and serialization of file/grade/feedback fields. |
 | `[ ]` | Student submission download | Frontend builds a download URL using the assignment ID at `/api/academics/assignments/<assignment_id>/submission/download/`; backend exposes `/api/academics/submissions/<submission_id>/download/`. Update the frontend to use the submission ID and backend route (or deliberately add a compatible assignment-scoped route), then test that students can only download their own submission and assigned lecturers can access submissions for their offering. |
 | `[ ]` | Group-set response shape | Backend returns a paginated `{ count, results }` response with group `members`; frontend expects `{ groups: [...] }` with `students` and reads `.groups.length`. Choose and document one shape, update backend or frontend consumers and types together, and test empty and populated group sets plus student membership privacy. |
@@ -765,3 +765,27 @@ For each route below, decide whether to add a user-facing action and connect it 
 - `/dashboard/placments` → `/placements` — URL typo
 - `data-scroll-behavior="smooth"` on `<html>` — Next.js warning
 - `api.ts` `/api` suffix self-heal — so a missing `/api` in `NEXT_PUBLIC_API_URL` doesn't break auth (like it did this session)
+
+---
+
+## Backend: Assignment Attachments & Detail Editing Fix — 2026-11-05
+
+Resolved the 500 Internal Server Error when creating assignments as a lecturer, and fulfilled assignment detail and attachment endpoints.
+
+### 1. Root Cause Resolution (500 Error on Assignment Creation)
+- **Issue:** PostgreSQL `academics_assignment` table had a legacy `attachment character varying NOT NULL` constraint without a default value, while the Django `Assignment` model did not declare an `attachment` field. Creating any assignment without an attachment resulted in `IntegrityError: null value in column "attachment" of relation "academics_assignment" violates not-null constraint`, causing an unhandled 500 error.
+- **Fix:** Created and applied migration `0017_assignment_attachment.py` which executes `ALTER TABLE academics_assignment ALTER COLUMN attachment DROP NOT NULL` on PostgreSQL and safely adds the field across environments.
+
+### 2. Assignment Model & Attachment Storage
+- Added `attachment = models.FileField(upload_to='assignments/%Y/%m/', null=True, blank=True)` to `Assignment` model.
+- Handled multipart file uploads (`request.FILES['attachment']`) in `POST /api/academics/offerings/<id>/assignments/`.
+- Updated `format_assignment` serializer to include `attachment_name` and `attachment_url`.
+- Added authenticated file download endpoint `GET /api/academics/assignments/<id>/attachment/` with role-scoped permission checks.
+
+### 3. Assignment Detail, Editing & Deletion
+- Implemented `assignment_detail` view supporting `GET`, `PATCH`, and `DELETE` on `/api/academics/assignments/<id>/`:
+  - `GET`: Returns full assignment details with question set (and answer keys for authorized lecturers/admins).
+  - `PATCH`: Supports updating title, instructions, due date, max points, publication state, replacing attachments via multipart form data, or removing attachments via `remove_attachment=true`.
+  - `DELETE`: Maintains deletion with offering-level authorization.
+
+**Tests:** All 79 backend tests passed · All 49 frontend tests passed

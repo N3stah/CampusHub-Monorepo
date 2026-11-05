@@ -1,11 +1,11 @@
 import os
 import json
 import csv
-from django.http import HttpResponse
-from django.db import transaction
+import mimetypes
+from django.http import HttpResponse, JsonResponse, FileResponse
+from django.db import transaction, IntegrityError
 from django.db.models import Q
 from django.utils import timezone
-from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth import get_user_model
@@ -28,7 +28,9 @@ def department_list_create(request):
     user = request.user
     
     if request.method == 'GET':
-        departments = Department.objects.all().values('id', 'name', 'code', 'head_id')
+        departments = Department.objects.all().select_related('school').values(
+            'id', 'name', 'code', 'head_id', 'school_id', 'school__name', 'school__code'
+        )
         return JsonResponse(list(departments), safe=False)
         
     elif request.method == 'POST':
@@ -40,6 +42,7 @@ def department_list_create(request):
             name = data.get('name')
             code = data.get('code')
             head_id = data.get('head_id')
+            school_id = data.get('school_id')
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
             
@@ -49,11 +52,17 @@ def department_list_create(request):
         if Department.objects.filter(name=name).exists() or Department.objects.filter(code=code).exists():
             return JsonResponse({'error': 'Department name or code already exists'}, status=400)
             
+        school = School.objects.filter(pk=school_id).first() if school_id else None
+        if school_id and not school:
+            return JsonResponse({'error': 'School not found'}, status=400)
         head = User.objects.filter(id=head_id, role='lecturer').first() if head_id else None
-        dept = Department.objects.create(name=name, code=code, head=head)
+        dept = Department.objects.create(name=name, code=code, school=school, head=head)
         
         AuditEvent.objects.create(actor=user, action='department.create', description=f'Created department {dept.code}')
-        return JsonResponse({'id': dept.id, 'name': dept.name, 'code': dept.code, 'head_id': dept.head_id}, status=201)
+        return JsonResponse({
+            'id': dept.id, 'name': dept.name, 'code': dept.code,
+            'head_id': dept.head_id, 'school_id': dept.school_id,
+        }, status=201)
 
 @csrf_exempt
 @require_http_methods(["GET", "PATCH", "DELETE"])
@@ -66,7 +75,12 @@ def department_detail_update_delete(request, pk):
         return JsonResponse({'error': 'Department not found'}, status=404)
         
     if request.method == 'GET':
-        return JsonResponse({'id': dept.id, 'name': dept.name, 'code': dept.code, 'head_id': dept.head_id})
+        return JsonResponse({
+            'id': dept.id, 'name': dept.name, 'code': dept.code,
+            'head_id': dept.head_id, 'school_id': dept.school_id,
+            'school__name': dept.school.name if dept.school else None,
+            'school__code': dept.school.code if dept.school else None,
+        })
         
     elif request.method == 'PATCH':
         if user.role != 'admin':
@@ -94,10 +108,19 @@ def department_detail_update_delete(request, pk):
                 dept.head = head
             else:
                 dept.head = None
+        if 'school_id' in data:
+            school_id = data.get('school_id')
+            school = School.objects.filter(pk=school_id).first() if school_id else None
+            if school_id and not school:
+                return JsonResponse({'error': 'School not found'}, status=400)
+            dept.school = school
                 
         dept.save()
         AuditEvent.objects.create(actor=user, action='department.update', description=f'Updated department {dept.code}')
-        return JsonResponse({'id': dept.id, 'name': dept.name, 'code': dept.code, 'head_id': dept.head_id})
+        return JsonResponse({
+            'id': dept.id, 'name': dept.name, 'code': dept.code,
+            'head_id': dept.head_id, 'school_id': dept.school_id,
+        })
         
     elif request.method == 'DELETE':
         if user.role != 'admin':
@@ -449,10 +472,18 @@ def format_unit(unit):
         'departments': list(unit.departments.values('id', 'name', 'code')),
         'offerings': [
             {
-                'id': o.id,
+                'offering_id': o.id,
                 'course_id': o.course_id,
                 'course_code': o.course.code,
-                'lecturers': list(o.teaching_assignments.values('lecturer_id', 'lecturer__first_name', 'lecturer__last_name'))
+                'course_title': o.course.title,
+                'is_active': o.is_active,
+                'lecturers': [
+                    {
+                        'id': assignment.lecturer_id,
+                        'name': assignment.lecturer.get_full_name(),
+                    }
+                    for assignment in o.teaching_assignments.select_related('lecturer')
+                ],
             } for o in unit.offerings.all()
         ]
     }
@@ -918,6 +949,7 @@ def calendar_ics_view(request):
 # --- Assignment Views ---
 
 def format_assignment(a, include_questions=False, include_correct=False):
+    attachment_name = os.path.basename(a.attachment.name) if getattr(a, 'attachment', None) and a.attachment.name else None
     data = {
         'id': a.id,
         'offering_id': a.offering_id,
@@ -928,7 +960,9 @@ def format_assignment(a, include_questions=False, include_correct=False):
         'due_at': a.due_at.isoformat() if hasattr(a.due_at, 'isoformat') else str(a.due_at),
         'max_points': a.max_points,
         'is_published': a.is_published,
-        'created_at': a.created_at.isoformat()
+        'created_at': a.created_at.isoformat(),
+        'attachment_name': attachment_name,
+        'attachment_url': f'/api/academics/assignments/{a.id}/attachment/' if attachment_name else None,
     }
     if include_questions:
         questions = []
@@ -989,7 +1023,15 @@ def offering_assignments(request, pk):
         if not is_offering_lecturer(user, offering):
             return JsonResponse({'error': 'Only assigned lecturers or admins can create assignments'}, status=403)
         try:
-            data = json.loads(request.body)
+            if request.content_type and request.content_type.startswith('multipart/form-data'):
+                data = request.POST.dict()
+                for key in ('allowed_file_types', 'questions'):
+                    if key in data:
+                        data[key] = json.loads(data[key])
+                data['max_points'] = int(data['max_points'])
+                data['is_published'] = str(data.get('is_published', 'false')).lower() == 'true'
+            else:
+                data = json.loads(request.body)
             # Validate type vs questions consistency
             atype = data.get('assignment_type')
             questions = data.get('questions', [])
@@ -999,6 +1041,7 @@ def offering_assignments(request, pk):
                 for q in questions:
                     if q.get('correct_option') is None:
                         return JsonResponse({'error': 'Each quiz question must have a correct_option'}, status=400)
+            attachment_file = request.FILES.get('attachment') if request.FILES else None
             assignment = Assignment.objects.create(
                 offering=offering,
                 title=data['title'],
@@ -1007,7 +1050,8 @@ def offering_assignments(request, pk):
                 allowed_file_types=data.get('allowed_file_types', []),
                 due_at=timezone.now() if not data.get('due_at') else data['due_at'],
                 max_points=data['max_points'],
-                is_published=data.get('is_published', False)
+                is_published=data.get('is_published', False),
+                attachment=attachment_file,
             )
             if assignment.assignment_type == 'quiz' and 'questions' in data:
                 for q in data['questions']:
@@ -1017,8 +1061,10 @@ def offering_assignments(request, pk):
                         options=q['options'],
                         correct_option=q.get('correct_option')
                     )
-        except (KeyError, json.JSONDecodeError):
-            return JsonResponse({'error': 'Invalid JSON or missing fields'}, status=400)
+        except (KeyError, json.JSONDecodeError, ValueError) as exc:
+            return JsonResponse({'error': f'Invalid request data: {exc}'}, status=400)
+        except IntegrityError as exc:
+            return JsonResponse({'error': f'Database error: {exc}'}, status=400)
         # Notify enrolled students if assignment is published
         if assignment.is_published:
             student_ids = list(Enrollment.objects.filter(
@@ -1035,18 +1081,114 @@ def offering_assignments(request, pk):
         return JsonResponse(format_assignment(assignment, include_questions=True, include_correct=True), status=201)
 
 @csrf_exempt
-@require_http_methods(["DELETE"])
+@require_http_methods(["GET", "PATCH", "DELETE"])
 @jwt_required
-def assignment_delete(request, pk):
+def assignment_detail(request, pk):
     user = request.user
     try:
-        assignment = Assignment.objects.select_related('offering').get(pk=pk)
+        assignment = Assignment.objects.select_related('offering', 'offering__course').get(pk=pk)
     except Assignment.DoesNotExist:
         return JsonResponse({'error': 'Assignment not found'}, status=404)
-    if not is_offering_lecturer(user, assignment.offering):
-        return JsonResponse({'error': 'Only assigned lecturers or admins can delete assignments'}, status=403)
-    assignment.delete()
-    return JsonResponse({'message': 'Assignment deleted successfully'})
+
+    is_lecturer = is_offering_lecturer(user, assignment.offering)
+
+    if request.method == 'GET':
+        if user.role == 'student':
+            if not assignment.is_published:
+                return JsonResponse({'error': 'Assignment not found'}, status=404)
+            if not Enrollment.objects.filter(student=user, course=assignment.offering.course, status='active').exists():
+                return JsonResponse({'error': 'You are not enrolled in this course'}, status=403)
+        elif not is_lecturer and user.role != 'admin':
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+        return JsonResponse(format_assignment(assignment, include_questions=True, include_correct=is_lecturer))
+
+    elif request.method == 'PATCH':
+        if not is_lecturer and user.role != 'admin':
+            return JsonResponse({'error': 'Only assigned lecturers or admins can edit assignments'}, status=403)
+
+        if request.content_type and request.content_type.startswith('multipart/form-data'):
+            data = request.POST.dict()
+            if 'max_points' in data:
+                try:
+                    data['max_points'] = int(data['max_points'])
+                except ValueError:
+                    return JsonResponse({'error': 'Invalid max_points'}, status=400)
+            if 'is_published' in data:
+                data['is_published'] = str(data['is_published']).lower() == 'true'
+            if 'remove_attachment' in data:
+                data['remove_attachment'] = str(data['remove_attachment']).lower() == 'true'
+        else:
+            try:
+                data = json.loads(request.body)
+            except json.JSONDecodeError:
+                return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        if 'title' in data:
+            assignment.title = str(data['title']).strip()
+        if 'instructions' in data:
+            assignment.instructions = str(data['instructions']).strip()
+        if 'due_at' in data and data['due_at']:
+            assignment.due_at = data['due_at']
+        if 'max_points' in data:
+            try:
+                assignment.max_points = int(data['max_points'])
+            except (ValueError, TypeError):
+                return JsonResponse({'error': 'Invalid max_points'}, status=400)
+        if 'is_published' in data:
+            assignment.is_published = bool(data['is_published'])
+
+        if request.FILES.get('attachment'):
+            assignment.attachment = request.FILES['attachment']
+        elif data.get('remove_attachment'):
+            assignment.attachment = None
+
+        assignment.save()
+        return JsonResponse(format_assignment(assignment, include_questions=True, include_correct=is_lecturer))
+
+    elif request.method == 'DELETE':
+        if not is_lecturer and user.role != 'admin':
+            return JsonResponse({'error': 'Only assigned lecturers or admins can delete assignments'}, status=403)
+        assignment.delete()
+        return JsonResponse({'message': 'Assignment deleted successfully'})
+
+assignment_delete = assignment_detail
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
+def assignment_attachment(request, pk):
+    user = request.user
+    try:
+        assignment = Assignment.objects.select_related('offering', 'offering__course').get(pk=pk)
+    except Assignment.DoesNotExist:
+        return JsonResponse({'error': 'Assignment not found'}, status=404)
+
+    is_lecturer = is_offering_lecturer(user, assignment.offering)
+    if user.role == 'student':
+        if not assignment.is_published:
+            return JsonResponse({'error': 'Assignment not found'}, status=404)
+        if not Enrollment.objects.filter(student=user, course=assignment.offering.course, status='active').exists():
+            return JsonResponse({'error': 'You are not enrolled in this course'}, status=403)
+    elif not is_lecturer and user.role != 'admin':
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    if not assignment.attachment:
+        return JsonResponse({'error': 'No attachment found for this assignment'}, status=404)
+
+    try:
+        file_handle = assignment.attachment.open('rb')
+    except (FileNotFoundError, ValueError):
+        return JsonResponse({'error': 'Attachment file missing from storage'}, status=404)
+
+    filename = os.path.basename(assignment.attachment.name)
+    content_type, _ = mimetypes.guess_type(filename)
+    return FileResponse(
+        file_handle,
+        as_attachment=True,
+        filename=filename,
+        content_type=content_type or 'application/octet-stream',
+    )
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])

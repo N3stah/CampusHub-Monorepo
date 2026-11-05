@@ -160,6 +160,7 @@ class Assignment(models.Model):
     due_at = models.DateTimeField()
     max_points = models.IntegerField()
     is_published = models.BooleanField(default=False)
+    attachment = models.FileField(upload_to='assignments/%Y/%m/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

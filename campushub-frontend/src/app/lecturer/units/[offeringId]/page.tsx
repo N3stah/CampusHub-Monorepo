@@ -512,6 +512,7 @@ function LecturerUnitContent() {
           : [],
         due_at: new Date(assignmentDueAt).toISOString(),
         max_points: Number(assignmentPoints),
+        is_published: true,
       };
       if (assignmentAttachment && assignmentType === 'file') {
         const payload = new FormData();
@@ -522,6 +523,7 @@ function LecturerUnitContent() {
         payload.append('questions', JSON.stringify(assignmentData.questions));
         payload.append('due_at', assignmentData.due_at);
         payload.append('max_points', String(assignmentData.max_points));
+        payload.append('is_published', String(assignmentData.is_published));
         payload.append('attachment', assignmentAttachment);
         await api.post(`/academics/offerings/${offeringId}/assignments/`, payload, {
           headers: { 'Content-Type': 'multipart/form-data' },

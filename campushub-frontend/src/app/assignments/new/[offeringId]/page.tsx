@@ -57,6 +57,7 @@ function NewAssignmentContent() {
         })) : [],
         due_at: new Date(dueAt).toISOString(),
         max_points: Number(maxPoints),
+        is_published: true,
       };
       if (attachment && assignmentType === 'file') {
         const payload = new FormData();
