@@ -53,6 +53,7 @@ export default function AssignmentsPage() {
   const [editingSubmission, setEditingSubmission] = useState<Record<number, boolean>>({});
   const [submitErrors, setSubmitErrors] = useState<Record<number, string>>({});
   const [submitNotices, setSubmitNotices] = useState<Record<number, string>>({});
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<number | null>(null);
 
   const loadAssignments = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -103,6 +104,7 @@ export default function AssignmentsPage() {
     if (loading) return;
     const match = window.location.hash.match(/^#assignment-(\d+)$/);
     if (!match || !assignments.some((assignment) => assignment.id === Number(match[1]))) return;
+    setSelectedAssignmentId(Number(match[1]));
     const frame = window.requestAnimationFrame(() => {
       document.getElementById(`assignment-${match[1]}`)?.scrollIntoView({ block: 'center' });
     });
@@ -256,7 +258,7 @@ export default function AssignmentsPage() {
 
   const orderedAssignments = [...assignments]
     .filter((assignment) => !selectedOfferingId || String(assignment.offering_id) === selectedOfferingId)
-    .sort((a, b) => Date.parse(a.due_at) - Date.parse(b.due_at));
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const selectedTeachingUnit = teachingUnits.find((unit) => String(unit.offeringId) === selectedOfferingId);
 
   return (
@@ -324,7 +326,7 @@ export default function AssignmentsPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="p-5">
+                    <div className="p-4">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="min-w-0">
                           <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{assignment.unit_code} · {assignment.course_code}</p>
@@ -337,11 +339,23 @@ export default function AssignmentsPage() {
                           <p className={`mt-1 text-sm font-bold ${isPastDue ? 'text-red-700' : 'text-amber-800'}`} aria-live="polite">{countdown(assignment.due_at, now)}</p>
                         </div>
                       </div>
-                      <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">{assignment.instructions}</p>
-                      {assignment.attachment_name && <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3"><p className="text-sm font-semibold text-blue-900">Assignment document</p><p className="mt-1 text-sm text-blue-800">{assignment.attachment_name}</p><button type="button" onClick={() => void downloadAssignmentDocument(assignment)} className="mt-2 text-sm font-semibold text-blue-900 underline">Open / download document</button></div>}
+                      <button
+                        type="button"
+                        aria-expanded={selectedAssignmentId === assignment.id}
+                        onClick={() => setSelectedAssignmentId((current) => current === assignment.id ? null : assignment.id)}
+                        className="mt-3 rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                      >
+                        {selectedAssignmentId === assignment.id ? 'Hide details' : 'View details'}
+                      </button>
+                      {selectedAssignmentId === assignment.id && (
+                        <div className="mt-4 border-t border-slate-100 pt-4">
+                          <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{assignment.instructions}</p>
+                          {assignment.attachment_name && <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3"><p className="text-sm font-semibold text-blue-900">Assignment document</p><p className="mt-1 text-sm text-blue-800">{assignment.attachment_name}</p><button type="button" onClick={() => void downloadAssignmentDocument(assignment)} className="mt-2 text-sm font-semibold text-blue-900 underline">Open / download document</button></div>}
+                        </div>
+                      )}
                     </div>
                   )}
-                  {user?.role === 'student' && (
+                  {user?.role === 'student' && selectedAssignmentId === assignment.id && (
                     <section aria-label={`Submit ${assignment.title}`} className="mt-5 border-t border-slate-100 pt-4">
                       {submissionLoading[assignment.id] ? (
                         <p role="status" className="text-sm text-slate-500">Checking your submission…</p>

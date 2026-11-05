@@ -1041,7 +1041,6 @@ def offering_assignments(request, pk):
                 for q in questions:
                     if q.get('correct_option') is None:
                         return JsonResponse({'error': 'Each quiz question must have a correct_option'}, status=400)
-            attachment_file = request.FILES.get('attachment') if request.FILES else None
             assignment = Assignment.objects.create(
                 offering=offering,
                 title=data['title'],
@@ -1051,7 +1050,7 @@ def offering_assignments(request, pk):
                 due_at=timezone.now() if not data.get('due_at') else data['due_at'],
                 max_points=data['max_points'],
                 is_published=data.get('is_published', False),
-                attachment=attachment_file,
+                attachment=request.FILES.get('attachment') if request.FILES else None,
             )
             if assignment.assignment_type == 'quiz' and 'questions' in data:
                 for q in data['questions']:

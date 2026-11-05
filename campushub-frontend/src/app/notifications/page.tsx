@@ -73,6 +73,7 @@ export default function NotificationsPage() {
       )));
       if (!notification.is_read) {
         setUnreadCount((count) => Math.max(0, count - 1));
+        window.dispatchEvent(new Event('campushub:notifications-updated'));
       }
     } catch (error) {
       setActionError(getApiErrorMessage(error));
@@ -88,6 +89,7 @@ export default function NotificationsPage() {
       await api.patch('/notifications/read-all/');
       setNotifications((current) => current.map((item) => ({ ...item, is_read: true })));
       setUnreadCount(0);
+      window.dispatchEvent(new Event('campushub:notifications-updated'));
     } catch (error) {
       setActionError(getApiErrorMessage(error));
     } finally {

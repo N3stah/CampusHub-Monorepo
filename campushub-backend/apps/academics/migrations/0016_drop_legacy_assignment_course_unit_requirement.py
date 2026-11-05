@@ -10,16 +10,22 @@ def drop_legacy_assignment_course_unit_requirement(apps, schema_editor):
         connection.cursor(),
         'academics_assignment',
     )
-    if not any(column.name == 'course_unit_id' for column in columns):
+    column_names = {column.name for column in columns}
+    legacy_columns = [
+        name for name in ('course_unit_id', 'attachment')
+        if name in column_names
+    ]
+    if not legacy_columns:
         return
 
     with connection.cursor() as cursor:
-        cursor.execute(
-            '''
-            ALTER TABLE academics_assignment
-            ALTER COLUMN course_unit_id DROP NOT NULL;
-            '''
-        )
+        for column_name in legacy_columns:
+            cursor.execute(
+                f'''
+                ALTER TABLE academics_assignment
+                ALTER COLUMN {column_name} DROP NOT NULL;
+                '''
+            )
 
 
 class Migration(migrations.Migration):

@@ -76,6 +76,7 @@ const unitPage = {
 
 beforeEach(() => {
   mocks.role = 'student';
+  window.history.replaceState(null, '', '/assignments');
   vi.mocked(mocks.api.get).mockReset();
   vi.mocked(mocks.api.patch).mockReset();
   vi.mocked(mocks.api.delete).mockReset();
@@ -107,6 +108,7 @@ describe('assignment submission timing', () => {
 
     render(<AssignmentsPage />);
 
+    fireEvent.click(await screen.findByRole('button', { name: 'View details' }));
     expect(await screen.findByText(expected)).toBeInTheDocument();
     expect(screen.getByText('Posted 12/1/2029')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open unit →' })).toHaveAttribute('href', '/courses/1#unit-2');
@@ -128,6 +130,7 @@ describe('assignment submission timing', () => {
 
     render(<AssignmentsPage />);
 
+    fireEvent.click(await screen.findByRole('button', { name: 'View details' }));
     expect(await screen.findByText('Score: 18.50 / 20')).toBeInTheDocument();
     expect(screen.getByText('Clear analysis and good references.')).toBeInTheDocument();
   });
@@ -193,6 +196,7 @@ describe('assignment submission timing', () => {
     vi.mocked(mocks.api.delete).mockResolvedValue({ data: { message: 'Submission deleted' } });
     render(<AssignmentsPage />);
 
+    fireEvent.click(await screen.findByRole('button', { name: 'View details' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Edit submission' }));
     fireEvent.click(screen.getByLabelText('Yes'));
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
