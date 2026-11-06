@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { getPasswordStrength } from '@/lib/password';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -21,6 +22,8 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const passwordStrength = getPasswordStrength(form.password);
 
   const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -173,14 +176,30 @@ export default function RegisterPage() {
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
                 Password
               </label>
-              <input
-                id="password"
-                type="password"
-                required
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 pr-20 text-slate-900 transition focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  className="absolute inset-y-0 right-0 px-4 text-xs font-semibold text-slate-600 hover:text-blue-700"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              {form.password && (
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Password strength: <span className="font-semibold text-slate-700">{passwordStrength.label}</span>
+                </p>
+              )}
             </div>
 
             <div>

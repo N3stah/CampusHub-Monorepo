@@ -81,9 +81,10 @@ function PlacementApplicationContent() {
         ) : placement ? (
           <form onSubmit={(event) => void submitApplication(event)} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
-            <label className="block text-sm font-medium text-slate-700">
+            <label htmlFor="cover-note" className="block text-sm font-medium text-slate-700">
               Cover note
               <textarea
+                id="cover-note"
                 required
                 minLength={10}
                 maxLength={5000}
@@ -94,9 +95,10 @@ function PlacementApplicationContent() {
                 placeholder="Explain your interest and relevant experience."
               />
             </label>
-            <label className="block text-sm font-medium text-slate-700">
+            <label htmlFor="application-cv" className="block text-sm font-medium text-slate-700">
               CV <span className="font-normal text-slate-500">(optional; PDF, DOC, or DOCX)</span>
               <input
+                id="application-cv"
                 type="file"
                 accept=".pdf,.doc,.docx"
                 onChange={(event) => {

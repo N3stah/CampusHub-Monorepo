@@ -75,15 +75,20 @@ beforeEach(() => {
     updateUser: vi.fn(),
   });
   vi.mocked(getApiPage).mockResolvedValue({ count: 1, next: null, previous: null, results: [application] });
-  vi.mocked(api.get).mockResolvedValue({
-    data: {
+  vi.mocked(api.get).mockImplementation(async (endpoint) => {
+    if (endpoint === '/notifications/unread-count/') {
+      return { data: { count: 0 } };
+    }
+    return {
+      data: {
       first_name: student.first_name,
       last_name: student.last_name,
       phone_number: '',
       title: '',
       bio: '',
       office_hours: '',
-    },
+      },
+    };
   });
   vi.mocked(api.patch).mockResolvedValue({ data: { ...student, first_name: 'Taylor Ann' } });
 });
@@ -148,14 +153,18 @@ describe('student and staff workflows', () => {
   });
 
   it('submits the application form as multipart data with the selected CV', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({
-      data: {
+    vi.mocked(api.get).mockImplementation(async (endpoint) => {
+      if (endpoint === '/notifications/unread-count/') return { data: { count: 0 } };
+      if (endpoint === '/placements/12/') return {
+        data: {
         id: 12,
         title: 'Software Intern',
         company: 'Campus Systems',
         deadline: '2026-12-15',
         is_active: true,
-      },
+        },
+      };
+      throw new Error(`Unexpected test request: ${endpoint}`);
     });
     vi.mocked(api.post).mockResolvedValue({ data: { id: 77 } });
     render(<PlacementApplicationPage />);
@@ -249,8 +258,10 @@ describe('student and staff workflows', () => {
       logout: vi.fn(),
       updateUser: vi.fn(),
     });
-    vi.mocked(api.get).mockResolvedValueOnce({
-      data: {
+    vi.mocked(api.get).mockImplementation(async (endpoint) => {
+      if (endpoint === '/notifications/unread-count/') return { data: { count: 0 } };
+      if (endpoint === '/academics/courses/12/') return {
+        data: {
         id: 12,
         code: 'CS101',
         title: 'Introduction to Computing',
@@ -264,7 +275,9 @@ describe('student and staff workflows', () => {
           last_name: student.last_name,
           email: student.email,
         },
-      },
+        },
+      };
+      throw new Error(`Unexpected test request: ${endpoint}`);
     });
     vi.mocked(getApiPage).mockImplementation(async (endpoint) => ({
       count: endpoint.endsWith('/roster/') ? 2 : 0,

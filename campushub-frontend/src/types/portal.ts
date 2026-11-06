@@ -24,7 +24,7 @@ export interface DirectoryUser {
   admission_number?: string | null;
   email: string;
   username: string;
-  role: 'student' | 'lecturer' | 'officer' | 'admin';
+  role: 'student' | 'lecturer' | 'officer' | 'admin' | 'registrar' | 'finance' | 'hod' | 'examination' | 'librarian' | 'hostel';
   department: number | string | { name?: string } | null;
   department_name?: string | null;
   school_name?: string | null;

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import type { User } from '@/types';
-import { isRoleAllowed } from '@/lib/role-access';
+import { isRoleAllowed, roleLabels } from '@/lib/role-access';
 import api from '@/lib/api';
 
 interface PortalShellProps {
@@ -14,13 +14,21 @@ interface PortalShellProps {
 }
 
 const navigation: { label: string; href: string; roles: User['role'][] }[] = [
-  { label: 'Overview', href: '/dashboard', roles: ['student', 'lecturer', 'officer'] },
+  { label: 'Overview', href: '/dashboard', roles: ['student', 'lecturer', 'officer', 'registrar', 'finance', 'hod', 'examination', 'librarian', 'hostel'] },
   { label: 'Units', href: '/lecturer/units', roles: ['lecturer'] },
   { label: 'Lesson plan', href: '/lecturer/lessons', roles: ['lecturer'] },
   { label: 'Attendance', href: '/lecturer/attendance', roles: ['lecturer'] },
   { label: 'Learning materials / notes', href: '/lecturer/materials', roles: ['lecturer'] },
   { label: 'Assignments', href: '/assignments', roles: ['student', 'lecturer'] },
   { label: 'My courses', href: '/courses', roles: ['student'] },
+  { label: 'Semester registration', href: '/academics/registration', roles: ['student', 'registrar', 'admin'] },
+  { label: 'Academic periods', href: '/academics/periods', roles: ['registrar', 'admin'] },
+  { label: 'Finance', href: '/finance', roles: ['student', 'finance', 'admin'] },
+  { label: 'Examinations & grades', href: '/examinations', roles: ['student', 'lecturer', 'examination', 'registrar', 'admin'] },
+  { label: 'Admissions', href: '/admissions', roles: ['student', 'registrar', 'admin'] },
+  { label: 'Credential verification', href: '/verify', roles: ['student', 'registrar', 'admin'] },
+  { label: 'Hostels', href: '/hostels', roles: ['student', 'hostel', 'admin'] },
+  { label: 'Library', href: '/library', roles: ['student', 'librarian', 'admin'] },
   { label: 'Overview', href: '/admin', roles: ['admin'] },
   { label: 'Campus stats', href: '/admin/stats', roles: ['admin'] },
   { label: 'Schools', href: '/admin/schools', roles: ['admin'] },
@@ -89,6 +97,11 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
             <span>Campus<span className="text-blue-700">Hub</span></span>
           </Link>
           <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
+            {user && (
+              <span className="hidden max-w-40 truncate rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 xl:inline">
+                {roleLabels[user.role]}
+              </span>
+            )}
             <button
               type="button"
               aria-label={mobileNavigationOpen ? 'Close navigation menu' : 'Open navigation menu'}
