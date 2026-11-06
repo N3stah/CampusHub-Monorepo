@@ -50,7 +50,7 @@
 | 21 | `academics_lesson` | Scheduled lesson | FK to Offering |
 | 22 | `academics_attendancerecord` | Per-student attendance | FK to ClassSession + Student |
 
-**Total tables:** 22 (10 original + 12 new academic models, plus Django's own auth/session/migration tables, not documented here).
+**Total tables:** 29 (10 original + 12 academic + 3 messaging + 4 AI; v4.0 additions in §9; plus Django's own auth/session/migration tables, not documented here).
 **Relationship types exercised:** 1:N (Department → Course), N:M (Student ↔ Course via Enrollment), and a role discriminator on User.
 
 ---
@@ -755,3 +755,198 @@ Every administrative write records who did what, which gives the admin log endpo
 - Rate limiting uses django-ratelimit with the default cache, so limits are per worker process, not global.
 - GPA lives on User. A `StudentProfile` table is a possible later refactor.
 - There is no `semester` on Enrollment, so a student cannot re-enrol in the same course in a later term.
+---
+
+## 9. v4.0 Additions — Messaging & AI Apps (2026-11-06)
+
+Seven new tables shipped across two new apps (`apps/messaging`, `apps/ai`), bringing the documented total from 22 to 29. Consolidated here: entity overview rows, table definitions, Mermaid diagram additions, relationship rows, and design notes.
+
+### 9.1 New Entity Overview Rows (continuation of §1)
+
+| # | Table | Purpose | Key Relationships |
+|---|-------|---------|-------------------|
+| 23 | `messaging_conversation` | DM or group chat per offering | FK to Offering, 1:N Participant + Message |
+| 24 | `messaging_conversationparticipant` | User membership in a conversation | FK to Conversation + User |
+| 25 | `messaging_message` | Chat message body | FK to Conversation + sender User |
+| 26 | `ai_aiconversation` | Private AI chat session per user | FK to User, 1:N AIMessage |
+| 27 | `ai_aimessage` | One turn in an AI conversation | FK to Conversation, role + provider |
+| 28 | `ai_aiinsight` | Cached AI-generated insight (24h) | FK to User, JSON content, expires_at |
+| 29 | `ai_aitasklog` | Audit log of AI task executions | FK to User (SET_NULL), provider + success |
+
+### 9.2 Table Definitions (continuation of §3)
+
+#### 3.24 `messaging_conversation`
+Direct-message or group chat thread, optionally scoped to an `Offering`.
+
+- `id` — BigAutoField, PK
+- `kind` — CharField(10), choices `dm` / `group`
+- `offering_id` — FK to `academics_offering`, CASCADE, nullable (null for ad-hoc DMs)
+- `created_at` — DateTimeField, auto_now_add
+
+#### 3.25 `messaging_conversationparticipant`
+Membership row linking a `User` to a `Conversation`.
+
+- `id` — BigAutoField, PK
+- `conversation_id` — FK to `messaging_conversation`, CASCADE, related_name `participants`
+- `user_id` — FK to `accounts_user`, CASCADE
+- `is_admin` — BooleanField, default False (group owner flag)
+- `joined_at` — DateTimeField, auto_now_add
+- `last_read_at` — DateTimeField, nullable (polled for unread badge)
+
+Constraint: `UniqueConstraint(conversation_id, user_id)` — a user appears at most once per conversation.
+
+#### 3.26 `messaging_message`
+A single chat message.
+
+- `id` — BigAutoField, PK
+- `conversation_id` — FK to `messaging_conversation`, CASCADE, related_name `messages`
+- `sender_id` — FK to `accounts_user`, CASCADE
+- `body` — TextField
+- `created_at` — DateTimeField, auto_now_add
+- `deleted_at` — DateTimeField, nullable (soft-delete)
+
+#### 3.27 `ai_aiconversation`
+A private AI chat session scoped to one `User`. Non-owner access returns 404 (enforced in the view layer).
+
+- `id` — BigAutoField, PK
+- `user_id` — FK to `accounts_user`, CASCADE
+- `role_context` — CharField(20), role snapshot at creation
+- `title` — CharField(200), blank allowed
+- `created_at` — DateTimeField, auto_now_add
+- `updated_at` — DateTimeField, auto_now
+
+Ordering: `-created_at`.
+
+#### 3.28 `ai_aimessage`
+One turn inside an `AIConversation`.
+
+- `id` — BigAutoField, PK
+- `conversation_id` — FK to `ai_aiconversation`, CASCADE
+- `role` — CharField(10), choices `user` / `assistant`
+- `content` — TextField
+- `ai_provider` — CharField(20), blank allowed; `gemini` / `nvidia` / `mistral` / `mock`
+- `created_at` — DateTimeField, auto_now_add
+
+Ordering: `created_at`.
+
+#### 3.29 `ai_aiinsight`
+Cached AI-generated insight (e.g. daily feed), served stale within TTL.
+
+- `id` — BigAutoField, PK
+- `user_id` — FK to `accounts_user`, CASCADE
+- `insight_type` — CharField(50), e.g. `daily_feed`
+- `content` — JSONField, structured payload
+- `generated_at` — DateTimeField, auto_now_add
+- `expires_at` — DateTimeField, nullable; `generated_at + AI_FEED_CACHE_HOURS` (default 24h)
+
+Ordering: `-generated_at`.
+
+#### 3.30 `ai_aitasklog`
+Audit trail for every AI task execution (draft generation, retrain, etc.).
+
+- `id` — BigAutoField, PK
+- `user_id` — FK to `accounts_user`, SET_NULL, nullable (logs survive user deletion)
+- `task_type` — CharField(50), e.g. `draft_announcement` / `retrain`
+- `input_summary` — TextField, redacted prompt digest
+- `output_summary` — TextField, redacted response digest
+- `provider` — CharField(20), which provider served the request
+- `success` — BooleanField, default True
+- `created_at` — DateTimeField, auto_now_add
+
+Ordering: `-created_at`.
+
+### 9.3 Mermaid Diagram Additions
+
+Renders alongside the §2 diagram on GitHub, VS Code (Mermaid extension), and mermaid.live.
+
+```mermaid
+erDiagram
+    OFFERING ||--o{ CONVERSATION : "has"
+    CONVERSATION ||--o{ CONVERSATIONPARTICIPANT : "has"
+    USER ||--o{ CONVERSATIONPARTICIPANT : "joins"
+    CONVERSATION ||--o{ MESSAGE : "contains"
+    USER ||--o{ MESSAGE : "sends"
+    USER ||--o{ AICONVERSATION : "owns"
+    AICONVERSATION ||--o{ AIMESSAGE : "has"
+    USER ||--o{ AIINSIGHT : "receives"
+    USER ||--o{ AITASKLOG : "triggers"
+
+    CONVERSATION {
+        bigint id PK
+        string kind "dm|group"
+        bigint offering_id FK "OFFERING, CASCADE"
+        timestamptz created_at
+    }
+    CONVERSATIONPARTICIPANT {
+        bigint id PK
+        bigint conversation_id FK "CONVERSATION, CASCADE"
+        bigint user_id FK "USER, CASCADE"
+        bool is_admin
+        timestamptz joined_at
+        timestamptz last_read_at "nullable"
+    }
+    MESSAGE {
+        bigint id PK
+        bigint conversation_id FK "CONVERSATION, CASCADE"
+        bigint sender_id FK "USER, CASCADE"
+        text body
+        timestamptz created_at
+        timestamptz deleted_at "nullable"
+    }
+    AICONVERSATION {
+        bigint id PK
+        bigint user_id FK "USER, CASCADE"
+        string role_context
+        string title
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    AIMESSAGE {
+        bigint id PK
+        bigint conversation_id FK "AICONVERSATION, CASCADE"
+        string role "user|assistant"
+        text content
+        string ai_provider
+        timestamptz created_at
+    }
+    AIINSIGHT {
+        bigint id PK
+        bigint user_id FK "USER, CASCADE"
+        string insight_type
+        json content
+        timestamptz generated_at
+        timestamptz expires_at "nullable"
+    }
+    AITASKLOG {
+        bigint id PK
+        bigint user_id FK "USER, SET_NULL"
+        string task_type
+        text input_summary
+        text output_summary
+        string provider
+        bool success
+        timestamptz created_at
+    }
+```
+
+### 9.4 Relationship Summary Additions (continuation of §4)
+
+| Relationship | Type | From | To | On Delete |
+|--------------|------|------|----|-----------|
+| Offering → Conversation | 1:N | `Conversation.offering_id` | Offering | CASCADE |
+| Conversation → ConversationParticipant | 1:N | `ConversationParticipant.conversation_id` | Conversation | CASCADE |
+| User → ConversationParticipant | 1:N | `ConversationParticipant.user_id` | User | CASCADE |
+| Conversation → Message | 1:N | `Message.conversation_id` | Conversation | CASCADE |
+| User → Message (sender) | 1:N | `Message.sender_id` | User | CASCADE |
+| User → AIConversation | 1:N | `AIConversation.user_id` | User | CASCADE |
+| AIConversation → AIMessage | 1:N | `AIMessage.conversation_id` | AIConversation | CASCADE |
+| User → AIInsight | 1:N | `AIInsight.user_id` | User | CASCADE |
+| User → AITaskLog | 1:0..N | `AITaskLog.user_id` | User | SET_NULL |
+
+### 9.5 Design Notes
+
+- **Messaging privacy:** DM relationships are validated at the view layer (both participants must exist); group chats are scoped to an `Offering`. `last_read_at` drives unread badges via polling.
+- **AI privacy:** `AIConversation` rows are private to `user_id`; the chat endpoint returns 404 for non-owners (view-enforced, no model-level constraint).
+- **AI provider tracking:** `AIMessage.ai_provider` records which provider served each reply, supporting the ensemble router audit trail.
+- **AI insight caching:** `AIInsight.expires_at` equals `generated_at + AI_FEED_CACHE_HOURS` (default 24h); stale insights are served until refreshed.
+- **AITaskLog retention:** `on_delete=SET_NULL` on `user_id` so audit logs survive user deletion, unlike `AIConversation` and `AIInsight` which cascade.

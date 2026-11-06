@@ -4,7 +4,7 @@
 > Format: `[x]` = complete · `[-]` = in progress · `[ ]` = not started
 
 **Last updated:** 2026-10-21 · **Backend:** complete and deployed to Render · **Frontend (Titus):** in progress
-**Last updated:** 2026-11-04 · **Backend:** complete (172 tests, 80% coverage, 26 models, 87+ endpoints, 6 apps) · **Frontend (Titus):** in progress — new features awaiting UI (see guide below)
+**Last updated:** 2026-11-06 · **Backend:** complete (248 tests, 82% coverage, 29 models, 90+ endpoints, 7 apps) · **Frontend (Titus):** in progress — new features awaiting UI (see guide below)
 
 | Phase | Slice | Backend (Mark) | Frontend (Titus) | Merged to main |
 |-------|-------|---------------|-------------------|----------------|
@@ -760,6 +760,14 @@ For each route below, decide whether to add a user-facing action and connect it 
 - Response now includes `admission_number` and `programme: {id, code, title}` for students.
 - **UI:** The edit student modal should send `admission_number` and `course_id` (the Programme dropdown). The "Unsupported fields: admission_number, course_id" error is fixed — these fields are now accepted.
 
+
+### 9. AI Assistant — Feed, Chat, Task Drafts (new surface)
+- `GET /api/ai/feed/` — daily AI-generated digest scoped to the logged-in user (24h cache). Render as a dashboard card or `/ai/feed` route.
+- `POST /api/ai/chat/` — private conversational AI. New `/ai/chat` surface: conversation list + thread view + message input. Scope the conversation list to `request.user` (non-owner gets 404).
+- `POST /api/ai/task/` — draft generator (announcements, lesson plans, etc.). Returns a DRAFT the user reviews and submits via the existing flow — never auto-applies. Add a "Generate draft with AI" button on relevant compose screens.
+- `GET /api/ai/analytics/` — admin-only AI usage stats; add to admin dashboard.
+- All AI endpoints require JWT; surface a sign-in prompt for logged-out users.
+
 ### Frontend Fixes Still Needed
 - `<body suppressHydrationWarning>` — Grammarly extension causes hydration mismatch
 - `/dashboard/placments` → `/placements` — URL typo
@@ -789,3 +797,34 @@ Resolved the 500 Internal Server Error when creating assignments as a lecturer, 
   - `DELETE`: Maintains deletion with offering-level authorization.
 
 **Tests:** All 79 backend tests passed · All 49 frontend tests passed
+
+## Backend: AI/ML Integration + Ensemble Pipeline + Audit Hardening — 2026-11-06
+
+Three waves of work shipping the AI assistant surface, hardening audit P0/P1 findings, and adding a 3-provider ensemble router.
+
+### Audit P0/P1 Fixes (PR #74, merged bf121cb)
+- Submission serializer hardened (`_serialize_submission`); PATCH re-submission now correctly parses multipart form data via a `_multipart_form_data()` helper.
+- Password change endpoint validates current password; CV upload enforces 10 MB limit and pdf/doc/docx allowlist.
+- Score=0 bug fixed on assignment grading.
+- Gemini model bumped to `gemini-3.8-flash` (1.5-flash sunset by Google).
+- Suite: 215 → 229 tests, 81% coverage.
+
+### AI/ML Integration — 5 branches (PR #69–#73)
+- New `apps/ai` app: 4 models (AIConversation, AIMessage, AIInsight, AITaskLog).
+- AIRouter with GeminiProvider + MockProvider (auto-detected from settings).
+- Endpoints: `GET /api/ai/feed/` (24h-cached daily digest), `POST /api/ai/chat/` (private per-user conversation, non-owner → 404), `POST /api/ai/task/` (draft generation, never auto-applies), `GET /api/ai/analytics/` (admin-only).
+- `retrain` management command refuses datasets under `AI_AT_RISK_MIN_TRAINING_ROWS` (default 200).
+- Data-leak tests: feed, chat, and task endpoints all scoped to the requesting user.
+
+### AI Ensemble Pipeline (PR #75, merged 91a6cca)
+- Added NVIDIAProvider (`z-ai/glm-5.3-flash`) and MistralProvider (`mistral-large-4-1t-a52b`, `reasoning_effort=high`) alongside Gemini.
+- `EnsembleRouter` with three modes: `fallback` (Gemini → GLM → Mistral cascade), `chain` (generate → refine), `reasoning` (Mistral-first).
+- Routing: feed and chat use fallback; task execution uses chain for non-admin and reasoning for admin.
+- `apps/ai/tests/conftest.py` autouse fixture strips API keys so the suite always runs MockProvider with zero network calls (59 AI tests in ~3.6s).
+- 19 new ensemble tests.
+
+### Deployment
+- Render env vars added: `GEMINI_API_KEY`, `NVIDIA_API_KEY`, `NVIDIA_VISION_API_KEY`. Live deploy `91a6cca` (1m07s, no migrations).
+- Router degrades gracefully to MockProvider when any key is absent.
+
+**Tests:** 229 → 248 (+19) · **Coverage:** 81% → 82% · **Models:** 26 → 29 · **Apps:** 6 → 7
