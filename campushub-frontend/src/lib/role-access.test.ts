@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRoleAllowed } from '@/lib/role-access';
+import { hasPermission, isRoleAllowed, roleLabels } from '@/lib/role-access';
 
 const roles = ['student', 'lecturer', 'officer', 'admin'] as const;
 
@@ -14,5 +14,14 @@ describe('role-based page access', () => {
     expect(isRoleAllowed(null)).toBe(false);
     expect(isRoleAllowed(undefined, ['admin'])).toBe(false);
     for (const role of roles) expect(isRoleAllowed(role)).toBe(true);
+  });
+
+  it('maps institutional roles to their operational permissions', () => {
+    expect(hasPermission('finance', 'finance.manage')).toBe(true);
+    expect(hasPermission('finance', 'academic.manage')).toBe(false);
+    expect(hasPermission('registrar', 'admissions.manage')).toBe(true);
+    expect(hasPermission('librarian', 'library.manage')).toBe(true);
+    expect(hasPermission('hostel', 'hostel.manage')).toBe(true);
+    expect(roleLabels.finance).toBe('Finance Officer');
   });
 });

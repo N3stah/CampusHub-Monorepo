@@ -6,7 +6,7 @@ export interface User {
   last_name: string;
   admission_number?: string | null;
   full_name?: string;
-  role: 'student' | 'lecturer' | 'officer' | 'admin';
+  role: CampusRole;
   department: number | null;
   gpa: string | null;
   is_active: boolean;
@@ -16,6 +16,18 @@ export interface User {
   bio?: string;
   office_hours?: string;
 }
+
+export type CampusRole =
+  | 'student'
+  | 'lecturer'
+  | 'officer'
+  | 'admin'
+  | 'registrar'
+  | 'finance'
+  | 'hod'
+  | 'examination'
+  | 'librarian'
+  | 'hostel';
 
 export interface AuthTokens {
   access: string;
