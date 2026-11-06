@@ -136,5 +136,7 @@ SILENCED_SYSTEM_CHECKS = ['django_ratelimit.E003', 'django_ratelimit.W001']
 
 # AI/ML Integration settings
 GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
+NVIDIA_API_KEY = config('NVIDIA_API_KEY', default='')
+NVIDIA_VISION_API_KEY = config('NVIDIA_VISION_API_KEY', default='')
 AI_FEED_CACHE_HOURS = config('AI_FEED_CACHE_HOURS', default=24, cast=int)
 AI_AT_RISK_MIN_TRAINING_ROWS = config('AI_AT_RISK_MIN_TRAINING_ROWS', default=200, cast=int)

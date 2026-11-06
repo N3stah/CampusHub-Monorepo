@@ -13,3 +13,4 @@ campushub-frontend/.env*.local
 .env
 media/
 *.pdf
+.vscode/

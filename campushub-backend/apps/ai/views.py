@@ -7,7 +7,7 @@ from django.utils import timezone
 from datetime import timedelta
 from apps.accounts.jwt_utils import jwt_required
 from apps.ai.models import AIInsight, AIConversation, AIMessage, AITaskLog
-from apps.ai.router import AIRouter
+from apps.ai.router import AIRouter, EnsembleRouter
 from apps.ai.context_builder import build_feed_context
 
 
@@ -42,7 +42,7 @@ def ai_feed(request):
     )
     user_prompt = f"User context (JSON): {json.dumps(context, default=str)}\n\nGenerate a daily feed summary for this user."
 
-    router = AIRouter()  # auto-detects: MockProvider if no key, GeminiProvider if key set
+    router = EnsembleRouter(mode='fallback')  # auto-detects: MockProvider if no key, GeminiProvider if key set
     result = router.generate(user_prompt, system_prompt=system_prompt)
 
     feed_content = {
@@ -118,7 +118,7 @@ def ai_chat(request):
     history_text = "\n".join([f"{m.role}: {m.content}" for m in history])
 
     # Call AI (MockProvider in tests, Gemini in prod)
-    router = AIRouter()
+    router = EnsembleRouter(mode='fallback')
     result = router.generate(history_text, system_prompt=system_prompt)
 
     # Save AI response
@@ -219,7 +219,8 @@ def _execute_task(user, task_type, params):
     )
     template = TASK_PROMPTS.get(task_type, f"Execute task: {task_type}")
     user_prompt = template.format(**{k: params.get(k, '') for k in params}) if params else template
-    router = AIRouter()
+    mode = "reasoning" if user.role == "admin" else "chain"
+    router = EnsembleRouter(mode=mode)
     result = router.generate(user_prompt, system_prompt=system_prompt)
     # Log the task
     AITaskLog.objects.create(
