@@ -58,6 +58,26 @@ class Course(models.Model):
     def __str__(self):
         return f"{self.code}: {self.title}"
 
+class AcademicPeriod(models.Model):
+    name = models.CharField(max_length=100)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    is_current = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-start_date']
+        # Ensure only one period can be current at a time (partial unique constraint if supported)
+        constraints = [
+            models.UniqueConstraint(
+                fields=['is_current'],
+                condition=models.Q(is_current=True),
+                name='one_current_academic_period'
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.name}"
 class Unit(models.Model):
     code = models.CharField(max_length=20, unique=True)
     title = models.CharField(max_length=200)
@@ -73,8 +93,9 @@ class Unit(models.Model):
         return f"{self.code}: {self.title}"
 
 class Offering(models.Model):
-    unit = models.ForeignKey(Unit, on_delete=models.CASCADE, related_name='offerings')
+    unit = models.ForeignKey('Unit', on_delete=models.CASCADE, related_name='offerings')
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='offerings')
+    period = models.ForeignKey('AcademicPeriod', null=True, blank=True, on_delete=models.SET_NULL, related_name='offerings')
     is_active = models.BooleanField(default=True)
 
     class Meta:
