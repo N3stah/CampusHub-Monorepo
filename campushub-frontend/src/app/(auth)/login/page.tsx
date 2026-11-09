@@ -21,8 +21,8 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      await login(form.email, form.password);
-      router.push('/dashboard');
+      const user = await login(form.email, form.password);
+      router.push(user.must_change_password ? '/change-password' : '/dashboard');
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: ApiError } };
       setError(axiosErr.response?.data?.detail ?? 'Invalid credentials');
@@ -104,10 +104,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-6 text-center text-sm text-slate-600">
-            Don&apos;t have an account?{' '}
-            <Link href="/register" className="font-semibold text-blue-700 hover:text-blue-800">
-              Register here
-            </Link>
+            CampusHub accounts are created by the Registrar or Super Admin. Check your email for your login details.
           </p>
         </div>
       </div>

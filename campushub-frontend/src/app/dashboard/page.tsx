@@ -11,12 +11,25 @@ import { useAuth } from '@/context/AuthContext';
 export default function DashboardPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const roleHome = user?.role === 'admin'
+    ? '/admin'
+    : user?.role === 'ict_admin'
+      ? '/ict-admin'
+      : user?.role === 'registrar'
+        ? '/registrar'
+        : user?.role === 'finance'
+          ? '/finance'
+          : user?.role === 'librarian'
+            ? '/library'
+            : user?.role === 'hostel'
+              ? '/hostels'
+              : null;
 
   useEffect(() => {
-    if (user?.role === 'admin') router.replace('/admin');
-  }, [router, user?.role]);
+    if (roleHome) router.replace(roleHome);
+  }, [roleHome, router]);
 
-  if (user?.role === 'admin') {
+  if (roleHome) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50" aria-live="polite">
         <p className="text-sm font-medium text-slate-500">Opening administration…</p>

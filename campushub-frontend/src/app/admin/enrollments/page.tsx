@@ -5,7 +5,7 @@ import PortalShell from '@/components/PortalShell';
 
 export default function AdminAdmissionsPage() {
   return (
-    <PortalShell roles={['admin']}>
+    <PortalShell roles={['registrar']}>
       <AdminAdmissions />
     </PortalShell>
   );

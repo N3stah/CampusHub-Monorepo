@@ -13,17 +13,16 @@ export type CampusPermission =
   | 'library.manage'
   | 'hostel.manage'
   | 'placements.manage'
-  | 'users.manage';
+  | 'users.manage'
+  | 'system.audit';
 
 const rolePermissions: Partial<Record<User['role'], CampusPermission[]>> = {
   student: ['academic.view'],
   lecturer: ['academic.view', 'academic.manage'],
   officer: ['placements.manage'],
-  admin: [
-    'academic.view', 'academic.manage', 'finance.manage', 'admissions.manage',
-    'examinations.manage', 'library.manage', 'hostel.manage', 'placements.manage', 'users.manage',
-  ],
-  registrar: ['academic.view', 'academic.manage', 'admissions.manage', 'examinations.manage', 'users.manage'],
+  admin: ['users.manage', 'system.audit'],
+  ict_admin: ['academic.view', 'academic.manage'],
+  registrar: ['academic.view', 'admissions.manage', 'examinations.manage'],
   finance: ['finance.manage'],
   hod: ['academic.view', 'academic.manage'],
   examination: ['academic.view', 'examinations.manage'],
@@ -35,7 +34,8 @@ export const roleLabels: Record<User['role'], string> = {
   student: 'Student',
   lecturer: 'Lecturer',
   officer: 'Placement Officer',
-  admin: 'Administrator',
+  admin: 'Super Admin',
+  ict_admin: 'ICT Administrator',
   registrar: 'Registrar / Academic Officer',
   finance: 'Finance Officer',
   hod: 'Dean / Head of Department',
@@ -43,6 +43,19 @@ export const roleLabels: Record<User['role'], string> = {
   librarian: 'Librarian',
   hostel: 'Hostel Warden',
 };
+
+export type ManagedAccountRole = Exclude<User['role'], 'student' | 'hod' | 'examination'>;
+
+export const manageableAccountRoles: ManagedAccountRole[] = [
+  'lecturer',
+  'officer',
+  'admin',
+  'ict_admin',
+  'registrar',
+  'finance',
+  'librarian',
+  'hostel',
+];
 
 export function hasPermission(role: User['role'] | null | undefined, permission: CampusPermission): boolean {
   return !!role && rolePermissions[role]?.includes(permission) === true;

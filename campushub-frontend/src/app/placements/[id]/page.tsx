@@ -46,7 +46,7 @@ function PlacementDetailContent() {
   const canApply = user?.role === 'student' && placement?.is_active && placement.deadline >= new Date().toISOString().slice(0, 10);
 
   return (
-    <PortalShell roles={['student', 'lecturer', 'officer', 'admin']}>
+    <PortalShell roles={['student', 'officer']}>
       <section className="mx-auto max-w-4xl space-y-5">
         <Link href="/placements" className="text-sm font-semibold text-blue-700 hover:underline">← Back to placements</Link>
         {loading ? (

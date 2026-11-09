@@ -46,7 +46,7 @@ export default function PlacementsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const canManage = user?.role === 'admin' || user?.role === 'officer';
+  const canManage = user?.role === 'officer';
 
   async function applyToPlacement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -141,7 +141,7 @@ export default function PlacementsPage() {
   }
 
   return (
-    <PortalShell roles={['student', 'lecturer', 'officer', 'admin']}>
+    <PortalShell roles={['student', 'officer']}>
       <div className="space-y-4">
         {notice && (
           <div role="status" className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">

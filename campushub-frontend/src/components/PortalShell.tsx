@@ -14,32 +14,37 @@ interface PortalShellProps {
 }
 
 const navigation: { label: string; href: string; roles: User['role'][] }[] = [
-  { label: 'Overview', href: '/dashboard', roles: ['student', 'lecturer', 'officer', 'registrar', 'finance', 'hod', 'examination', 'librarian', 'hostel'] },
+  { label: 'Overview', href: '/dashboard', roles: ['student', 'lecturer', 'officer', 'finance', 'hod', 'examination'] },
+  { label: 'Registrar office', href: '/registrar', roles: ['registrar'] },
+  { label: 'Library management', href: '/library', roles: ['librarian'] },
+  { label: 'Hostel management', href: '/hostels', roles: ['hostel'] },
   { label: 'Units', href: '/lecturer/units', roles: ['lecturer'] },
   { label: 'Lesson plan', href: '/lecturer/lessons', roles: ['lecturer'] },
   { label: 'Attendance', href: '/lecturer/attendance', roles: ['lecturer'] },
   { label: 'Learning materials / notes', href: '/lecturer/materials', roles: ['lecturer'] },
   { label: 'Assignments', href: '/assignments', roles: ['student', 'lecturer'] },
   { label: 'My courses', href: '/courses', roles: ['student'] },
-  { label: 'Semester registration', href: '/academics/registration', roles: ['student', 'registrar', 'admin'] },
-  { label: 'Academic periods', href: '/academics/periods', roles: ['registrar', 'admin'] },
-  { label: 'Finance', href: '/finance', roles: ['student', 'finance', 'admin'] },
-  { label: 'Examinations & grades', href: '/examinations', roles: ['student', 'lecturer', 'examination', 'registrar', 'admin'] },
-  { label: 'Admissions', href: '/admissions', roles: ['student', 'registrar', 'admin'] },
-  { label: 'Credential verification', href: '/verify', roles: ['student', 'registrar', 'admin'] },
-  { label: 'Hostels', href: '/hostels', roles: ['student', 'hostel', 'admin'] },
-  { label: 'Library', href: '/library', roles: ['student', 'librarian', 'admin'] },
-  { label: 'Overview', href: '/admin', roles: ['admin'] },
+  { label: 'Semester registration', href: '/academics/registration', roles: ['student', 'registrar'] },
+  { label: 'Academic periods', href: '/academics/periods', roles: ['registrar'] },
+  { label: 'Finance', href: '/finance', roles: ['student', 'finance'] },
+  { label: 'Examinations & grades', href: '/examinations', roles: ['student', 'lecturer', 'examination', 'registrar'] },
+  { label: 'Admissions', href: '/admissions', roles: ['registrar'] },
+  { label: 'Register student account', href: '/registrar/students', roles: ['registrar'] },
+  { label: 'Credential verification', href: '/verify', roles: ['student', 'registrar'] },
+  { label: 'Hostels', href: '/hostels', roles: ['student', 'hostel'] },
+  { label: 'Library', href: '/library', roles: ['student', 'librarian'] },
+  { label: 'ICT Administration', href: '/ict-admin', roles: ['ict_admin'] },
+  { label: 'Super Admin', href: '/admin', roles: ['admin'] },
+  { label: 'Schools', href: '/admin/schools', roles: ['ict_admin'] },
+  { label: 'Departments', href: '/admin/departments', roles: ['ict_admin'] },
+  { label: 'Programmes', href: '/admin/courses', roles: ['ict_admin'] },
+  { label: 'Units and teaching', href: '/admin/units', roles: ['ict_admin'] },
+  { label: 'Programme admissions', href: '/admin/enrollments', roles: ['registrar'] },
   { label: 'Campus stats', href: '/admin/stats', roles: ['admin'] },
-  { label: 'Schools', href: '/admin/schools', roles: ['admin'] },
-  { label: 'Departments', href: '/admin/departments', roles: ['admin'] },
-  { label: 'Programmes', href: '/admin/courses', roles: ['admin'] },
-  { label: 'Units and teaching', href: '/admin/units', roles: ['admin'] },
-  { label: 'Programme admissions', href: '/admin/enrollments', roles: ['admin'] },
-  { label: 'Students', href: '/users', roles: ['admin'] },
+  { label: 'User accounts', href: '/users', roles: ['admin'] },
   { label: 'Lecturers', href: '/lecturers', roles: ['admin'] },
-  { label: 'Placements', href: '/placements', roles: ['student', 'officer', 'admin'] },
-  { label: 'Applications', href: '/applications', roles: ['student', 'officer', 'admin'] },
+  { label: 'Placements', href: '/placements', roles: ['student', 'officer'] },
+  { label: 'Applications', href: '/applications', roles: ['student', 'officer'] },
   { label: 'Logs', href: '/admin/logs', roles: ['admin'] },
 ];
 
@@ -76,9 +81,10 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
   }, [user]);
 
   useEffect(() => {
-    if (!loading && !user) router.replace('/login');
+    if (!loading && user?.must_change_password && pathname !== '/change-password') router.replace('/change-password');
+    else if (!loading && !user) router.replace('/login');
     else if (!loading && user && !hasAccess) router.replace('/dashboard');
-  }, [loading, user, hasAccess, router]);
+  }, [loading, pathname, user, hasAccess, router]);
 
   if (loading || !hasAccess || !user) {
     return (

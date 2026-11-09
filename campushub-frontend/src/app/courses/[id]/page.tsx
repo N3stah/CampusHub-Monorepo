@@ -218,7 +218,7 @@ function CourseDetailContent() {
   const [publishingAnnouncement, setPublishingAnnouncement] = useState(false);
   const [announcementFormError, setAnnouncementFormError] = useState<string | null>(null);
   const [announcementNotice, setAnnouncementNotice] = useState<string | null>(null);
-  const canManageCourse = user?.role === 'admin' || (
+  const canManageCourse = user?.role === 'ict_admin' || (
     user?.role === 'lecturer' && (
       !!course?.lecturer_ids?.includes(user.id) || course?.lecturer_id === user.id
     )
@@ -450,13 +450,13 @@ function CourseDetailContent() {
   }, [canViewRoster, loadRoster]);
 
   return (
-    <PortalShell roles={['student', 'lecturer', 'admin']}>
+    <PortalShell roles={['student', 'lecturer', 'ict_admin']}>
       <section className="space-y-6">
       <Link
-        href={user?.role === 'lecturer' ? '/dashboard' : user?.role === 'admin' ? '/admin/courses' : '/courses'}
+        href={user?.role === 'lecturer' ? '/dashboard' : user?.role === 'ict_admin' ? '/admin/courses' : '/courses'}
         className="text-sm font-semibold text-blue-700 hover:underline"
       >
-        {user?.role === 'lecturer' ? '← Back to teaching dashboard' : user?.role === 'admin' ? '← Back to course management' : '← Back to my courses'}
+        {user?.role === 'lecturer' ? '← Back to teaching dashboard' : user?.role === 'ict_admin' ? '← Back to course management' : '← Back to my courses'}
       </Link>
         {courseLoading ? (
           <p role="status" className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading course…</p>

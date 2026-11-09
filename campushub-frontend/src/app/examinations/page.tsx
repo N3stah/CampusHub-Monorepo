@@ -25,7 +25,7 @@ export default function ExaminationsPage() {
   }), [catWeight, examWeight]);
 
   return (
-    <PortalShell roles={['student', 'lecturer', 'examination', 'registrar', 'admin']}>
+    <PortalShell roles={['student', 'lecturer', 'examination', 'registrar']}>
       <section className="space-y-6">
         <header>
           <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">{canManage ? 'Examinations office' : 'Academic results'}</p>

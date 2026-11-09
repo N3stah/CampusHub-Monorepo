@@ -137,7 +137,7 @@ export default function AdminAdmissions() {
   return (
     <section className="space-y-6">
       <header>
-        <Link href="/admin" className="text-sm font-semibold text-blue-700 hover:underline">← Administration</Link>
+        <Link href="/registrar" className="text-sm font-semibold text-blue-700 hover:underline">← Registrar office</Link>
         <p className="mt-4 text-sm font-semibold uppercase tracking-wide text-blue-700">Academic operations</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight">Programme admissions</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Assign students to an academic programme by their unique admission number. Update enrolment status without deleting the student’s academic record.</p>

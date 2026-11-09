@@ -45,7 +45,7 @@ function ApplicationDetailContent() {
   }, [loadApplication]);
 
   return (
-    <PortalShell roles={['student', 'officer', 'admin']}>
+    <PortalShell roles={['student', 'officer']}>
       <section className="mx-auto max-w-3xl space-y-5">
         <Link href="/applications" className="text-sm font-semibold text-blue-700 hover:underline">← Back to applications</Link>
         {loading ? (
