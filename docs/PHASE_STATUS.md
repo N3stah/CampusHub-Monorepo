@@ -835,4 +835,4 @@ Resolved the 500 Internal Server Error when creating assignments as a lecturer, 
   - `PATCH`: Supports updating title, instructions, due date, max points, publication state, replacing attachments via multipart form data, or removing attachments via `remove_attachment=true`.
   - `DELETE`: Maintains deletion with offering-level authorization.
 
-**Tests:** All 79 backend tests passed · All 49 frontend tests passed
+**Tests:** All 79 backend tests passed · All 49 frontend tests passed.
