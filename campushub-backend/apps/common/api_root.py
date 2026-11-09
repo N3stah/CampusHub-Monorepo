@@ -37,4 +37,5 @@ API_URL_GROUPS = [
     path('', include('apps.placements.urls')),
     path('', include('apps.notifications.urls')),
     path('', include('apps.messaging.urls')),
+    path('', include('apps.ai.urls')),
 ]

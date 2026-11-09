@@ -48,7 +48,7 @@ def test_grade_released_notifies(client, setup_data):
     stu_headers = {'HTTP_AUTHORIZATION': f'Bearer {stu_token}'}
     fake = SimpleUploadedFile('test.pdf', b'content', content_type='application/pdf')
     resp = client.post(f'/api/academics/assignments/{aid}/submission/', data={'file': fake}, **stu_headers)
-    sid = resp.json()['id']
+    sid = resp.json()['submission']['id']
     resp = client.patch(f'/api/academics/submissions/{sid}/grade/',
         data={'score': '15', 'feedback': 'Good'}, content_type='application/json', **headers)
     assert resp.status_code == 200

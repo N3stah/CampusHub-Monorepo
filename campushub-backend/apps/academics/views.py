@@ -3,6 +3,7 @@ import json
 import csv
 import mimetypes
 from django.http import HttpResponse, JsonResponse, FileResponse
+from django.http.multipartparser import MultiPartParser
 from django.db import transaction, IntegrityError
 from django.db.models import Q
 from django.utils import timezone
@@ -12,12 +13,111 @@ from django.contrib.auth import get_user_model
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
-from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup, Lesson, AttendanceRecord
+from .models import Department, Course, Enrollment, School, Unit, Offering, AcademicPeriod, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup, Lesson, AttendanceRecord
 from apps.common.pagination import paginate_queryset
+from apps.common.file_guards import MAX_FILE_SIZE
 from apps.notifications.services import NotificationService
 from datetime import timedelta
 
 User = get_user_model()
+
+# --- Academic Period Views ---
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@jwt_required
+def period_list_create(request):
+    user = request.user
+    if request.method == "GET":
+        periods = AcademicPeriod.objects.all().order_by('-start_date')
+        data = [format_academic_period(p) for p in periods]
+        return JsonResponse(data, safe=False)
+    # POST
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can create periods'}, status=403)
+    try:
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    name = payload.get('name')
+    start_date = payload.get('start_date')
+    end_date = payload.get('end_date')
+    is_current = payload.get('is_current', False)
+    if not all([name, start_date, end_date]):
+        return JsonResponse({'error': 'Missing required fields'}, status=400)
+    if is_current and AcademicPeriod.objects.filter(is_current=True).exists():
+        return JsonResponse({'error': 'Only one period can be current'}, status=400)
+    period = AcademicPeriod.objects.create(
+        name=name,
+        start_date=start_date,
+        end_date=end_date,
+        is_current=is_current,
+    )
+    AuditEvent.objects.create(actor=user, action='academicperiod.create', description=f'Created period {period.name}')
+    return JsonResponse(format_academic_period(period), status=201)
+
+@csrf_exempt
+@require_http_methods(["GET", "PATCH", "DELETE"])
+@jwt_required
+def period_detail_update(request, pk):
+    user = request.user
+    try:
+        period = AcademicPeriod.objects.get(pk=pk)
+    except AcademicPeriod.DoesNotExist:
+        return JsonResponse({'error': 'AcademicPeriod not found'}, status=404)
+    if request.method == "GET":
+        return JsonResponse(format_academic_period(period))
+    if request.method == "DELETE":
+        if user.role != 'admin':
+            return JsonResponse({'error': 'Only admins can delete periods'}, status=403)
+        period.delete()
+        AuditEvent.objects.create(actor=user, action='academicperiod.delete', description=f'Deleted period {pk}')
+        return JsonResponse({'message': 'Deleted'}, status=200)
+    # PATCH
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can update periods'}, status=403)
+    try:
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    if 'is_current' in payload and payload['is_current']:
+        if AcademicPeriod.objects.filter(is_current=True).exclude(pk=pk).exists():
+            return JsonResponse({'error': 'Only one period can be current'}, status=400)
+    for field in ['name', 'start_date', 'end_date', 'is_current']:
+        if field in payload:
+            setattr(period, field, payload[field])
+    period.save()
+    AuditEvent.objects.create(actor=user, action='academicperiod.update', description=f'Updated period {period.id}')
+    return JsonResponse(format_academic_period(period))
+
+@csrf_exempt
+@require_http_methods(["PATCH"])
+@jwt_required
+def period_set_current(request, pk):
+    user = request.user
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can set current period'}, status=403)
+    try:
+        period = AcademicPeriod.objects.get(pk=pk)
+    except AcademicPeriod.DoesNotExist:
+        return JsonResponse({'error': 'AcademicPeriod not found'}, status=404)
+    with transaction.atomic():
+        AcademicPeriod.objects.filter(is_current=True).exclude(pk=pk).update(is_current=False)
+        period.is_current = True
+        period.save()
+    AuditEvent.objects.create(actor=user, action='academicperiod.set_current', description=f'Set current period {pk}')
+    return JsonResponse(format_academic_period(period))
+
+def format_academic_period(period):
+    return {
+        'id': period.id,
+        'name': period.name,
+        'start_date': period.start_date.isoformat() if hasattr(period.start_date, 'isoformat') else str(period.start_date),
+        'end_date': period.end_date.isoformat() if hasattr(period.end_date, 'isoformat') else str(period.end_date),
+        'is_current': period.is_current,
+        'created_at': period.created_at.isoformat(),
+    }
+
 
 # --- Department Views ---
 
@@ -461,6 +561,17 @@ def school_detail_update_delete(request, pk):
 
 # --- Unit Views ---
 
+def format_academic_period(period):
+    return {
+        'id': period.id,
+        'name': period.name,
+        'start_date': period.start_date.isoformat() if hasattr(period.start_date, 'isoformat') else str(period.start_date),
+        'end_date': period.end_date.isoformat() if hasattr(period.end_date, 'isoformat') else str(period.end_date),
+        'is_current': period.is_current,
+        'created_at': period.created_at.isoformat(),
+    }
+
+
 def format_unit(unit):
     return {
         'id': unit.id,
@@ -698,7 +809,89 @@ def admin_enrollment_update(request, pk):
         return JsonResponse({'error': 'No course_id provided or same as current'}, status=400)
 
 
-# --- Offering Views ---
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@jwt_required
+def period_list_create(request):
+    user = request.user
+    if request.method == 'GET':
+        periods = AcademicPeriod.objects.all().order_by('-start_date')
+        data = [format_academic_period(p) for p in periods]
+        return JsonResponse(data, safe=False)
+    # POST - create period, admin only
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can create academic periods'}, status=403)
+    try:
+        data = json.loads(request.body)
+        name = data.get('name')
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        is_current = data.get('is_current', False)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    if not name or not start_date or not end_date:
+        return JsonResponse({'error': 'name, start_date and end_date are required'}, status=400)
+    try:
+        period = AcademicPeriod.objects.create(
+            name=name,
+            start_date=start_date,
+            end_date=end_date,
+            is_current=is_current,
+        )
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    AuditEvent.objects.create(actor=user, action='academic_period.create', description=f'Created period {period.name}')
+    return JsonResponse(format_academic_period(period), status=201)
+
+@csrf_exempt
+@require_http_methods(['PATCH'])
+@jwt_required
+def period_detail_update(request, pk):
+    user = request.user
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can update academic periods'}, status=403)
+    try:
+        period = AcademicPeriod.objects.get(pk=pk)
+    except AcademicPeriod.DoesNotExist:
+        return JsonResponse({'error': 'Academic period not found'}, status=404)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    if 'name' in data:
+        period.name = data['name']
+    if 'start_date' in data:
+        period.start_date = data['start_date']
+    if 'end_date' in data:
+        period.end_date = data['end_date']
+    if 'is_current' in data:
+        period.is_current = data['is_current']
+    try:
+        period.save()
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    AuditEvent.objects.create(actor=user, action='academic_period.update', description=f'Updated period {period.name}')
+    return JsonResponse(format_academic_period(period))
+
+@csrf_exempt
+@require_http_methods(['PATCH'])
+@jwt_required
+def period_set_current(request, pk):
+    user = request.user
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can set current academic period'}, status=403)
+    try:
+        period = AcademicPeriod.objects.get(pk=pk)
+    except AcademicPeriod.DoesNotExist:
+        return JsonResponse({'error': 'Academic period not found'}, status=404)
+    with transaction.atomic():
+        AcademicPeriod.objects.filter(is_current=True).exclude(pk=period.pk).update(is_current=False)
+        period.is_current = True
+        period.save()
+    AuditEvent.objects.create(actor=user, action='academic_period.set_current', description=f'Set period {period.name} as current')
+    return JsonResponse(format_academic_period(period))
+
 
 def is_offering_lecturer(user, offering):
     if user.role == 'admin':
@@ -974,6 +1167,18 @@ def format_assignment(a, include_questions=False, include_correct=False):
         data['questions'] = questions
     return data
 
+
+def _multipart_form_data(request):
+    """Django doesn't populate POST/FILES automatically for multipart PATCH."""
+    if request.method == 'PATCH' and request.content_type and request.content_type.startswith('multipart/form-data'):
+        post_data, files = MultiPartParser(
+            request.META,
+            request,
+            request.upload_handlers,
+        ).parse()
+        return post_data.dict(), files
+    return request.POST.dict(), request.FILES
+
 @csrf_exempt
 @require_http_methods(["GET"])
 @jwt_required
@@ -1041,6 +1246,9 @@ def offering_assignments(request, pk):
                 for q in questions:
                     if q.get('correct_option') is None:
                         return JsonResponse({'error': 'Each quiz question must have a correct_option'}, status=400)
+            attachment = request.FILES.get('attachment') if request.FILES else None
+            if attachment and attachment.size > MAX_FILE_SIZE:
+                return JsonResponse({'error': 'Attachment file too large (max 10MB)'}, status=400)
             assignment = Assignment.objects.create(
                 offering=offering,
                 title=data['title'],
@@ -1050,7 +1258,7 @@ def offering_assignments(request, pk):
                 due_at=timezone.now() if not data.get('due_at') else data['due_at'],
                 max_points=data['max_points'],
                 is_published=data.get('is_published', False),
-                attachment=request.FILES.get('attachment') if request.FILES else None,
+                attachment=attachment,
             )
             if assignment.assignment_type == 'quiz' and 'questions' in data:
                 for q in data['questions']:
@@ -1106,7 +1314,7 @@ def assignment_detail(request, pk):
             return JsonResponse({'error': 'Only assigned lecturers or admins can edit assignments'}, status=403)
 
         if request.content_type and request.content_type.startswith('multipart/form-data'):
-            data = request.POST.dict()
+            data, files = _multipart_form_data(request)
             if 'max_points' in data:
                 try:
                     data['max_points'] = int(data['max_points'])
@@ -1121,6 +1329,7 @@ def assignment_detail(request, pk):
                 data = json.loads(request.body)
             except json.JSONDecodeError:
                 return JsonResponse({'error': 'Invalid JSON'}, status=400)
+            files = request.FILES
 
         if 'title' in data:
             assignment.title = str(data['title']).strip()
@@ -1136,8 +1345,11 @@ def assignment_detail(request, pk):
         if 'is_published' in data:
             assignment.is_published = bool(data['is_published'])
 
-        if request.FILES.get('attachment'):
-            assignment.attachment = request.FILES['attachment']
+        if files.get('attachment'):
+            attachment = files['attachment']
+            if attachment.size > MAX_FILE_SIZE:
+                return JsonResponse({'error': 'Attachment file too large (max 10MB)'}, status=400)
+            assignment.attachment = attachment
         elif data.get('remove_attachment'):
             assignment.attachment = None
 
@@ -1189,80 +1401,127 @@ def assignment_attachment(request, pk):
         content_type=content_type or 'application/octet-stream',
     )
 
+def _serialize_submission(submission, hide_unreleased=False):
+    released = submission.released_at is not None
+    return {
+        'id': submission.id,
+        'assignment_id': submission.assignment_id,
+        'student_id': submission.student_id,
+        'file': submission.file.url if submission.file else None,
+        'file_name': os.path.basename(submission.file.name) if submission.file else None,
+        'answers': submission.answers,
+        'score': (
+            float(submission.score)
+            if submission.score is not None and (released or not hide_unreleased)
+            else None
+        ),
+        'feedback': submission.feedback if (released or not hide_unreleased) else None,
+        'submitted_at': submission.submitted_at.isoformat(),
+        'graded_at': submission.graded_at.isoformat() if submission.graded_at else None,
+        'released_at': submission.released_at.isoformat() if submission.released_at else None,
+    }
+
+
 @csrf_exempt
-@require_http_methods(["GET", "POST"])
+@require_http_methods(["GET", "POST", "PATCH"])
 @jwt_required
 def assignment_submission(request, pk):
     user = request.user
     try:
-        assignment = Assignment.objects.select_related('offering').get(pk=pk)
+        assignment = Assignment.objects.select_related('offering', 'offering__course').get(pk=pk)
     except Assignment.DoesNotExist:
         return JsonResponse({'error': 'Assignment not found'}, status=404)
-        
+
+    if user.role == 'student':
+        if not Enrollment.objects.filter(
+            student=user,
+            course=assignment.offering.course,
+            status='active',
+        ).exists():
+            return JsonResponse({'error': 'You are not enrolled in this course'}, status=403)
+        if not assignment.is_published:
+            return JsonResponse({'error': 'Assignment not yet published'}, status=403)
+
     if request.method == 'GET':
         if user.role != 'student':
             return JsonResponse({'error': 'Only students can view their own submission'}, status=403)
-        sub = AssignmentSubmission.objects.filter(assignment=assignment, student=user).first()
-        if sub:
-            released = sub.released_at is not None
-            score = str(sub.score) if sub.score and released else None
-            feedback = sub.feedback if released else None
-            return JsonResponse({'submission': {'id': sub.id, 'score': score, 'submitted_at': sub.submitted_at.isoformat(), 'feedback': feedback, 'released_at': sub.released_at.isoformat() if sub.released_at else None}})
+        submission = AssignmentSubmission.objects.filter(assignment=assignment, student=user).first()
+        if submission:
+            return JsonResponse({'submission': _serialize_submission(submission, hide_unreleased=True)})
         return JsonResponse({'submission': None})
-        
-    elif request.method == 'POST':
-        
-        # Submission deadline enforcement
-        
-        if assignment.due_at and timezone.now() > assignment.due_at:
-        
-            return JsonResponse({'error': 'Submission deadline has passed'}, status=400)
-        if user.role != 'student':
-            return JsonResponse({'error': 'Only students can submit assignments'}, status=403)
-            
-            
-        # Check if already submitted
-        if AssignmentSubmission.objects.filter(assignment=assignment, student=user).exists():
-            return JsonResponse({'error': 'Already submitted'}, status=400)
-            
-        if assignment.assignment_type == 'file':
-            uploaded_file = request.FILES.get('file')
-            if not uploaded_file:
-                return JsonResponse({'error': 'File is required for file-type assignments'}, status=400)
-            # File size guard (10 MB max)
-            MAX_FILE_SIZE = 10 * 1024 * 1024
-            if uploaded_file.size > MAX_FILE_SIZE:
-                return JsonResponse({'error': 'File too large (max 10MB)'}, status=400)
-            # Extension guard: assignment whitelist or global default
-            DEFAULT_ALLOWED_TYPES = ['pdf', 'docx', 'doc', 'txt', 'png', 'jpg', 'jpeg', 'zip']
-            allowed_types = assignment.allowed_file_types or DEFAULT_ALLOWED_TYPES
-            ext = os.path.splitext(uploaded_file.name)[1][1:].lower()
-            if ext not in allowed_types:
-                return JsonResponse({'error': f'File type {ext} not allowed'}, status=400)
+
+    if user.role != 'student':
+        return JsonResponse({'error': 'Only students can submit assignments'}, status=403)
+    if assignment.due_at and timezone.now() > assignment.due_at:
+        return JsonResponse({'error': 'Submission deadline has passed'}, status=400)
+
+    submission = AssignmentSubmission.objects.filter(assignment=assignment, student=user).first()
+    if request.method == 'POST' and submission:
+        return JsonResponse({'error': 'Already submitted'}, status=400)
+    if request.method == 'PATCH' and not submission:
+        return JsonResponse({'error': 'Submission not found'}, status=403)
+
+    if assignment.assignment_type == 'file':
+        if request.method == 'PATCH' and request.content_type and request.content_type.startswith('multipart/form-data'):
+            _, files = _multipart_form_data(request)
+        else:
+            files = request.FILES
+        uploaded_file = files.get('file')
+        if not uploaded_file:
+            return JsonResponse({'error': 'File is required for file-type assignments'}, status=400)
+        if uploaded_file.size > MAX_FILE_SIZE:
+            return JsonResponse({'error': 'File too large (max 10MB)'}, status=400)
+        default_allowed_types = ['pdf', 'docx', 'doc', 'txt', 'png', 'jpg', 'jpeg', 'zip']
+        allowed_types = assignment.allowed_file_types or default_allowed_types
+        ext = os.path.splitext(uploaded_file.name)[1][1:].lower()
+        if ext not in allowed_types:
+            return JsonResponse({'error': f'File type {ext} not allowed'}, status=400)
+        if request.method == 'POST':
             submission = AssignmentSubmission.objects.create(
-                assignment=assignment, student=user, file=uploaded_file
+                assignment=assignment, student=user, file=uploaded_file,
             )
-        else:  # quiz
-            try:
-                data = json.loads(request.body)
-                answers = data.get('answers', {})
-            except json.JSONDecodeError:
-                return JsonResponse({'error': 'Invalid JSON'}, status=400)
-                
-            # Auto-mark quiz
-            correct_count = 0
-            total_questions = 0
-            for q in assignment.questions.all():
-                total_questions += 1
-                if str(q.id) in answers and answers[str(q.id)] == q.correct_option:
-                    correct_count += 1
-                    
-            score = (correct_count / total_questions * assignment.max_points) if total_questions > 0 else 0
+        else:
+            submission.file = uploaded_file
+    else:
+        try:
+            data = json.loads(request.body)
+            answers = data.get('answers', {})
+        except (json.JSONDecodeError, AttributeError):
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        if not isinstance(answers, dict):
+            return JsonResponse({'error': 'answers must be an object'}, status=400)
+
+        if request.method == 'POST':
+            correct_count = sum(
+                1 for question in assignment.questions.all()
+                if str(question.id) in answers and answers[str(question.id)] == question.correct_option
+            )
+            total_questions = assignment.questions.count()
+            score = (correct_count / total_questions * assignment.max_points) if total_questions else 0
             submission = AssignmentSubmission.objects.create(
-                assignment=assignment, student=user, answers=answers, score=score, graded_at=timezone.now(), released_at=timezone.now()
+                assignment=assignment,
+                student=user,
+                answers=answers,
+                score=score,
+                graded_at=timezone.now(),
+                released_at=timezone.now(),
             )
-            
-        return JsonResponse({'id': submission.id, 'score': str(submission.score) if submission.score else None}, status=201)
+        else:
+            submission.answers = answers
+
+    if request.method == 'PATCH':
+        submission.score = None
+        submission.feedback = ''
+        submission.graded_at = None
+        submission.released_at = None
+        submission.save(update_fields=[
+            'file', 'answers', 'score', 'feedback', 'graded_at', 'released_at',
+        ])
+
+    return JsonResponse(
+        {'submission': _serialize_submission(submission)},
+        status=201 if request.method == 'POST' else 200,
+    )
 
 
 # --- Submission Management Views ---
@@ -1288,7 +1547,7 @@ def assignment_submissions_list(request, pk):
             'student_name': s.student.get_full_name(),
             'profile_picture_url': s.student.profile_picture.url if s.student.profile_picture else None,
             'submitted_at': s.submitted_at.isoformat(),
-            'score': str(s.score) if s.score else None,
+            'score': str(s.score) if s.score is not None else None,
             'feedback': s.feedback,
             'graded_at': s.graded_at.isoformat() if s.graded_at else None
         } for s in submissions
@@ -1355,7 +1614,7 @@ def submission_grade(request, pk):
             actor=user,
             link=f'/api/academics/assignments/{submission.assignment_id}/submission/'
         )
-    return JsonResponse({'id': submission.id, 'score': str(submission.score), 'feedback': submission.feedback})
+    return JsonResponse({'submission': _serialize_submission(submission)})
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -1384,7 +1643,7 @@ def offering_grades_csv(request, pk):
         row = [e.student.get_full_name(), e.student.admission_number or '']
         for a in assignments:
             sub = AssignmentSubmission.objects.filter(assignment=a, student=e.student).first()
-            row.append(str(sub.score) if sub and sub.score else '')
+            row.append(str(sub.score) if sub and sub.score is not None else '')
         writer.writerow(row)
         
     return response
@@ -1557,7 +1816,7 @@ def student_dashboard(request):
     ).order_by('-graded_at')[:5]
     grades_data = [
         {'assignment_id': s.assignment_id, 'assignment_title': s.assignment.title,
-         'score': str(s.score) if s.score else None, 'max_points': s.assignment.max_points,
+         'score': str(s.score) if s.score is not None else None, 'max_points': s.assignment.max_points,
          'released_at': s.released_at.isoformat()}
         for s in recent_grades
     ]
