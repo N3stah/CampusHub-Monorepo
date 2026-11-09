@@ -35,6 +35,13 @@ class User(AbstractBaseUser, PermissionsMixin):
         ('lecturer', 'Lecturer'),
         ('officer', 'Placement Officer'),
         ('admin', 'Admin'),
+        ('ict_admin', 'ICT Administrator'),
+        ('registrar', 'Registrar / Academic Officer'),
+        ('finance', 'Finance Officer'),
+        ('hod', 'Dean / Head of Department'),
+        ('examination', 'Examinations Officer'),
+        ('librarian', 'Librarian'),
+        ('hostel', 'Hostel Warden'),
     ]
 
     email        = models.EmailField(unique=True)
@@ -74,7 +81,7 @@ class User(AbstractBaseUser, PermissionsMixin):
                 name='user_gpa_range'
             ),
             models.CheckConstraint(
-                condition=models.Q(role__in=['student', 'lecturer', 'officer', 'admin']),
+                condition=models.Q(role__in=['student', 'lecturer', 'officer', 'admin', 'ict_admin', 'registrar', 'finance', 'hod', 'examination', 'librarian', 'hostel']),
                 name='user_valid_role'
             ),
         ]
