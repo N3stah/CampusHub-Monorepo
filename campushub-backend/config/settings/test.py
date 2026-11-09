@@ -17,3 +17,6 @@ DATABASES = {
 }
 JWT_SECRET = 'campushub-test-only-jwt-secret-value-long'
 PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
+
+# Disable rate limiting in tests (all requests come from 127.0.0.1)
+RATELIMIT_ENABLE = False

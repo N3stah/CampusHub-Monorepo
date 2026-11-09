@@ -13,13 +13,111 @@ from django.contrib.auth import get_user_model
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
-from .models import Department, Course, Enrollment, School, Unit, Offering, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup, Lesson, AttendanceRecord
+from .models import Department, Course, Enrollment, School, Unit, Offering, AcademicPeriod, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup, Lesson, AttendanceRecord
 from apps.common.pagination import paginate_queryset
 from apps.common.file_guards import MAX_FILE_SIZE
 from apps.notifications.services import NotificationService
 from datetime import timedelta
 
 User = get_user_model()
+
+# --- Academic Period Views ---
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+@jwt_required
+def period_list_create(request):
+    user = request.user
+    if request.method == "GET":
+        periods = AcademicPeriod.objects.all().order_by('-start_date')
+        data = [format_academic_period(p) for p in periods]
+        return JsonResponse(data, safe=False)
+    # POST
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can create periods'}, status=403)
+    try:
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    name = payload.get('name')
+    start_date = payload.get('start_date')
+    end_date = payload.get('end_date')
+    is_current = payload.get('is_current', False)
+    if not all([name, start_date, end_date]):
+        return JsonResponse({'error': 'Missing required fields'}, status=400)
+    if is_current and AcademicPeriod.objects.filter(is_current=True).exists():
+        return JsonResponse({'error': 'Only one period can be current'}, status=400)
+    period = AcademicPeriod.objects.create(
+        name=name,
+        start_date=start_date,
+        end_date=end_date,
+        is_current=is_current,
+    )
+    AuditEvent.objects.create(actor=user, action='academicperiod.create', description=f'Created period {period.name}')
+    return JsonResponse(format_academic_period(period), status=201)
+
+@csrf_exempt
+@require_http_methods(["GET", "PATCH", "DELETE"])
+@jwt_required
+def period_detail_update(request, pk):
+    user = request.user
+    try:
+        period = AcademicPeriod.objects.get(pk=pk)
+    except AcademicPeriod.DoesNotExist:
+        return JsonResponse({'error': 'AcademicPeriod not found'}, status=404)
+    if request.method == "GET":
+        return JsonResponse(format_academic_period(period))
+    if request.method == "DELETE":
+        if user.role != 'admin':
+            return JsonResponse({'error': 'Only admins can delete periods'}, status=403)
+        period.delete()
+        AuditEvent.objects.create(actor=user, action='academicperiod.delete', description=f'Deleted period {pk}')
+        return JsonResponse({'message': 'Deleted'}, status=200)
+    # PATCH
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can update periods'}, status=403)
+    try:
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    if 'is_current' in payload and payload['is_current']:
+        if AcademicPeriod.objects.filter(is_current=True).exclude(pk=pk).exists():
+            return JsonResponse({'error': 'Only one period can be current'}, status=400)
+    for field in ['name', 'start_date', 'end_date', 'is_current']:
+        if field in payload:
+            setattr(period, field, payload[field])
+    period.save()
+    AuditEvent.objects.create(actor=user, action='academicperiod.update', description=f'Updated period {period.id}')
+    return JsonResponse(format_academic_period(period))
+
+@csrf_exempt
+@require_http_methods(["PATCH"])
+@jwt_required
+def period_set_current(request, pk):
+    user = request.user
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can set current period'}, status=403)
+    try:
+        period = AcademicPeriod.objects.get(pk=pk)
+    except AcademicPeriod.DoesNotExist:
+        return JsonResponse({'error': 'AcademicPeriod not found'}, status=404)
+    with transaction.atomic():
+        AcademicPeriod.objects.filter(is_current=True).exclude(pk=pk).update(is_current=False)
+        period.is_current = True
+        period.save()
+    AuditEvent.objects.create(actor=user, action='academicperiod.set_current', description=f'Set current period {pk}')
+    return JsonResponse(format_academic_period(period))
+
+def format_academic_period(period):
+    return {
+        'id': period.id,
+        'name': period.name,
+        'start_date': period.start_date.isoformat() if hasattr(period.start_date, 'isoformat') else str(period.start_date),
+        'end_date': period.end_date.isoformat() if hasattr(period.end_date, 'isoformat') else str(period.end_date),
+        'is_current': period.is_current,
+        'created_at': period.created_at.isoformat(),
+    }
+
 
 # --- Department Views ---
 
@@ -463,6 +561,17 @@ def school_detail_update_delete(request, pk):
 
 # --- Unit Views ---
 
+def format_academic_period(period):
+    return {
+        'id': period.id,
+        'name': period.name,
+        'start_date': period.start_date.isoformat() if hasattr(period.start_date, 'isoformat') else str(period.start_date),
+        'end_date': period.end_date.isoformat() if hasattr(period.end_date, 'isoformat') else str(period.end_date),
+        'is_current': period.is_current,
+        'created_at': period.created_at.isoformat(),
+    }
+
+
 def format_unit(unit):
     return {
         'id': unit.id,
@@ -700,7 +809,89 @@ def admin_enrollment_update(request, pk):
         return JsonResponse({'error': 'No course_id provided or same as current'}, status=400)
 
 
-# --- Offering Views ---
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@jwt_required
+def period_list_create(request):
+    user = request.user
+    if request.method == 'GET':
+        periods = AcademicPeriod.objects.all().order_by('-start_date')
+        data = [format_academic_period(p) for p in periods]
+        return JsonResponse(data, safe=False)
+    # POST - create period, admin only
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can create academic periods'}, status=403)
+    try:
+        data = json.loads(request.body)
+        name = data.get('name')
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        is_current = data.get('is_current', False)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    if not name or not start_date or not end_date:
+        return JsonResponse({'error': 'name, start_date and end_date are required'}, status=400)
+    try:
+        period = AcademicPeriod.objects.create(
+            name=name,
+            start_date=start_date,
+            end_date=end_date,
+            is_current=is_current,
+        )
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    AuditEvent.objects.create(actor=user, action='academic_period.create', description=f'Created period {period.name}')
+    return JsonResponse(format_academic_period(period), status=201)
+
+@csrf_exempt
+@require_http_methods(['PATCH'])
+@jwt_required
+def period_detail_update(request, pk):
+    user = request.user
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can update academic periods'}, status=403)
+    try:
+        period = AcademicPeriod.objects.get(pk=pk)
+    except AcademicPeriod.DoesNotExist:
+        return JsonResponse({'error': 'Academic period not found'}, status=404)
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    if 'name' in data:
+        period.name = data['name']
+    if 'start_date' in data:
+        period.start_date = data['start_date']
+    if 'end_date' in data:
+        period.end_date = data['end_date']
+    if 'is_current' in data:
+        period.is_current = data['is_current']
+    try:
+        period.save()
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    AuditEvent.objects.create(actor=user, action='academic_period.update', description=f'Updated period {period.name}')
+    return JsonResponse(format_academic_period(period))
+
+@csrf_exempt
+@require_http_methods(['PATCH'])
+@jwt_required
+def period_set_current(request, pk):
+    user = request.user
+    if user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can set current academic period'}, status=403)
+    try:
+        period = AcademicPeriod.objects.get(pk=pk)
+    except AcademicPeriod.DoesNotExist:
+        return JsonResponse({'error': 'Academic period not found'}, status=404)
+    with transaction.atomic():
+        AcademicPeriod.objects.filter(is_current=True).exclude(pk=period.pk).update(is_current=False)
+        period.is_current = True
+        period.save()
+    AuditEvent.objects.create(actor=user, action='academic_period.set_current', description=f'Set period {period.name} as current')
+    return JsonResponse(format_academic_period(period))
+
 
 def is_offering_lecturer(user, offering):
     if user.role == 'admin':
