@@ -784,6 +784,16 @@ For each route below, decide whether to add a user-facing action and connect it 
 - **UI:** The edit student modal should send `admission_number` and `course_id` (the Programme dropdown). The "Unsupported fields: admission_number, course_id" error is fixed — these fields are now accepted.
 
 
+### 9. AI Feed & Chat (frontend integrated)
+- **AI workspace:** `/ai`, available to Student, Lecturer, Placement Officer, and Super Admin (the role contexts currently supported by the backend).
+- **Daily feed:** calls `GET /api/ai/feed/`; displays `feed.summary`, provider, `context_role`, `generated_at`, and cached state; includes a refresh action and visible endpoint errors.
+- **Chat:** sends `POST /api/ai/chat/` with `{"message":"...", "conversation_id": optional}` and reads the actual backend response `{ "conversation_id": number, "message": {"id", "role", "content", "provider", "created_at"} }`. Loads history using `GET /api/ai/chat/<id>/`. The current backend has no conversation-list endpoint, so the UI retains one conversation ID per authenticated user in browser local storage and offers “New chat”; the backend enforces conversation ownership. No streaming is used.
+- **Role-scoped AI tasks:** loads `GET /api/ai/tasks/` (`{"count": number, "results": [{"type", "description", "required_params"}]}`); posts `{"task_type", "params"}` to `POST /api/ai/task/`; displays the returned `{ "task_type", "draft", "provider", "warning" }`. Drafts can be copied for review but are never automatically applied or published.
+- **Super Admin analytics:** calls the admin-only `GET /api/ai/analytics/`; displays total calls, calls in the last 24 hours, provider counts, model training status, and available/required training rows (plus at-risk offering coverage). The backend response does not currently include task success rate, so the UI does not claim to show one.
+- **Backend scope:** feed and chat are authenticated for all roles, but `build_feed_context` and the task registry currently define only student, lecturer, officer, and admin contexts. Other frontend role types should not be given this AI navigation until backend context/task support is added.
+
+=======
+
 ### 9. AI Feed & Chat (new surface, backend complete)
 - **Daily feed card:** `GET /api/ai/feed/` — role-specific insights (student: study
   suggestions/at-risk alerts; lecturer: class overview/intervention suggestions;
@@ -801,6 +811,7 @@ For each route below, decide whether to add a user-facing action and connect it 
 - **Admin analytics:** `GET /api/ai/analytics/` — a simple stats panel (calls per
   provider, task success rate) for the admin dashboard.
 
+main
 ### Frontend Fixes Still Needed
 - `<body suppressHydrationWarning>` — Grammarly extension causes hydration mismatch
 - `/dashboard/placments` → `/placements` — URL typo

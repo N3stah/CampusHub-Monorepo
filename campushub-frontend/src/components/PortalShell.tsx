@@ -18,6 +18,7 @@ const navigation: { label: string; href: string; roles: User['role'][] }[] = [
   { label: 'Registrar office', href: '/registrar', roles: ['registrar'] },
   { label: 'Library management', href: '/library', roles: ['librarian'] },
   { label: 'Hostel management', href: '/hostels', roles: ['hostel'] },
+  { label: 'CampusHub AI', href: '/ai', roles: ['student', 'lecturer', 'officer', 'admin'] },
   { label: 'Units', href: '/lecturer/units', roles: ['lecturer'] },
   { label: 'Lesson plan', href: '/lecturer/lessons', roles: ['lecturer'] },
   { label: 'Attendance', href: '/lecturer/attendance', roles: ['lecturer'] },

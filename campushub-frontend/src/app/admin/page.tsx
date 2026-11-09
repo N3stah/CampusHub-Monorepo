@@ -15,6 +15,11 @@ const staffManagement = [
     href: '/lecturers',
   },
   {
+    title: 'AI insights & analytics',
+    description: 'Review AI task usage, provider activity, and model readiness.',
+    href: '/ai',
+  },
+  {
     title: 'Access audit',
     description: 'Review account activity and system events.',
     href: '/admin/logs',
