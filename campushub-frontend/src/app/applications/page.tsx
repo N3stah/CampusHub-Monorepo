@@ -62,10 +62,10 @@ export default function ApplicationsPage() {
     }
   }
 
-  const staffView = user?.role === 'officer' || user?.role === 'admin';
+  const staffView = user?.role === 'officer';
 
   return (
-    <PortalShell roles={['student', 'officer', 'admin']}>
+    <PortalShell roles={['student', 'officer']}>
       {staffView ? (
         <div className="space-y-5">
           <header>

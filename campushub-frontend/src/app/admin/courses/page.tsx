@@ -5,7 +5,7 @@ import PortalShell from '@/components/PortalShell';
 
 export default function AdminCoursesPage() {
   return (
-    <PortalShell roles={['admin']}>
+    <PortalShell roles={['ict_admin']}>
       <AdminCourses />
     </PortalShell>
   );

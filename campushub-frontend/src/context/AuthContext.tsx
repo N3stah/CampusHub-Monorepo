@@ -8,7 +8,7 @@ import { User } from '@/types/index';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   logout: () => void;
   updateUser: (user: Partial<User>) => void;
 }
@@ -38,6 +38,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, []);
 
+  useEffect(() => {
+    if (loading || !user?.must_change_password || typeof window === 'undefined' || window.location.pathname === '/change-password') return;
+    router.replace('/change-password');
+  }, [loading, router, user?.must_change_password]);
+
   const login = async (email: string, password: string) => {
     // 1. Get tokens
     const { data } = await api.post('/auth/token/', { email, password });
@@ -47,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 2. Fetch user profile
     const userResponse = await api.get('/auth/me/');
     setUser(userResponse.data);
+    return userResponse.data as User;
   };
 
   const logout = () => {

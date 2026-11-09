@@ -1,26 +1,54 @@
 'use client';
 
-import { useState } from 'react';
+import ApiCrudWorkspace from '@/components/ApiCrudWorkspace';
 import PortalShell from '@/components/PortalShell';
-import { Alert } from '@/components/ui';
 
-const applicants = [
-  { id: 1, name: 'Grace Mutua', programme: 'Diploma in ICT', status: 'Pending documents', email: 'grace@example.test' },
-  { id: 2, name: 'Brian Kiptoo', programme: 'Bachelor of Computing', status: 'Ready for review', email: 'brian@example.test' },
-  { id: 3, name: 'Faith Achieng', programme: 'Diploma in Business', status: 'Admitted', email: 'faith@example.test' },
+const admissionStatuses = [
+  { value: 'submitted', label: 'Submitted' },
+  { value: 'under_review', label: 'Under review' },
+  { value: 'offered', label: 'Offered' },
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'withdrawn', label: 'Withdrawn' },
+];
+
+const admissionFilters = [
+  { value: 'submitted', label: 'Submitted' },
+  { value: 'under_review', label: 'Under review' },
+  { value: 'offered', label: 'Offered' },
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'withdrawn', label: 'Withdrawn' },
 ];
 
 export default function AdmissionsPage() {
-  const [filter, setFilter] = useState('All');
-  const visible = filter === 'All' ? applicants : applicants.filter((applicant) => applicant.status === filter);
-
   return (
-    <PortalShell roles={['student', 'registrar', 'admin']}>
+    <PortalShell roles={['registrar']}>
       <section className="space-y-6">
-        <header><p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Registrar office</p><h1 className="mt-1 text-3xl font-bold tracking-tight">Admissions</h1><p className="mt-2 text-sm text-slate-600">Review applications, programme choices, supporting documents, and admission decisions.</p></header>
-        <Alert tone="info">Applicant self-service submission will appear here when the admissions API is connected.</Alert>
-        <div className="flex flex-wrap gap-2">{['All', 'Pending documents', 'Ready for review', 'Admitted'].map((value) => <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-full px-4 py-2 text-sm font-semibold ${filter === value ? 'bg-blue-700 text-white' : 'border border-slate-200 bg-white text-slate-700'}`}>{value}</button>)}</div>
-        <div className="grid gap-3">{visible.map((applicant) => <article key={applicant.id} className="flex flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center"><div><p className="font-semibold text-slate-900">{applicant.name}</p><p className="mt-1 text-sm text-slate-600">{applicant.programme} · {applicant.email}</p></div><span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{applicant.status}</span></article>)}</div>
+        <header>
+          <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Registrar office</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight">Admissions</h1>
+          <p className="mt-2 text-sm text-slate-600">Manage applications from submission through admission decision.</p>
+        </header>
+        <ApiCrudWorkspace
+          title="Applications"
+          description="Create applicant records, update programme and review status. Admission records are retained; use status transitions instead of deleting history."
+          endpoint="/admissions/applications/"
+          fields={[
+            { name: 'first_name', label: 'First name', required: true },
+            { name: 'last_name', label: 'Last name', required: true },
+            { name: 'email', label: 'Email', type: 'email', required: true },
+            { name: 'phone_number', label: 'Phone number' },
+            { name: 'programme_id', label: 'Programme', type: 'number', required: true, lookup: { endpoint: '/academics/courses/', labelFields: ['code', 'title'] } },
+            { name: 'status', label: 'Status', options: admissionStatuses, required: true },
+            { name: 'notes', label: 'Review notes', type: 'textarea' },
+          ]}
+          displayFields={['first_name', 'last_name', 'email', 'programme_name', 'status']}
+          displayLabels={{ first_name: 'First name', last_name: 'Last name', programme_name: 'Programme', status: 'Application status' }}
+          filters={[{ name: 'status', label: 'Status', options: admissionFilters }]}
+          sortableFields={[{ value: '-created_at', label: 'Recently received' }, { value: 'first_name', label: 'Applicant name' }]}
+          allowDelete={false}
+        />
       </section>
     </PortalShell>
   );

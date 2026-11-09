@@ -10,6 +10,7 @@ export interface User {
   department: number | null;
   gpa: string | null;
   is_active: boolean;
+  must_change_password?: boolean;
   date_joined: string;
   phone_number?: string;
   title?: string;
@@ -22,6 +23,7 @@ export type CampusRole =
   | 'lecturer'
   | 'officer'
   | 'admin'
+  | 'ict_admin'
   | 'registrar'
   | 'finance'
   | 'hod'

@@ -11,9 +11,7 @@ export default function Home() {
           </Link>
           <div className="flex items-center gap-3 sm:gap-6">
             <Link href="/login" className="text-sm font-semibold text-slate-600 transition hover:text-blue-700">Log in</Link>
-            <Link href="/register" className="rounded-xl bg-blue-700 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-blue-900/15 transition hover:bg-blue-800 sm:px-5">
-              Get started
-            </Link>
+            <Link href="/forgot-password" className="text-sm font-semibold text-blue-700 transition hover:text-blue-800">Forgot password?</Link>
           </div>
         </nav>
       </header>
@@ -33,14 +31,11 @@ export default function Home() {
               One welcoming space for learning, teaching, campus resources, and the next step in your career.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/register" className="inline-flex min-h-12 items-center justify-center rounded-xl bg-blue-700 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-900/15 transition hover:-translate-y-0.5 hover:bg-blue-800">
-                Create a student account
-              </Link>
               <Link href="/login" className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-blue-200 hover:bg-blue-50">
                 Sign in to CampusHub
               </Link>
             </div>
-            <p className="mt-5 text-xs leading-5 text-slate-500">Student registration is open. Staff accounts are managed by your campus administrator.</p>
+            <p className="mt-5 text-xs leading-5 text-slate-500">Student and staff accounts are provisioned by authorized campus offices. Check your email for your initial sign-in details.</p>
           </div>
 
           <div aria-label="CampusHub features" className="relative mx-auto w-full max-w-lg">

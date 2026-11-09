@@ -4,7 +4,7 @@
 > Format: `[x]` = complete · `[-]` = in progress · `[ ]` = not started
 
 **Last updated:** 2026-10-21 · **Backend:** complete and deployed to Render · **Frontend (Titus):** in progress
-**Last updated:** 2026-11-04 · **Backend:** complete (172 tests, 80% coverage, 26 models, 87+ endpoints, 6 apps) · **Frontend (Titus):** in progress — new features awaiting UI (see guide below)
+**Last updated:** 2026-11-09 · **Backend:** complete (172 tests, 80% coverage, 26 models, 87+ endpoints, 6 apps) · **Frontend (Titus):** in progress — new module CRUD screens wired to agreed routes; backend endpoints pending
 
 | Phase | Slice | Backend (Mark) | Frontend (Titus) | Merged to main |
 |-------|-------|---------------|-------------------|----------------|
@@ -809,6 +809,73 @@ For each route below, decide whether to add a user-facing action and connect it 
 
 ---
 
+## Registrar, Finance, Library & Hostel CRUD Frontend — 2026-11-09
+
+Added API-backed create, list, update, and delete screens for registrar and campus service workflows. The shared frontend workspace expects list responses as an array or `{count, results}`, and sends JSON payloads to collection/detail routes.
+
+### Agreed API contract
+
+| Module | Collection route | Request fields used by the frontend |
+|---|---|---|
+| Admissions | `/api/admissions/applications/` | `first_name`, `last_name`, `email`, `phone_number`, `programme_id`, `status`, `notes` |
+| Academic periods | `/api/academics/periods/` | `academic_year`, `name`, `starts_on`, `ends_on`, `status` |
+| Student unit registrations | `/api/academics/registrations/` | `student_id`, `academic_period_id`, `unit_id`, `status`, `registered_on` |
+| Fee structures | `/api/finance/fee-structures/` | `name`, `programme_id`, `academic_year`, `amount`, `due_date`, `status` |
+| Invoices | `/api/finance/invoices/` | `student_id`, `fee_structure_id`, `amount`, `due_date`, `status`, `description` |
+| Payments | `/api/finance/payments/` | `invoice_id`, `amount`, `method`, `reference`, `paid_at`, `status` |
+| Library books | `/api/library/books/` | `isbn`, `title`, `author`, `category`, `total_copies`, `location`, `status` |
+| Library loans | `/api/library/loans/` | `book_id`, `student_id`, `borrowed_on`, `due_date`, `returned_on`, `status` |
+| Library reservations | `/api/library/reservations/` | `book_id`, `student_id`, `reserved_on`, `expires_on`, `status` |
+| Hostels | `/api/hostels/` | `name`, `location`, `gender_policy`, `capacity`, `status`, `description` |
+| Hostel rooms | `/api/hostels/rooms/` | `hostel_id`, `room_number`, `capacity`, `occupied`, `status` |
+| Hostel allocations | `/api/hostels/allocations/` | `student_id`, `room_id`, `academic_year`, `starts_on`, `ends_on`, `status` |
+
+Collection routes support `GET` and `POST`; item routes use `<id>/` and support `PATCH` where applicable. Destructive deletes are disabled for historical workflows. Payments use `POST /api/finance/payments/<id>/void/`; the backend must preserve an auditable reversal rather than erase ledger history. Student views are read-only and rely on the API to scope invoices and payments to the authenticated student.
+
+Programme enrolments continue to use existing `/api/academics/admin/enrollments/` endpoints.
+
+**Backend follow-up:** the agreed admissions-application, academic-period, finance, library, and hostel routes are not present in the current backend URL configuration. Until implemented, the UI surfaces endpoint errors rather than displaying fabricated records. New staff roles also remain unsupported by the current backend account model.
+
+### Backend implementation checklist for the enhanced workflows
+
+The frontend now expects server-side list behavior and related-record data in addition to basic CRUD. These are proposed contracts; confirm field names and status values with the backend before implementation. Do not treat frontend role guards, hidden form fields, read-only controls, or query parameters as authorization.
+
+#### Common list, search, lookup, and dashboard behavior
+
+- Return collection data as either a JSON array or `{ "count": number, "results": [...] }`. For paginated responses, include nullable `next` and `previous` links. Honor `page` and `page_size` (the workspace requests 25 rows; relation lookups request up to 100).
+- Honor `search` against appropriate human-readable fields and `ordering` against explicitly allowed fields, including `-` for descending order. Ignore or reject unsupported ordering keys safely.
+- Honor the module filters shown in the frontend (primarily `status`, plus catalogue category and other lookup parameters). Return `count` for the filtered result set so overview cards show accurate filtered counts.
+- Include display-ready relationship values in each row; at minimum: `programme_name`/programme `code` and `title`, `student_name`, `invoice_number`/`invoice_reference`, `academic_period_name`, `unit_code` and `unit_title`, `book_title`, `hostel_name`, and room number. The frontend displays these fields directly.
+- Lookup GET requests include `search`, `page_size=100`, and relationship filters such as `role=student`, active periods, or active units. Return stable IDs plus the label fields requested by the frontend (`first_name`, `last_name`, `email`, `admission_number`, `code`, `title`, `academic_year`, `name`, `author`, `isbn`, etc.).
+- Validate every read and write against authenticated role and object ownership. `scope=self` is a frontend query hint only: derive the student from the authenticated principal and never trust a submitted `student_id`, invoice ID, or scope parameter as proof of ownership.
+- Use consistent structured 4xx responses for validation and authorization errors. The UI displays server errors and does not infer a successful write when an endpoint is unavailable.
+
+#### Roles and access boundaries
+
+- Implement explicit account roles for Super Admin, ICT Admin, Registrar, Finance Officer, Placement Officer, Librarian, and Hostel Warden, in addition to Student and Lecturer. Define the role choices in the account model, serializers, authorization checks, and any migration/seed workflow.
+- Super Admin alone creates and assigns staff accounts/roles. ICT Admin manages academic structure (schools, departments, programmes/courses, units) but cannot see finance records or administer user accounts. Registrar manages admissions, academic periods, and registrations; Finance manages fee schedules, invoices, and payment reconciliation; Librarian manages catalogue/circulation; Hostel Warden manages accommodation inventory and allocations.
+- Keep placement permissions separate and preserve existing lecturer/student access. Add server-side role and object-level tests for allowed and denied reads/writes; frontend route guards are not a security boundary.
+- Define a migration plan for existing broad `admin` accounts and a recovery/bootstrap path for the first Super Admin before changing accepted account roles.
+
+#### Module-specific behavior and validations
+
+- **Admissions:** implement `/api/admissions/applications/` collection GET/POST and item GET/PATCH. Support `submitted`, `under_review`, `offered`, `accepted`, `rejected`, and `withdrawn`; return applicant data and programme display fields. Validate email, programme existence/eligibility, duplicate applications, and legal status transitions. Preserve application history; do not expose hard-delete as normal workflow.
+- **Academic periods and registrations:** implement `/api/academics/periods/` and `/api/academics/registrations/`. Prevent overlapping/inconsistent period dates and invalid transitions. Enforce one valid registration per student/unit/period, active-period dates, unit/programme eligibility, prerequisites and capacity where applicable. For student writes, bind the registration to the authenticated student regardless of `student_id`; for staff writes, require Registrar permission. Preserve dropped/completed records.
+- **Finance:** implement fee structures, invoices, payments and `/api/finance/payment-requests/`. Validate non-negative amounts, programme/year consistency, due dates, invoice ownership, remaining balance, duplicate/overpayment conditions, and allowed payment methods. A payment request is not a confirmed payment; only trusted reconciliation/provider confirmation may update the ledger and invoice balance. Student invoice/payment/request views must be scoped to the authenticated student. Implement `POST /api/finance/payments/<id>/void/` as an auditable reversal with actor, timestamp, reason, and link to the original payment; never erase a ledger entry.
+- **Library:** implement books, loans and reservations. Derive availability from total copies and active loans/reservations; prevent issuing unavailable copies, duplicate active loans/reservations, and invalid due/return dates. Students may browse the catalogue and create/view only their own reservations and loans; Librarians manage all records and circulation. Use status transitions for return, cancellation, lost, and expired reservations rather than deleting history.
+- **Hostels:** implement hostels, rooms and allocations. Derive occupied beds from active allocations instead of trusting the submitted `occupied` field; reject allocations exceeding room capacity or violating hostel policy, student eligibility, date overlap, or duplicate-active-allocation constraints. Students may browse inventory and create/view only their own requests; only Hostel Wardens can approve, allocate, check in/out, or manage inventory.
+- **Dashboard summaries:** support the same status filters used by the service overview cards and ensure each returned count is computed after authorization and filtering, not by exposing unscoped aggregate totals.
+
+#### Suggested backend acceptance tests
+
+1. Pagination, search, ordering, filters, counts, relationship display fields, and lookup search for each collection.
+2. Role matrix tests for every list, create, update, transition/action, and detail route, including attempts to submit another student's IDs.
+3. Student self-service isolation for invoices, payments, payment requests, registrations, library loans/reservations, and accommodation requests.
+4. Business-rule tests for duplicate/over-capacity registrations and allocations, payment balance and void/reversal behavior, circulation availability, and status/date transitions.
+5. Audit/history tests proving that admissions, registrations, invoices, payments, loans, reservations, and allocations remain traceable after status changes.
+
+---
+
 ## Backend: Assignment Attachments & Detail Editing Fix — 2026-11-05
 
 > **Note:** `0012_reconcile_legacy_database_schema.py` exists because the live Postgres
@@ -835,4 +902,66 @@ Resolved the 500 Internal Server Error when creating assignments as a lecturer, 
   - `PATCH`: Supports updating title, instructions, due date, max points, publication state, replacing attachments via multipart form data, or removing attachments via `remove_attachment=true`.
   - `DELETE`: Maintains deletion with offering-level authorization.
 
+**Tests:** All 79 backend tests passed · All 49 frontend tests passed
+
+---
+
+## Account provisioning, OTP password recovery & first-login password change — 2026-11-09
+
+### Frontend status
+
+- Public self-registration has been removed. `/register` now explains that accounts must be created by an authorized campus office; the home and login pages no longer encourage student self-sign-up.
+- The Registrar can create a student account at `/registrar/students` after explicitly confirming admission details. The Super Admin account screen creates staff accounts. Both flows request that the API generate initial credentials and email the user; the frontend never generates, displays, or transmits a password.
+- First-login password changes are routed to `/change-password` using the `must_change_password` property returned by `GET /api/auth/me/`. The route guard also applies after a session is restored, not only after an interactive login.
+- `/forgot-password` sends a one-time email code, then confirms the code and new password in a single request. `/reset-password` now directs users to this OTP flow.
+- Gmail SMTP credentials are backend-only configuration. No SMTP secret belongs in frontend environment variables or browser requests.
+
+### Proposed backend API contract (not implemented in the current backend)
+
+The existing backend only exposes `/api/auth/register/`, `/api/auth/token/`, `/api/auth/token/refresh/`, `/api/auth/me/`, and profile-picture upload. It does not currently implement mail delivery, OTP recovery, first-login password enforcement, or compatible staff-role provisioning. Implement the contract below and keep response shapes stable:
+
+| Purpose | Method and route | Request | Successful response |
+|---|---|---|---|
+| Provision an account | `POST /api/users/` | Existing account fields (`first_name`, `last_name`, `email`, `username`, `role`, optional `admission_number`/`phone_number`) plus `send_welcome_email: true`; no password | `201` with created account (never include a password) and `welcome_email_status: "sent"` or `"queued"` |
+| Login profile | `GET /api/auth/me/` | Authenticated | Existing user fields plus boolean `must_change_password` |
+| Change first/regular login password | `POST /api/auth/password/change/` | Authenticated `{ "current_password": "...", "new_password": "..." }` | `200` with `must_change_password: false` |
+| Request a recovery code | `POST /api/auth/password/otp/request/` | `{ "email": "..." }` | Generic `200` response regardless of whether an account exists or is eligible |
+| Verify code and reset password | `POST /api/auth/password/otp/confirm/` | `{ "email": "...", "otp": "123456", "new_password": "..." }` | `200` success; generic structured error on invalid, expired, used, or excessive attempts |
+
+Keep `/api/auth/token/` compatible. JWT issuance may continue after login, but all protected API routes must deny access when a user's initial password is pending, except the minimal account/profile and password-change endpoints needed to complete the forced change. On success, clear the flag server-side, invalidate other sessions/refresh tokens as appropriate, and have subsequent `/auth/me/` return `must_change_password: false`. Frontend checks are not a security boundary.
+
+Account creation and onboarding:
+
+1. Disable anonymous `POST /api/auth/register/` (return a clear `410 Gone` or equivalent) so the legacy public student registration endpoint cannot bypass Registrar approval.
+2. Authorize `POST /api/users/` by role: Registrar may create Student accounts only; Super Admin may create staff roles. Do not trust a submitted role without checking the authenticated actor. Apply the same role check to updates and any resend-invitation action.
+3. Generate a cryptographically random, single-use temporary credential server-side, hash it using Django's password hasher, set `must_change_password=true`, and never return it in JSON, logs, analytics, or audit descriptions.
+4. Send initial access instructions only after the account has been explicitly confirmed by the operator. Prefer an expiring one-time activation link over emailing a reusable plaintext password. If retaining the requested temporary-password email, make it single-use, short-lived, force a change at first login, and never store/log the plaintext.
+5. Return a precise mail-delivery result. If the account is created but SMTP delivery fails, return a structured response that distinguishes “account created, email failed” from “request failed” so the operator does not blindly submit a duplicate. Provide an authorized resend-invitation endpoint or retry workflow.
+6. Never allow the Registrar to list or administer staff accounts through the general user directory. The frontend's separate Registrar workflow sends only `role: "student"`; enforce this on the server.
+
+OTP recovery requirements:
+
+- Generate a cryptographically random six-digit OTP, bind it to the account and purpose, store only a secure hash, expire it after a short window (recommended 5–10 minutes), and invalidate it after one successful use or a new code request.
+- Rate limit requests by IP and normalized email, enforce a resend cooldown and bounded verification attempts, and invalidate outstanding OTPs after password change/reset.
+- Use a generic response and comparable processing for unknown, inactive, or ineligible emails to prevent account enumeration. Do not expose whether delivery was attempted to a particular address in the public response.
+- Validate the password server-side with the project's password policy and return field-level errors that the frontend can show. A successful reset must revoke existing refresh tokens/sessions where supported.
+- Audit password reset/change events without recording passwords, OTP values, or sensitive tokens.
+
+Gmail SMTP deployment configuration:
+
+- Configure Django SMTP via environment variables such as `EMAIL_HOST=smtp.gmail.com`, `EMAIL_PORT=587`, `EMAIL_USE_TLS=true`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and `DEFAULT_FROM_EMAIL`.
+- `EMAIL_HOST_PASSWORD` must be a Google App Password stored only in Render/secret environment configuration; never put it in source control, `.env` committed to git, frontend variables, API payloads, or logs. Enable 2-Step Verification and use a dedicated sending account where possible. Do not use a normal Google account password.
+- Configure and verify the sender/domain deliverability (SPF/DKIM where a custom domain is used), use plain-text and HTML templates, and avoid sending credentials in URLs or query strings.
+- Provide clear backend health/log signals for mail failures without logging OTPs or credentials; retry mail through an outbox/background job where available.
+
+### Backend acceptance checklist
+
+1. Tests prove anonymous registration is blocked and role/object authorization permits Registrar student creation while denying staff creation and user-directory administration.
+2. Tests prove new users receive a hashed temporary credential, `must_change_password=true`, and no credential appears in API output or logs.
+3. Tests prove first login requires password change before accessing protected resources; successful change clears the flag and invalidates prior sessions/tokens as designed.
+4. OTP tests cover generic responses for unknown emails, valid/invalid/expired/replayed codes, expiry, attempt limits, request/resend rate limits, email delivery failure, and reset session invalidation.
+5. Mail tests use a test backend and assert welcome/recovery email content without exposing secrets in logs; deployment smoke-test verifies Gmail SMTP via the configured App Password.
+6. Add migration/backfill behavior for `must_change_password` so existing users retain access (`false`) while newly provisioned accounts are required to change (`true`).
+
+**Status:** Frontend implementation is ready for these API contracts; backend routes, account flags/role policies, Gmail SMTP setup, and acceptance tests remain pending.
 **Tests:** All 79 backend tests passed · All 49 frontend tests passed.
