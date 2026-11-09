@@ -9,20 +9,20 @@ def api_client():
 
 @pytest.fixture
 def admin_user(db, django_user_model):
-    user = django_user_model.objects.create_user(email='admin@example.com', password='password', role='admin')
+    user = django_user_model.objects.create_user(email='period-admin@test.com', username='period_admin', password='password', first_name='Admin', last_name='User', role='admin')
     return user
 
 @pytest.fixture
 def student_user(db, django_user_model):
-    user = django_user_model.objects.create_user(email='student@example.com', password='password', role='student')
+    user = django_user_model.objects.create_user(email='period-student@test.com', username='period_student', password='password', first_name='Student', last_name='User', role='student')
     return user
 
 def get_jwt_token(client, user):
     # Use existing login endpoint to obtain token
-    response = client.post('/api/auth/login/', json.dumps({'email': user.email, 'password': 'password'}), content_type='application/json')
+    response = client.post('/api/auth/token/', json.dumps({'email': user.email, 'password': 'password'}), content_type='application/json')
     assert response.status_code == 200
     data = json.loads(response.content)
-    return data['access_token']
+    return data['access']
 
 def auth_client(client, token):
     client.defaults['HTTP_AUTHORIZATION'] = f'Bearer {token}'

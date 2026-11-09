@@ -112,8 +112,8 @@ def format_academic_period(period):
     return {
         'id': period.id,
         'name': period.name,
-        'start_date': period.start_date.isoformat(),
-        'end_date': period.end_date.isoformat(),
+        'start_date': period.start_date.isoformat() if hasattr(period.start_date, 'isoformat') else str(period.start_date),
+        'end_date': period.end_date.isoformat() if hasattr(period.end_date, 'isoformat') else str(period.end_date),
         'is_current': period.is_current,
         'created_at': period.created_at.isoformat(),
     }
@@ -565,8 +565,8 @@ def format_academic_period(period):
     return {
         'id': period.id,
         'name': period.name,
-        'start_date': period.start_date.isoformat(),
-        'end_date': period.end_date.isoformat(),
+        'start_date': period.start_date.isoformat() if hasattr(period.start_date, 'isoformat') else str(period.start_date),
+        'end_date': period.end_date.isoformat() if hasattr(period.end_date, 'isoformat') else str(period.end_date),
         'is_current': period.is_current,
         'created_at': period.created_at.isoformat(),
     }
@@ -818,7 +818,7 @@ def period_list_create(request):
     if request.method == 'GET':
         periods = AcademicPeriod.objects.all().order_by('-start_date')
         data = [format_academic_period(p) for p in periods]
-        return JsonResponse({'count': len(data), 'results': data})
+        return JsonResponse(data, safe=False)
     # POST - create period, admin only
     if user.role != 'admin':
         return JsonResponse({'error': 'Only admins can create academic periods'}, status=403)
