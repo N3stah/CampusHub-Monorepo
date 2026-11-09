@@ -209,3 +209,54 @@ def upload_profile_picture(request):
         save=True
     )
     return JsonResponse({'profile_picture_url': user.profile_picture.url})
+
+# --- Password Reset (public endpoints) ---
+import logging
+from django.utils import timezone
+from .models import PasswordResetToken, AuditEvent
+
+logger = logging.getLogger(__name__)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def password_reset_request_view(request):
+    data, err = _json_body(request)
+    if err:
+        return err
+    email = data.get("email")
+    if not email:
+        return JsonResponse({"error": "Email is required"}, status=400)
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        return JsonResponse({"message": "If that email exists, a reset link has been sent"})
+    token = PasswordResetToken.objects.create(user=user)
+    logger.info("Password reset token for %s: %s", user.email, token.token)
+    AuditEvent.objects.create(actor=user, action="password_reset.request", description=f"Password reset requested for {user.email}")
+    return JsonResponse({"message": "If that email exists, a reset link has been sent"})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def password_reset_confirm_view(request):
+    data, err = _json_body(request)
+    if err:
+        return err
+    token_value = data.get("token")
+    new_password = data.get("new_password")
+    if not token_value or not new_password:
+        return JsonResponse({"error": "Token and new_password are required"}, status=400)
+    try:
+        reset_token = PasswordResetToken.objects.get(token=token_value)
+    except (PasswordResetToken.DoesNotExist, ValueError, TypeError, ValidationError):
+        return JsonResponse({"error": "Invalid token"}, status=400)
+    if not reset_token.is_valid():
+        return JsonResponse({"error": "Token has expired or already been used"}, status=400)
+    user = reset_token.user
+    user.set_password(new_password)
+    user.save()
+    reset_token.used_at = timezone.now()
+    reset_token.save()
+    AuditEvent.objects.create(actor=user, action="password_reset.confirm", description=f"Password reset confirmed for {user.email}")
+    return JsonResponse({"message": "Password reset successfully"})
