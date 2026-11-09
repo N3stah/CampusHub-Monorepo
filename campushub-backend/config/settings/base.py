@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     'apps.notifications',
     'apps.messaging',
     'apps.common',
+    'apps.ai',
 ]
 
 MIDDLEWARE = [
@@ -87,7 +88,6 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
@@ -98,7 +98,6 @@ STORAGES = {
     'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
     'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
 }
-
 
 # Minimal console logging config for Render log streams
 LOGGING = {
@@ -129,10 +128,15 @@ LOGGING = {
     },
 }
 
-
 # Bypass django-ratelimit's strict Redis cache requirement for the capstone demo
 RATELIMIT_ENABLE_SYSTEM_CHECKS = False
 
-
 # Silence django-ratelimit cache backend warnings for the capstone demo
 SILENCED_SYSTEM_CHECKS = ['django_ratelimit.E003', 'django_ratelimit.W001']
+
+# AI/ML Integration settings
+GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
+NVIDIA_API_KEY = config('NVIDIA_API_KEY', default='')
+NVIDIA_VISION_API_KEY = config('NVIDIA_VISION_API_KEY', default='')
+AI_FEED_CACHE_HOURS = config('AI_FEED_CACHE_HOURS', default=24, cast=int)
+AI_AT_RISK_MIN_TRAINING_ROWS = config('AI_AT_RISK_MIN_TRAINING_ROWS', default=200, cast=int)

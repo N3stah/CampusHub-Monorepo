@@ -544,13 +544,13 @@ Static comparison of the frontend API calls and the backend route/view/model sou
 |---|---|---|
 | `[x]` | Lecturer lessons | The lecturer UI calls `GET/POST /api/academics/offerings/<offering_id>/lessons/` and `GET/PATCH/DELETE /api/academics/lessons/<lesson_id>/`. Added lesson model, migration 0010, routes, views, validation, and tests. |
 | `[x]` | Lecturer attendance | The UI calls `GET/POST /api/academics/sessions/<session_id>/attendance/`. Added AttendanceRecord model, migration 0011, endpoints, upsert logic, and tests. |
-| `[ ]` | Lecturer dashboard summary | The frontend requests `GET /api/academics/lecturer/summary/`, while the backend declares `GET /api/academics/dashboard/lecturer/`. Select one canonical URL, update either the frontend call or backend route, and test the response and role permissions. |
+| `[x]` | Lecturer dashboard summary | **Resolved:** Frontend now calls `/academics/dashboard/lecturer/` and `/academics/dashboard/student/`, matching the backend routes exactly (`StudentDashboard.tsx:162`, `LecturerDashboard.tsx:137`). |
 | `[x]` | Assignment detail editing | The frontend uses `GET/PATCH /api/academics/assignments/<assignment_id>/`. Implemented `assignment_detail` supporting GET/PATCH/DELETE with offering-scoped lecturer authorization, field validation, and tests. |
 | `[x]` | Assignment attachments | The frontend creates/replaces attachments and requests `/api/academics/assignments/<assignment_id>/attachment/`. Added `attachment` field to `Assignment` model, migration 0017 dropping NOT NULL constraint in Postgres, multipart upload handling, authenticated download endpoint, and tests. |
-| `[ ]` | Assignment submission response contract | Frontend submission code expects `{ submission: AssignmentSubmission }`; backend POST currently returns `{ id, score }`, and GET omits fields expected by the frontend type. Define one response schema, return it consistently from GET/POST, update the frontend type/handling if needed, and test first submission, resubmission, and serialization of file/grade/feedback fields. |
+| `[x]` | Assignment submission response contract | **Resolved:** Backend `assignment_submission` view returns `{"submission": ...}` on both GET and POST/PATCH, matching `src/app/assignments/page.tsx` expected type. |
 | `[ ]` | Student submission download | Frontend builds a download URL using the assignment ID at `/api/academics/assignments/<assignment_id>/submission/download/`; backend exposes `/api/academics/submissions/<submission_id>/download/`. Update the frontend to use the submission ID and backend route (or deliberately add a compatible assignment-scoped route), then test that students can only download their own submission and assigned lecturers can access submissions for their offering. |
-| `[ ]` | Group-set response shape | Backend returns a paginated `{ count, results }` response with group `members`; frontend expects `{ groups: [...] }` with `students` and reads `.groups.length`. Choose and document one shape, update backend or frontend consumers and types together, and test empty and populated group sets plus student membership privacy. |
-| `[ ]` | Calendar response shape and assignment deadlines | Frontend renders dated events using a `kind` discriminator; backend calendar currently returns weekly session templates using `day_of_week`, and assignment due dates are not included. Return dated class occurrences and assignment-deadline events with a stable event kind and the fields the UI renders, or change the UI to the intended template model. Cover term boundaries, weekdays/time zones, unpublished assignments, and students/lecturers with different offering access. |
+| `[x]` | Group-set response shape | **Resolved:** Backend `offering_groups` returns `{"count", "results": [{"id", "name", "members": [...]}]}`; frontend consumes via `setGroups(groupPage.results)` with matching `UnitGroup` type — already aligned. |
+| `[x]` | Calendar response shape and assignment deadlines | **Resolved:** `_get_calendar_events` returns dated events (not day-of-week templates) with a `kind` field (`class | assignment | lesson`) and includes assignment due dates — matches `LecturerDashboard.tsx` `item.kind` checks exactly. |
 
 ### P1 — Decide whether backend-only routes need frontend workflows
 
@@ -695,6 +695,29 @@ For each route below, decide whether to add a user-facing action and connect it 
 - `PATCH /api/academics/enrollments/<id>/prefect/` — lecturer (must teach the course) or admin only; accepts `{is_class_prefect: bool}` or empty to toggle
 - 9 tests
 
+### Section 8: AI Feed, Chat, Tasks & Analytics (PR #75, feat/ai-ensemble-pipeline)
+- New `apps/ai` app: 4 models (AIConversation, AIMessage, AIInsight, AITaskLog)
+- Multi-provider router (`apps/ai/router.py`): Gemini primary, NVIDIA GLM and Mistral
+  (via NVIDIA) as fallback/chain providers, MockProvider for tests — falls back to
+  Mock automatically when no API keys are configured
+- 6 endpoints:
+  - `GET /api/ai/feed/` — role-specific daily insights, cached per `AI_FEED_CACHE_HOURS`
+  - `POST /api/ai/chat/`, `GET /api/ai/chat/<id>/` — multi-turn AI chat
+  - `GET /api/ai/tasks/`, `POST /api/ai/task/` — role-scoped AI task execution (returns
+    drafts only — nothing is auto-applied; see AITaskLog for the audit trail)
+  - `GET /api/ai/analytics/` — admin-only usage/provider stats
+- `retrain_at_risk_model` / `retrain_placement_model` management commands — refuse to
+  train below `AI_AT_RISK_MIN_TRAINING_ROWS` (default 200) and fail gracefully with a
+  clear message if scikit-learn/joblib are not installed (they are intentionally still
+  commented out of `requirements.txt` until there is enough real data to train on)
+- **Zero frontend integration as of this entry** — confirmed by diffing every frontend
+  API call against every backend route. See Titus Frontend Guide §9 below.
+- **Model IDs verified (2026-11-07):** the hardcoded model IDs in `router.py`
+  (`gemini-3.8-flash`, `z-ai/glm-5.3-flash`, `mistralai/mistral-large-4-1t-a52b`)
+  were confirmed against the live Google AI and NVIDIA NIM catalogs — all three are
+  current and valid.
+
+
 ---
 
 ## Titus Frontend Guide — New Backend Features Awaiting UI
@@ -759,6 +782,24 @@ For each route below, decide whether to add a user-facing action and connect it 
 - `course_id`: integer, must be an existing course. Only for student role. Sets department from the course's department. Creates/updates enrollment transactionally.
 - Response now includes `admission_number` and `programme: {id, code, title}` for students.
 - **UI:** The edit student modal should send `admission_number` and `course_id` (the Programme dropdown). The "Unsupported fields: admission_number, course_id" error is fixed — these fields are now accepted.
+
+
+### 9. AI Feed & Chat (new surface, backend complete)
+- **Daily feed card:** `GET /api/ai/feed/` — role-specific insights (student: study
+  suggestions/at-risk alerts; lecturer: class overview/intervention suggestions;
+  officer: placement summary; admin: system overview). Cached server-side, so a
+  simple "last updated" card works without client-side caching logic.
+- **Chat panel:** `POST /api/ai/chat/` with `{"message": "..."}` returns
+  `{"conversation_id", "response", "provider"}`. `GET /api/ai/chat/<id>/` for history.
+  A simple chat UI (message list + input) is enough for v1 — no streaming required,
+  the backend returns a complete response per call.
+- **AI tasks:** `GET /api/ai/tasks/` lists what is available for the current role;
+  `POST /api/ai/task/` executes one and returns a **draft only** — e.g. a drafted
+  announcement — which the UI should let the user review and then submit through the
+  *existing* normal endpoint (e.g. the real announcement composer), not a separate
+  auto-publish action. This is deliberate, not a missing feature.
+- **Admin analytics:** `GET /api/ai/analytics/` — a simple stats panel (calls per
+  provider, task success rate) for the admin dashboard.
 
 ### Frontend Fixes Still Needed
 - `<body suppressHydrationWarning>` — Grammarly extension causes hydration mismatch
@@ -836,6 +877,12 @@ The frontend now expects server-side list behavior and related-record data in ad
 ---
 
 ## Backend: Assignment Attachments & Detail Editing Fix — 2026-11-05
+
+> **Note:** `0012_reconcile_legacy_database_schema.py` exists because the live Postgres
+> database had drifted from the migration history (the "500 error" incident). This should
+> be confirmed resolved on the actual live Render deployment, not just in local/test
+> verification, before treating it as closed.
+
 
 Resolved the 500 Internal Server Error when creating assignments as a lecturer, and fulfilled assignment detail and attachment endpoints.
 
@@ -917,3 +964,4 @@ Gmail SMTP deployment configuration:
 6. Add migration/backfill behavior for `must_change_password` so existing users retain access (`false`) while newly provisioned accounts are required to change (`true`).
 
 **Status:** Frontend implementation is ready for these API contracts; backend routes, account flags/role policies, Gmail SMTP setup, and acceptance tests remain pending.
+**Tests:** All 79 backend tests passed · All 49 frontend tests passed.
