@@ -1,6 +1,7 @@
 import jwt
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from django.utils import timezone as django_timezone
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -57,6 +58,17 @@ def jwt_required(view):
         if err:
             return err
         request.user = user
+        if user.must_change_password:
+            is_profile_read = request.path == '/api/auth/me/' and request.method == 'GET'
+            is_allowed_password_change = request.path == '/api/auth/password/change/' and request.method == 'POST'
+            if not (is_profile_read or is_allowed_password_change):
+                return JsonResponse({'error': 'Change your initial password before continuing.'}, status=403)
+            if (
+                user.initial_password_expires_at
+                and user.initial_password_expires_at <= django_timezone.now()
+                and not is_profile_read
+            ):
+                return JsonResponse({'error': 'Your initial password expired. Request a password reset code.'}, status=403)
         return view(request, *args, **kwargs)
     return wrapper
 

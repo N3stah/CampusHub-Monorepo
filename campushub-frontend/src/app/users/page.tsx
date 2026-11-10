@@ -48,6 +48,7 @@ export default function UsersPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeKind, setNoticeKind] = useState<'success' | 'warning'>('success');
+  const [resendingInvitationId, setResendingInvitationId] = useState<number | null>(null);
   const [roleFilter, setRoleFilter] = useState<ManagedAccountRole>('lecturer');
   const [roleInitialized, setRoleInitialized] = useState(false);
   const canManageUsers = user?.role === 'admin';
@@ -127,6 +128,28 @@ export default function UsersPage() {
     }
   }
 
+  async function resendInvitation(account: DirectoryUser) {
+    if (!window.confirm(`Send a new temporary password to ${account.email}? This will replace the user's current password and require a password change at next sign-in.`)) return;
+    setResendingInvitationId(account.id);
+    setFormError(null);
+    setNotice(null);
+    try {
+      const { data } = await api.post<{ welcome_email_status: 'sent' | 'failed' }>(`/users/${account.id}/resend-invitation/`);
+      if (data.welcome_email_status === 'sent') {
+        setNotice(`A new initial sign-in email was submitted for ${account.email}.`);
+        setNoticeKind('success');
+      } else {
+        setNotice(`Email delivery failed for ${account.email}. Check the Gmail SMTP configuration and retry. The password was not shown.`);
+        setNoticeKind('warning');
+      }
+      setRefreshKey((key) => key + 1);
+    } catch (requestError) {
+      setFormError(getApiErrorMessage(requestError));
+    } finally {
+      setResendingInvitationId(null);
+    }
+  }
+
   return (
     <PortalShell roles={['admin']}>
       <div className="space-y-4">
@@ -177,6 +200,7 @@ export default function UsersPage() {
             ) : (
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => openEditForm(account)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
+                {account.is_active && <button type="button" disabled={resendingInvitationId === account.id} onClick={() => void resendInvitation(account)} className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50">{resendingInvitationId === account.id ? 'Sending…' : 'Resend sign-in email'}</button>}
                 <button
                   type="button"
                   onClick={() => void setAccountActive(account, !account.is_active)}
@@ -203,6 +227,20 @@ export default function UsersPage() {
               render: (account: DirectoryUser) => (
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${account.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
                   {account.is_active ? 'Active' : 'Inactive'}
+                </span>
+              ),
+            },
+            {
+              label: 'Invitation email',
+              render: (account) => (
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  account.invitation_email_status === 'sent'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : account.invitation_email_status === 'failed'
+                      ? 'bg-red-50 text-red-700'
+                      : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {account.invitation_email_status === 'sent' ? 'Submitted' : account.invitation_email_status === 'failed' ? 'Failed' : 'Not sent'}
                 </span>
               ),
             },

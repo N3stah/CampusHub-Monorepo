@@ -59,9 +59,17 @@ class Course(models.Model):
         return f"{self.code}: {self.title}"
 
 class AcademicPeriod(models.Model):
+    STATUS_CHOICES = [
+        ('planned', 'Planned'),
+        ('active', 'Active'),
+        ('completed', 'Completed'),
+    ]
+
     name = models.CharField(max_length=100)
+    academic_year = models.CharField(max_length=20, blank=True)
     start_date = models.DateField()
     end_date = models.DateField()
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='planned')
     is_current = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -78,6 +86,31 @@ class AcademicPeriod(models.Model):
 
     def __str__(self):
         return f"{self.name}"
+
+
+class Registration(models.Model):
+    STATUS_CHOICES = [
+        ('registered', 'Registered'),
+        ('dropped', 'Dropped'),
+        ('completed', 'Completed'),
+    ]
+
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='unit_registrations')
+    academic_period = models.ForeignKey(AcademicPeriod, on_delete=models.PROTECT, related_name='registrations')
+    unit = models.ForeignKey('Unit', on_delete=models.PROTECT, related_name='registrations')
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='registered')
+    registered_on = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-registered_on', '-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['student', 'academic_period', 'unit'], name='unique_student_period_unit_registration'),
+        ]
+
+    def __str__(self):
+        return f'{self.student_id} - {self.unit.code} - {self.academic_period.name}'
 class Unit(models.Model):
     code = models.CharField(max_length=20, unique=True)
     title = models.CharField(max_length=200)

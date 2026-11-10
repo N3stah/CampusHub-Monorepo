@@ -1,4 +1,6 @@
 import json
+import secrets
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import get_user_model
@@ -8,12 +10,15 @@ from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from apps.academics.models import Department, Course, Enrollment
 from apps.accounts.jwt_utils import jwt_required
+from apps.accounts.emailing import send_initial_password
 from apps.accounts.models import AuditEvent
+from apps.common.service_api import collection_response
 
 User = get_user_model()
 VALID_ROLES = {choice[0] for choice in User.ROLE_CHOICES}
@@ -65,6 +70,9 @@ def _user_data(user):
         'bio': user.bio,
         'office_hours': user.office_hours,
         'is_active': user.is_active,
+        'must_change_password': user.must_change_password,
+        'initial_password_expires_at': user.initial_password_expires_at.isoformat() if user.initial_password_expires_at else None,
+        'invitation_email_status': user.invitation_email_status,
         'date_joined': user.date_joined.isoformat(),
         'courses': courses,
         'admission_number': user.admission_number,
@@ -184,11 +192,11 @@ def _visible_users(request):
             if requested_role not in VALID_ROLES:
                 raise ValueError(f'role must be one of: {", ".join(sorted(VALID_ROLES))}.')
             users = users.filter(role=requested_role)
-    elif request.user.role == 'officer':
-        users = User.objects.filter(role='student').select_related('department')
+    elif request.user.role in {'officer', 'registrar', 'finance', 'librarian', 'hostel'}:
+        users = User.objects.filter(role='student', is_active=True).select_related('department')
         requested_role = request.GET.get('role')
         if requested_role not in (None, '', 'student'):
-            raise PermissionError('Placement officers may only view student accounts.')
+            raise PermissionError('This role may only view student accounts.')
     else:
         raise PermissionError('Permission denied.')
 
@@ -200,15 +208,18 @@ def _visible_users(request):
             raise ValueError('department_id must be an integer.')
         users = users.filter(department_id=department_id)
 
-    search = request.GET.get('search', '').strip()
-    if search:
-        users = users.filter(
-            Q(first_name__icontains=search)
-            | Q(last_name__icontains=search)
-            | Q(email__icontains=search)
-            | Q(username__icontains=search)
-        )
     return users
+
+
+def _student_lookup_data(user):
+    return {
+        'id': user.id,
+        'admission_number': user.admission_number,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'email': user.email,
+        'role': user.role,
+    }
 
 
 
@@ -246,19 +257,46 @@ def user_list_create(request):
             return JsonResponse({'error': str(error)}, status=400)
         except PermissionError as error:
             return JsonResponse({'error': str(error)}, status=403)
-        results = [_user_data(user) for user in users]
-        return JsonResponse({'count': len(results), 'next': None, 'previous': None, 'results': results})
+        restricted_lookup = request.user.role not in {'admin', 'officer'}
+        return collection_response(
+            users,
+            request,
+            _student_lookup_data if restricted_lookup else _user_data,
+            search_fields=('first_name', 'last_name', 'email', 'username', 'admission_number'),
+            ordering_fields={
+                'first_name': 'first_name',
+                'last_name': 'last_name',
+                'email': 'email',
+                'admission_number': 'admission_number',
+                'date_joined': 'date_joined',
+            },
+            default_ordering=('first_name', 'last_name'),
+        )
 
-    if request.user.role != 'admin':
-        return JsonResponse({'error': 'Only admins can create user accounts.'}, status=403)
+    if request.user.role not in {'admin', 'registrar'}:
+        return JsonResponse({'error': 'Only admins or registrars can create user accounts.'}, status=403)
     data, error = _json_data(request)
     if error:
         return error
+    send_welcome_email = data.pop('send_welcome_email', False)
+    if not isinstance(send_welcome_email, bool):
+        return JsonResponse({'error': 'send_welcome_email must be true or false.'}, status=400)
+    if request.user.role == 'registrar' and data.get('role') != 'student':
+        return JsonResponse({'error': 'Registrars may only create student accounts.'}, status=403)
+    if request.user.role == 'registrar' and not send_welcome_email:
+        return JsonResponse({'error': 'Student accounts must receive initial sign-in instructions by email.'}, status=400)
     course_id = data.pop('course_id', None)
+    initial_password = None
+    if send_welcome_email:
+        initial_password = secrets.token_urlsafe(24)
+        data['password'] = initial_password
     user = User()
     try:
         with transaction.atomic():
             _set_user_fields(user, data, creating=True)
+            user.must_change_password = send_welcome_email
+            user.initial_password_expires_at = timezone.now() + timedelta(hours=48) if send_welcome_email else None
+            user.invitation_email_status = 'failed' if send_welcome_email else 'not_sent'
             user.save()
             _handle_course_enrollment(user, course_id)
             AuditEvent.objects.create(
@@ -270,7 +308,50 @@ def user_list_create(request):
         return JsonResponse({'error': str(validation_error)}, status=400)
     except IntegrityError:
         return JsonResponse({'error': 'Email or username already exists.'}, status=400)
-    return JsonResponse(_user_data(user), status=201)
+    response_data = _user_data(user)
+    if send_welcome_email:
+        sent = send_initial_password(user=user, password=initial_password)
+        user.invitation_email_status = 'sent' if sent else 'failed'
+        user.save(update_fields=['invitation_email_status'])
+        response_data['invitation_email_status'] = user.invitation_email_status
+        response_data['welcome_email_status'] = user.invitation_email_status
+    return JsonResponse(response_data, status=201)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+@jwt_required
+def resend_user_invitation(request, pk):
+    if request.user.role != 'admin':
+        return JsonResponse({'error': 'Only admins can resend account invitations.'}, status=403)
+    try:
+        user = User.objects.get(pk=pk)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found.'}, status=404)
+    if not user.is_active:
+        return JsonResponse({'error': 'Reactivate the account before resending its invitation.'}, status=400)
+
+    password = secrets.token_urlsafe(24)
+    previous_password = user.password
+    previous_must_change_password = user.must_change_password
+    previous_expiry = user.initial_password_expires_at
+    user.set_password(password)
+    sent = send_initial_password(user=user, password=password)
+    if sent:
+        user.must_change_password = True
+        user.initial_password_expires_at = timezone.now() + timedelta(hours=48)
+    else:
+        user.password = previous_password
+        user.must_change_password = previous_must_change_password
+        user.initial_password_expires_at = previous_expiry
+    user.invitation_email_status = 'sent' if sent else 'failed'
+    user.save(update_fields=['password', 'must_change_password', 'initial_password_expires_at', 'invitation_email_status'])
+    AuditEvent.objects.create(
+        actor=request.user,
+        action='user.invitation_resent',
+        description=f'Resent initial sign-in instructions for {user.get_full_name()}.',
+    )
+    return JsonResponse({'welcome_email_status': 'sent' if sent else 'failed'})
 
 
 def _get_user_for_request(request, pk):
@@ -369,10 +450,20 @@ def lecturer_list_create(request):
     data, error = _json_data(request)
     if error:
         return error
+    send_welcome_email = data.pop('send_welcome_email', False)
+    if not isinstance(send_welcome_email, bool):
+        return JsonResponse({'error': 'send_welcome_email must be true or false.'}, status=400)
+    initial_password = None
+    if send_welcome_email:
+        initial_password = secrets.token_urlsafe(24)
+        data['password'] = initial_password
     user = User()
     try:
         with transaction.atomic():
             _set_user_fields(user, data, creating=True, forced_role='lecturer')
+            user.must_change_password = send_welcome_email
+            user.initial_password_expires_at = timezone.now() + timedelta(hours=48) if send_welcome_email else None
+            user.invitation_email_status = 'failed' if send_welcome_email else 'not_sent'
             user.save()
             AuditEvent.objects.create(
                 actor=request.user,
@@ -383,7 +474,14 @@ def lecturer_list_create(request):
         return JsonResponse({'error': str(validation_error)}, status=400)
     except IntegrityError:
         return JsonResponse({'error': 'Email or username already exists.'}, status=400)
-    return JsonResponse(_user_data(user), status=201)
+    response_data = _user_data(user)
+    if send_welcome_email:
+        sent = send_initial_password(user=user, password=initial_password)
+        user.invitation_email_status = 'sent' if sent else 'failed'
+        user.save(update_fields=['invitation_email_status'])
+        response_data['invitation_email_status'] = user.invitation_email_status
+        response_data['welcome_email_status'] = user.invitation_email_status
+    return JsonResponse(response_data, status=201)
 
 
 @csrf_exempt

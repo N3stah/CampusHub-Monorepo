@@ -13,11 +13,12 @@ from django.contrib.auth import get_user_model
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import AuditEvent
-from .models import Department, Course, Enrollment, School, Unit, Offering, AcademicPeriod, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup, Lesson, AttendanceRecord
+from .models import Department, Course, Enrollment, School, Unit, Offering, AcademicPeriod, Registration, UnitTeachingAssignment, ClassSession, Assignment, AssignmentQuestion, AssignmentSubmission, GroupSet, StudentGroup, Lesson, AttendanceRecord
 from apps.common.pagination import paginate_queryset
 from apps.common.file_guards import MAX_FILE_SIZE
 from apps.notifications.services import NotificationService
-from datetime import timedelta
+from datetime import date, timedelta
+from apps.common.service_api import collection_response, date_value, integer_value, json_payload, require_role
 
 User = get_user_model()
 
@@ -109,11 +110,18 @@ def period_set_current(request, pk):
     return JsonResponse(format_academic_period(period))
 
 def format_academic_period(period):
+    academic_year = period.academic_year
+    if not academic_year:
+        academic_year = f'{period.start_date.year}/{period.end_date.year}'
     return {
         'id': period.id,
         'name': period.name,
+        'academic_year': academic_year,
         'start_date': period.start_date.isoformat() if hasattr(period.start_date, 'isoformat') else str(period.start_date),
         'end_date': period.end_date.isoformat() if hasattr(period.end_date, 'isoformat') else str(period.end_date),
+        'starts_on': period.start_date.isoformat() if hasattr(period.start_date, 'isoformat') else str(period.start_date),
+        'ends_on': period.end_date.isoformat() if hasattr(period.end_date, 'isoformat') else str(period.end_date),
+        'status': period.status,
         'is_current': period.is_current,
         'created_at': period.created_at.isoformat(),
     }
@@ -243,9 +251,33 @@ def course_list_create(request):
     
     if request.method == 'GET':
         department_id = request.GET.get('department')
-        courses = Course.objects.filter(is_active=True)
+        active_filter = request.GET.get('is_active', 'true').lower()
+        if active_filter not in {'true', 'false'}:
+            return JsonResponse({'error': 'is_active must be true or false'}, status=400)
+        courses = Course.objects.filter(is_active=(active_filter == 'true')).select_related('department')
         if department_id:
-            courses = courses.filter(department_id=department_id)
+            try:
+                courses = courses.filter(department_id=int(department_id))
+            except ValueError:
+                return JsonResponse({'error': 'department must be an integer'}, status=400)
+        if request.GET:
+            return collection_response(
+                courses,
+                request,
+                lambda course: {
+                    'id': course.id,
+                    'title': course.title,
+                    'code': course.code,
+                    'department_id': course.department_id,
+                    'department_name': course.department.name,
+                    'lecturer_id': course.lecturer_id,
+                    'credits': course.credits,
+                    'is_active': course.is_active,
+                },
+                search_fields=('title', 'code', 'department__name'),
+                ordering_fields={'title': 'title', 'code': 'code', 'credits': 'credits'},
+                default_ordering=('code',),
+            )
         data = list(courses.values('id', 'title', 'code', 'department_id', 'lecturer_id', 'credits', 'is_active'))
         return JsonResponse(data, safe=False)
         
@@ -562,11 +594,18 @@ def school_detail_update_delete(request, pk):
 # --- Unit Views ---
 
 def format_academic_period(period):
+    academic_year = period.academic_year
+    if not academic_year:
+        academic_year = f'{period.start_date.year}/{period.end_date.year}'
     return {
         'id': period.id,
         'name': period.name,
+        'academic_year': academic_year,
         'start_date': period.start_date.isoformat() if hasattr(period.start_date, 'isoformat') else str(period.start_date),
         'end_date': period.end_date.isoformat() if hasattr(period.end_date, 'isoformat') else str(period.end_date),
+        'starts_on': period.start_date.isoformat() if hasattr(period.start_date, 'isoformat') else str(period.start_date),
+        'ends_on': period.end_date.isoformat() if hasattr(period.end_date, 'isoformat') else str(period.end_date),
+        'status': period.status,
         'is_current': period.is_current,
         'created_at': period.created_at.isoformat(),
     }
@@ -606,7 +645,19 @@ def unit_list_create(request):
     user = request.user
     if request.method == 'GET':
         units = Unit.objects.all().prefetch_related('departments', 'offerings', 'offerings__teaching_assignments')
-        return paginate_queryset(units, request, format_unit)
+        active_filter = request.GET.get('is_active')
+        if active_filter is not None:
+            if active_filter.lower() not in {'true', 'false'}:
+                return JsonResponse({'error': 'is_active must be true or false'}, status=400)
+            units = units.filter(is_active=(active_filter.lower() == 'true'))
+        return collection_response(
+            units.distinct(),
+            request,
+            format_unit,
+            search_fields=('code', 'title', 'description', 'departments__name'),
+            ordering_fields={'code': 'code', 'title': 'title', 'credits': 'credits'},
+            default_ordering=('code',),
+        )
     elif request.method == 'POST':
         if user.role != 'admin':
             return JsonResponse({'error': 'Only admins can create units'}, status=403)
@@ -816,61 +867,121 @@ def admin_enrollment_update(request, pk):
 def period_list_create(request):
     user = request.user
     if request.method == 'GET':
-        periods = AcademicPeriod.objects.all().order_by('-start_date')
-        data = [format_academic_period(p) for p in periods]
-        return JsonResponse(data, safe=False)
-    # POST - create period, admin only
-    if user.role != 'admin':
-        return JsonResponse({'error': 'Only admins can create academic periods'}, status=403)
-    try:
-        data = json.loads(request.body)
-        name = data.get('name')
-        start_date = data.get('start_date')
-        end_date = data.get('end_date')
-        is_current = data.get('is_current', False)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    if not name or not start_date or not end_date:
-        return JsonResponse({'error': 'name, start_date and end_date are required'}, status=400)
-    try:
+        periods = AcademicPeriod.objects.all()
+        if request.GET:
+            return collection_response(
+                periods,
+                request,
+                format_academic_period,
+                search_fields=('name', 'academic_year'),
+                filters={'status': 'status'},
+                ordering_fields={'starts_on': 'start_date', 'academic_year': 'academic_year', 'name': 'name'},
+                default_ordering=('-start_date',),
+            )
+        return JsonResponse([format_academic_period(period) for period in periods], safe=False)
+    denied = require_role(request, 'registrar', 'admin')
+    if denied:
+        return denied
+    payload, error = json_payload(request)
+    if error:
+        return error
+    name = payload.get('name')
+    academic_year = payload.get('academic_year', '')
+    starts_on, date_error = date_value(payload.get('starts_on', payload.get('start_date')), 'starts_on')
+    ends_on, end_error = date_value(payload.get('ends_on', payload.get('end_date')), 'ends_on')
+    status = payload.get('status', 'active' if payload.get('is_current') else 'planned')
+    if not isinstance(name, str) or not name.strip():
+        return JsonResponse({'error': 'name is required'}, status=400)
+    if not isinstance(academic_year, str):
+        return JsonResponse({'error': 'academic_year must be text'}, status=400)
+    if date_error or end_error:
+        return JsonResponse({'error': date_error or end_error}, status=400)
+    if starts_on > ends_on:
+        return JsonResponse({'error': 'ends_on must not precede starts_on'}, status=400)
+    if not isinstance(status, str) or status not in {'planned', 'active', 'completed'}:
+        return JsonResponse({'error': 'Invalid academic period status'}, status=400)
+    requested_current = payload.get('is_current', status == 'active')
+    if not isinstance(requested_current, bool):
+        return JsonResponse({'error': 'is_current must be a boolean'}, status=400)
+    if status == 'completed' and requested_current:
+        return JsonResponse({'error': 'A completed period cannot be current'}, status=400)
+    if AcademicPeriod.objects.filter(start_date__lte=ends_on, end_date__gte=starts_on).exists():
+        return JsonResponse({'error': 'Academic period dates cannot overlap another period'}, status=409)
+    is_current = status == 'active' or requested_current
+    if is_current and AcademicPeriod.objects.filter(is_current=True).exists():
+        return JsonResponse({'error': 'Only one period can be active'}, status=400)
+    with transaction.atomic():
         period = AcademicPeriod.objects.create(
-            name=name,
-            start_date=start_date,
-            end_date=end_date,
+            name=name.strip(),
+            academic_year=academic_year.strip(),
+            start_date=starts_on,
+            end_date=ends_on,
+            status='active' if is_current else status,
             is_current=is_current,
         )
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=400)
     AuditEvent.objects.create(actor=user, action='academic_period.create', description=f'Created period {period.name}')
     return JsonResponse(format_academic_period(period), status=201)
 
 @csrf_exempt
-@require_http_methods(['PATCH'])
+@require_http_methods(['GET', 'PATCH'])
 @jwt_required
 def period_detail_update(request, pk):
     user = request.user
-    if user.role != 'admin':
-        return JsonResponse({'error': 'Only admins can update academic periods'}, status=403)
     try:
         period = AcademicPeriod.objects.get(pk=pk)
     except AcademicPeriod.DoesNotExist:
         return JsonResponse({'error': 'Academic period not found'}, status=404)
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    if 'name' in data:
-        period.name = data['name']
-    if 'start_date' in data:
-        period.start_date = data['start_date']
-    if 'end_date' in data:
-        period.end_date = data['end_date']
-    if 'is_current' in data:
-        period.is_current = data['is_current']
-    try:
+    if request.method == 'GET':
+        denied = require_role(request, 'registrar', 'admin')
+        return denied or JsonResponse(format_academic_period(period))
+    denied = require_role(request, 'registrar', 'admin')
+    if denied:
+        return denied
+    payload, error = json_payload(request)
+    if error:
+        return error
+    if 'name' in payload:
+        if not isinstance(payload['name'], str) or not payload['name'].strip():
+            return JsonResponse({'error': 'name must be a non-empty string'}, status=400)
+        period.name = payload['name'].strip()
+    if 'academic_year' in payload:
+        if not isinstance(payload['academic_year'], str):
+            return JsonResponse({'error': 'academic_year must be text'}, status=400)
+        period.academic_year = payload['academic_year'].strip()
+    if 'starts_on' in payload or 'start_date' in payload:
+        period.start_date, error_text = date_value(payload.get('starts_on', payload.get('start_date')), 'starts_on')
+        if error_text:
+            return JsonResponse({'error': error_text}, status=400)
+    if 'ends_on' in payload or 'end_date' in payload:
+        period.end_date, error_text = date_value(payload.get('ends_on', payload.get('end_date')), 'ends_on')
+        if error_text:
+            return JsonResponse({'error': error_text}, status=400)
+    status = payload.get('status', period.status)
+    allowed = {'planned': {'active', 'completed'}, 'active': {'completed'}, 'completed': set()}
+    if not isinstance(status, str) or (status != period.status and status not in allowed[period.status]):
+        return JsonResponse({'error': f'Cannot transition from {period.status} to {status}'}, status=400)
+    if status not in {'planned', 'active', 'completed'}:
+        return JsonResponse({'error': 'Invalid academic period status'}, status=400)
+    if period.start_date > period.end_date:
+        return JsonResponse({'error': 'ends_on must not precede starts_on'}, status=400)
+    overlaps = AcademicPeriod.objects.filter(start_date__lte=period.end_date, end_date__gte=period.start_date).exclude(pk=pk)
+    if overlaps.exists():
+        return JsonResponse({'error': 'Academic period dates cannot overlap another period'}, status=409)
+    is_current = payload.get('is_current', status == 'active')
+    if not isinstance(is_current, bool):
+        return JsonResponse({'error': 'is_current must be a boolean'}, status=400)
+    if status == 'completed' and is_current:
+        return JsonResponse({'error': 'A completed period cannot be current'}, status=400)
+    if (status == 'active' or is_current) and AcademicPeriod.objects.filter(is_current=True).exclude(pk=pk).exists():
+        return JsonResponse({'error': 'Only one period can be active; use set-current to switch periods'}, status=400)
+    with transaction.atomic():
+        if status == 'active' or is_current:
+            period.status = 'active'
+            period.is_current = True
+        else:
+            period.status = status
+            period.is_current = False
         period.save()
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=400)
     AuditEvent.objects.create(actor=user, action='academic_period.update', description=f'Updated period {period.name}')
     return JsonResponse(format_academic_period(period))
 
@@ -879,15 +990,17 @@ def period_detail_update(request, pk):
 @jwt_required
 def period_set_current(request, pk):
     user = request.user
-    if user.role != 'admin':
-        return JsonResponse({'error': 'Only admins can set current academic period'}, status=403)
+    denied = require_role(request, 'registrar', 'admin')
+    if denied:
+        return denied
     try:
         period = AcademicPeriod.objects.get(pk=pk)
     except AcademicPeriod.DoesNotExist:
         return JsonResponse({'error': 'Academic period not found'}, status=404)
     with transaction.atomic():
-        AcademicPeriod.objects.filter(is_current=True).exclude(pk=period.pk).update(is_current=False)
+        AcademicPeriod.objects.filter(is_current=True).exclude(pk=period.pk).update(is_current=False, status='planned')
         period.is_current = True
+        period.status = 'active'
         period.save()
     AuditEvent.objects.create(actor=user, action='academic_period.set_current', description=f'Set period {period.name} as current')
     return JsonResponse(format_academic_period(period))
@@ -2335,3 +2448,163 @@ def toggle_prefect(request, pk):
         'course_id': enrollment.course_id,
         'is_class_prefect': enrollment.is_class_prefect,
     })
+
+
+def _serialize_registration(registration):
+    return {
+        'id': registration.id,
+        'student_id': registration.student_id,
+        'student_name': registration.student.get_full_name(),
+        'academic_period_id': registration.academic_period_id,
+        'academic_period_name': f'{registration.academic_period.academic_year or registration.academic_period.start_date.year} {registration.academic_period.name}',
+        'unit_id': registration.unit_id,
+        'unit_code': registration.unit.code,
+        'unit_title': registration.unit.title,
+        'status': registration.status,
+        'registered_on': registration.registered_on.isoformat(),
+        'created_at': registration.created_at.isoformat(),
+        'updated_at': registration.updated_at.isoformat(),
+    }
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@jwt_required
+def registration_list_create(request):
+    user = request.user
+    if request.method == 'GET':
+        queryset = Registration.objects.select_related('student', 'academic_period', 'unit')
+        if user.role == 'student':
+            queryset = queryset.filter(student=user)
+        elif user.role not in {'registrar', 'admin'}:
+            return JsonResponse({'error': 'Forbidden'}, status=403)
+        return collection_response(
+            queryset,
+            request,
+            _serialize_registration,
+            search_fields=('student__first_name', 'student__last_name', 'student__email', 'unit__code', 'unit__title', 'academic_period__name'),
+            filters={'status': 'status'},
+            ordering_fields={'registered_on': 'registered_on', 'student_name': 'student__last_name', 'unit_code': 'unit__code'},
+            default_ordering=('-registered_on',),
+        )
+
+    if user.role not in {'student', 'registrar', 'admin'}:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    payload, error = json_payload(request)
+    if error:
+        return error
+    if user.role == 'student':
+        student = user
+    else:
+        try:
+            student = User.objects.get(pk=int(payload.get('student_id')), role='student', is_active=True)
+        except (User.DoesNotExist, TypeError, ValueError):
+            return JsonResponse({'error': 'Select an active student'}, status=400)
+    try:
+        period = AcademicPeriod.objects.get(pk=int(payload.get('academic_period_id')))
+        unit = Unit.objects.get(pk=int(payload.get('unit_id')), is_active=True)
+    except (AcademicPeriod.DoesNotExist, Unit.DoesNotExist, TypeError, ValueError):
+        return JsonResponse({'error': 'Select an existing academic period and active unit'}, status=400)
+    if user.role == 'student' and (
+        period.status != 'active' or period.start_date > date.today() or period.end_date < date.today()
+    ):
+        return JsonResponse({'error': 'Registration is only available during an active academic period'}, status=400)
+    registered_on, date_error = date_value(payload.get('registered_on', date.today().isoformat()), 'registered_on')
+    if date_error:
+        return JsonResponse({'error': date_error}, status=400)
+    if registered_on < period.start_date or registered_on > period.end_date:
+        return JsonResponse({'error': 'registered_on must fall within the academic period'}, status=400)
+    status = payload.get('status', 'registered')
+    if not isinstance(status, str) or status not in {'registered', 'dropped', 'completed'}:
+        return JsonResponse({'error': 'Invalid registration status'}, status=400)
+    if status != 'registered' and user.role == 'student':
+        return JsonResponse({'error': 'Students can only create registered records'}, status=403)
+    offerings = Offering.objects.filter(unit=unit, is_active=True).filter(Q(period=period) | Q(period__isnull=True))
+    if not offerings.exists():
+        return JsonResponse({'error': 'The unit is not offered in this academic period'}, status=400)
+    if user.role == 'student':
+        eligible_courses = Enrollment.objects.filter(student=user, status='active').values_list('course_id', flat=True)
+        if not offerings.filter(course_id__in=eligible_courses).exists():
+            return JsonResponse({'error': 'You are not enrolled in a programme offering this unit'}, status=403)
+    registration, created = Registration.objects.get_or_create(
+        student=student,
+        academic_period=period,
+        unit=unit,
+        defaults={'registered_on': registered_on, 'status': status},
+    )
+    if not created:
+        if registration.status != 'dropped' or status != 'registered':
+            return JsonResponse({'error': 'A registration already exists for this student, unit, and period'}, status=409)
+        registration.status = 'registered'
+        registration.registered_on = registered_on
+        registration.save(update_fields=['status', 'registered_on', 'updated_at'])
+    AuditEvent.objects.create(actor=user, action='academic.registration.create', description=f'Registration {registration.pk} {registration.status}')
+    return JsonResponse(_serialize_registration(registration), status=201 if created else 200)
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'PATCH'])
+@jwt_required
+def registration_detail(request, pk):
+    try:
+        registration = Registration.objects.select_related('student', 'academic_period', 'unit').get(pk=pk)
+    except Registration.DoesNotExist:
+        return JsonResponse({'error': 'Registration not found'}, status=404)
+    if request.user.role == 'student':
+        if registration.student_id != request.user.id:
+            return JsonResponse({'error': 'Registration not found'}, status=404)
+    elif request.user.role not in {'registrar', 'admin'}:
+        return JsonResponse({'error': 'Forbidden'}, status=403)
+    if request.method == 'GET':
+        return JsonResponse(_serialize_registration(registration))
+    if request.user.role not in {'registrar', 'admin'}:
+        return JsonResponse({'error': 'Only Registrar can update registrations'}, status=403)
+    payload, error = json_payload(request)
+    if error:
+        return error
+    student = registration.student
+    period = registration.academic_period
+    unit = registration.unit
+    if 'student_id' in payload:
+        try:
+            student = User.objects.get(pk=int(payload['student_id']), role='student', is_active=True)
+        except (User.DoesNotExist, TypeError, ValueError):
+            return JsonResponse({'error': 'Select an active student'}, status=400)
+    if 'academic_period_id' in payload:
+        try:
+            period = AcademicPeriod.objects.get(pk=int(payload['academic_period_id']))
+        except (AcademicPeriod.DoesNotExist, TypeError, ValueError):
+            return JsonResponse({'error': 'Select an existing academic period'}, status=400)
+    if 'unit_id' in payload:
+        try:
+            unit = Unit.objects.get(pk=int(payload['unit_id']), is_active=True)
+        except (Unit.DoesNotExist, TypeError, ValueError):
+            return JsonResponse({'error': 'Select an active unit'}, status=400)
+    registered_on = registration.registered_on
+    if 'registered_on' in payload:
+        registered_on, date_error = date_value(payload['registered_on'], 'registered_on')
+        if date_error:
+            return JsonResponse({'error': date_error}, status=400)
+    if registered_on < period.start_date or registered_on > period.end_date:
+        return JsonResponse({'error': 'registered_on must fall within the academic period'}, status=400)
+    offerings = Offering.objects.filter(unit=unit, is_active=True).filter(Q(period=period) | Q(period__isnull=True))
+    eligible_courses = Enrollment.objects.filter(student=student, status='active').values_list('course_id', flat=True)
+    if not offerings.filter(course_id__in=eligible_courses).exists():
+        return JsonResponse({'error': 'Student is not enrolled in a programme offering this unit'}, status=400)
+    new_status = payload.get('status', registration.status)
+    transitions = {'registered': {'dropped', 'completed'}, 'dropped': {'registered'}, 'completed': set()}
+    if not isinstance(new_status, str) or (new_status != registration.status and new_status not in transitions[registration.status]):
+        return JsonResponse({'error': f'Cannot transition from {registration.status} to {new_status}'}, status=400)
+    if Registration.objects.filter(student=student, academic_period=period, unit=unit).exclude(pk=registration.pk).exists():
+        return JsonResponse({'error': 'A registration already exists for this student, unit, and period'}, status=409)
+    registration.student = student
+    registration.academic_period = period
+    registration.unit = unit
+    registration.registered_on = registered_on
+    registration.status = new_status
+    try:
+        registration.save()
+    except IntegrityError:
+        return JsonResponse({'error': 'A registration already exists for this student, unit, and period'}, status=409)
+    AuditEvent.objects.create(actor=request.user, action='academic.registration.status', description=f'Registration {registration.pk} status {new_status}')
+    return JsonResponse(_serialize_registration(registration))

@@ -21,40 +21,10 @@ def user_data():
 def existing_user(user_data):
     return User.objects.create_user(**user_data)
 
-# 1. Register — success (201, returns id/email/username/role)
-def test_register_success(client, user_data):
+def test_public_registration_is_disabled(client, user_data):
     response = client.post('/api/auth/register/', data=user_data, content_type='application/json')
-    assert response.status_code == 201
-    data = response.json()
-    assert 'id' in data
-    assert data['email'] == user_data['email']
-    assert data['username'] == user_data['username']
-    assert data['role'] == 'student'
-
-# 2. Register — missing fields (400)
-def test_register_missing_fields(client):
-    response = client.post('/api/auth/register/', data={"email": "incomplete@test.com"}, content_type='application/json')
-    assert response.status_code == 400
-
-# 3. Register — duplicate email (400)
-def test_register_duplicate_email(client, existing_user, user_data):
-    # Try to register again with same email but different username
-    user_data['username'] = 'anotheruser'
-    response = client.post('/api/auth/register/', data=user_data, content_type='application/json')
-    assert response.status_code == 400
-
-# 4. Register — duplicate username (400)
-def test_register_duplicate_username(client, existing_user, user_data):
-    # Try to register again with same username but different email
-    user_data['email'] = 'another@test.com'
-    response = client.post('/api/auth/register/', data=user_data, content_type='application/json')
-    assert response.status_code == 400
-
-# 5. Register — password too short (400)
-def test_register_password_too_short(client, user_data):
-    user_data['password'] = '123' # Too short
-    response = client.post('/api/auth/register/', data=user_data, content_type='application/json')
-    assert response.status_code == 400
+    assert response.status_code == 403
+    assert User.objects.count() == 0
 
 # 6. Token — success (200, returns access + refresh)
 def test_token_success(client, existing_user, user_data):

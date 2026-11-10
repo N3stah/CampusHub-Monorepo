@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from django.utils import timezone
 
 
 class UserManager(BaseUserManager):
@@ -30,6 +31,11 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    INVITATION_EMAIL_STATUS_CHOICES = [
+        ('not_sent', 'Not sent'),
+        ('sent', 'Sent'),
+        ('failed', 'Failed'),
+    ]
     ROLE_CHOICES = [
         ('student', 'Student'),
         ('lecturer', 'Lecturer'),
@@ -63,6 +69,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     bio          = models.TextField(blank=True)
     office_hours = models.CharField(max_length=200, blank=True)
     is_active    = models.BooleanField(default=True)
+    must_change_password = models.BooleanField(default=False)
+    initial_password_expires_at = models.DateTimeField(null=True, blank=True)
+    invitation_email_status = models.CharField(
+        max_length=16,
+        choices=INVITATION_EMAIL_STATUS_CHOICES,
+        default='not_sent',
+    )
     is_staff     = models.BooleanField(default=False)
     date_joined  = models.DateTimeField(auto_now_add=True)
     profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True)
@@ -110,3 +123,24 @@ class AuditEvent(models.Model):
 
     def __str__(self):
         return f'{self.action}: {self.description[:80]}'
+
+
+class PasswordResetOTP(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_reset_otps')
+    code_hash = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def is_usable(self):
+        return (
+            self.consumed_at is None
+            and self.expires_at > timezone.now()
+            and self.attempts < 5
+        )
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['user', '-created_at'])]

@@ -117,8 +117,8 @@ def test_registration_cannot_assign_privileged_roles(client):
         content_type='application/json',
     )
 
-    assert response.status_code == 201
-    assert response.json()['role'] == 'student'
+    assert response.status_code == 403
+    assert not User.objects.filter(email='officer@example.test').exists()
 
 
 def test_only_admin_can_create_users(client):

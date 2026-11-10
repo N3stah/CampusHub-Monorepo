@@ -38,6 +38,8 @@ export interface DirectoryUser {
   bio?: string;
   office_hours?: string;
   is_active: boolean;
+  must_change_password?: boolean;
+  invitation_email_status?: 'not_sent' | 'sent' | 'failed';
   date_joined: string;
 }
 
