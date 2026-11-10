@@ -69,6 +69,41 @@ def test_admin_create_sends_random_initial_password_without_returning_it(client)
     EMAIL_HOST_PASSWORD='test-app-password',
     DEFAULT_FROM_EMAIL='campushub@example.test',
 )
+def test_admin_create_lecturer_sends_initial_password_email(client):
+    admin = create_user('admin@example.test', 'admin', role='admin')
+    response = client.post(
+        '/api/lecturers/',
+        data={
+            'email': 'new-lecturer@example.test',
+            'username': 'new-lecturer',
+            'first_name': 'New',
+            'last_name': 'Lecturer',
+            'role': 'lecturer',
+            'title': 'Lecturer',
+            'send_welcome_email': True,
+        },
+        content_type='application/json',
+        **auth_header(admin),
+    )
+
+    assert response.status_code == 201
+    assert response.json()['welcome_email_status'] == 'sent'
+    assert 'password' not in response.json()
+    account = User.objects.get(email='new-lecturer@example.test')
+    assert account.must_change_password
+    assert account.initial_password_expires_at is not None
+    assert len(mail.outbox) == 1
+    match = re.search(r'Initial password: ([A-Za-z0-9_-]+)', mail.outbox[0].body)
+    assert match
+    assert account.check_password(match.group(1))
+
+
+@override_settings(
+    EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+    EMAIL_HOST_USER='campushub@example.test',
+    EMAIL_HOST_PASSWORD='test-app-password',
+    DEFAULT_FROM_EMAIL='campushub@example.test',
+)
 def test_admin_can_resend_invitation_without_exposing_password(client):
     admin = create_user('admin@example.test', 'admin', role='admin')
     account = create_user('student@example.test', 'student')
