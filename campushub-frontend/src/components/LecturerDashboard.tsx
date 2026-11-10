@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import CalendarExportButton from '@/components/CalendarExportButton';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
@@ -253,6 +254,7 @@ export default function LecturerDashboard() {
               <p className="mt-1 text-xs text-slate-500">Select a highlighted day to see its classes and deadlines.</p>
             </div>
             <div className="flex min-w-0 flex-wrap items-center justify-center gap-1.5 sm:gap-2">
+              <CalendarExportButton />
               <button type="button" aria-label="Previous month" onClick={() => {
                 const month = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1);
                 setVisibleMonth(month);

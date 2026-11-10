@@ -15,6 +15,7 @@ vi.mock('@/components/PortalShell', () => ({
 describe('Registrar student onboarding', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.get).mockResolvedValue({ data: { results: [{ id: 5, code: 'BSCIT', title: 'Bachelor of Science in IT', is_active: true }] } });
     vi.mocked(api.post).mockResolvedValue({ data: { welcome_email_status: 'queued' } });
   });
 
@@ -25,6 +26,8 @@ describe('Registrar student onboarding', () => {
     fireEvent.change(screen.getByLabelText('Student email'), { target: { value: 'riley@example.test' } });
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'rstudent' } });
     fireEvent.change(screen.getByLabelText('Admission number'), { target: { value: 'STU-1001' } });
+    await screen.findByRole('option', { name: 'BSCIT · Bachelor of Science in IT' });
+    fireEvent.change(screen.getByLabelText('Admitted programme'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: 'Confirm admission and send login email' }));
 
@@ -35,6 +38,7 @@ describe('Registrar student onboarding', () => {
       username: 'rstudent',
       admission_number: 'STU-1001',
       phone_number: '',
+      course_id: 5,
       role: 'student',
       send_welcome_email: true,
     }));

@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import api from '@/lib/api';
 import PortalShell from '@/components/PortalShell';
 import { Alert } from '@/components/ui';
-import { getApiErrorMessage } from '@/lib/portal';
+import { getApiErrorMessage, getApiPage } from '@/lib/portal';
+import type { Course } from '@/types/portal';
 
 interface StudentAccountForm {
   first_name: string;
@@ -13,6 +14,7 @@ interface StudentAccountForm {
   username: string;
   admission_number: string;
   phone_number: string;
+  course_id: string;
 }
 
 const initialForm: StudentAccountForm = {
@@ -22,15 +24,32 @@ const initialForm: StudentAccountForm = {
   username: '',
   admission_number: '',
   phone_number: '',
+  course_id: '',
 };
 
 export default function RegistrarStudentsPage() {
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(true);
+  const [coursesError, setCoursesError] = useState<string | null>(null);
   const [form, setForm] = useState(initialForm);
   const [confirmed, setConfirmed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeKind, setNoticeKind] = useState<'success' | 'warning'>('success');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getApiPage<Course>('/academics/courses/', {}, controller.signal)
+      .then((page) => setCourses(page.results.filter((course) => course.is_active)))
+      .catch((requestError: unknown) => {
+        if (!controller.signal.aborted) setCoursesError(getApiErrorMessage(requestError));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCoursesLoading(false);
+      });
+    return () => controller.abort();
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -40,6 +59,7 @@ export default function RegistrarStudentsPage() {
     try {
       const { data } = await api.post<{ welcome_email_status?: string }>('/users/', {
         ...form,
+        course_id: Number(form.course_id),
         role: 'student',
         send_welcome_email: true,
       });
@@ -88,6 +108,14 @@ export default function RegistrarStudentsPage() {
             </label>
             <label className="text-sm font-medium text-slate-700">Phone (optional)
               <input type="tel" autoComplete="tel" value={form.phone_number} onChange={(event) => setForm({ ...form, phone_number: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" />
+            </label>
+            <label className="text-sm font-medium text-slate-700 sm:col-span-2">Admitted programme
+              <select required value={form.course_id} onChange={(event) => setForm({ ...form, course_id: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal">
+                <option value="">Select a programme</option>
+                {courses.map((course) => <option key={course.id} value={course.id}>{course.code} · {course.title}</option>)}
+              </select>
+              {coursesError && <span role="alert" className="mt-1 block text-xs text-red-700">{coursesError}</span>}
+              {!coursesError && !courses.length && <span className="mt-1 block text-xs text-slate-500">{coursesLoading ? 'Loading active programmes…' : 'No active programmes are available. Contact ICT support.'}</span>}
             </label>
           </div>
           <label className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-5 text-amber-950">

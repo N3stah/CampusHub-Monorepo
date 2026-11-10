@@ -1,11 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import PortalShell from '@/components/PortalShell';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
+import { resolveMediaUrl } from '@/lib/media';
 import type { User } from '@/types';
 import type { Enrollment, Placement, StudentApplication } from '@/types/portal';
 
@@ -35,10 +37,13 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [profilePictureUrl, setProfilePictureUrl] = useState<string | null>(null);
+  const [uploadingPicture, setUploadingPicture] = useState(false);
 
   const loadProfile = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await api.get<EditableProfile>('/auth/me/', { signal });
+      const response = await api.get<EditableProfile & { profile_picture_url?: string | null }>('/auth/me/', { signal });
+      setProfilePictureUrl(response.data.profile_picture_url ?? null);
       setProfile({
         first_name: response.data.first_name ?? '',
         last_name: response.data.last_name ?? '',
@@ -54,6 +59,34 @@ export default function ProfilePage() {
       if (!signal?.aborted) setLoading(false);
     }
   }, []);
+
+  async function uploadProfilePicture(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setError('Choose an image file for your profile picture.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Profile pictures must be 5 MB or smaller.');
+      return;
+    }
+    setUploadingPicture(true);
+    setError(null);
+    setNotice(null);
+    const formData = new FormData();
+    formData.append('profile_picture', file);
+    try {
+      const response = await api.post<{ profile_picture_url: string | null }>('/auth/me/profile-picture/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setProfilePictureUrl(response.data.profile_picture_url);
+      setNotice('Your profile picture was updated.');
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError));
+    } finally {
+      setUploadingPicture(false);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -116,6 +149,8 @@ export default function ProfilePage() {
     setProfile((current) => ({ ...current, [field]: value }));
   }
 
+  const profileImageSrc = resolveMediaUrl(profilePictureUrl);
+
   return (
     <PortalShell>
       <section className="mx-auto max-w-3xl space-y-5">
@@ -136,6 +171,15 @@ export default function ProfilePage() {
             <button type="button" onClick={() => { setLoading(true); void loadProfile(); }} className="mt-2 font-semibold underline">Try again</button>
           </div>
         )}
+
+        <section aria-label="Profile picture" className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          {profileImageSrc ? <Image src={profileImageSrc} alt="Your profile" width={64} height={64} unoptimized className="h-16 w-16 rounded-full object-cover" /> : <span aria-hidden="true" className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-lg font-bold text-blue-700">{`${user?.first_name[0] ?? ''}${user?.last_name[0] ?? ''}`.toUpperCase()}</span>}
+          <div className="min-w-0 flex-1"><h2 className="font-semibold">Profile picture</h2><p className="mt-1 text-sm text-slate-500">Choose an image up to 5 MB. Your image is resized for your account.</p></div>
+          <label className="cursor-pointer rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            {uploadingPicture ? 'Uploading…' : 'Upload image'}
+            <input type="file" accept="image/*" disabled={uploadingPicture} onChange={(event) => { void uploadProfilePicture(event.target.files?.[0]); event.currentTarget.value = ''; }} className="sr-only" />
+          </label>
+        </section>
 
         {loading ? (
           <p role="status" className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading your profile…</p>
