@@ -1,6 +1,12 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+import uuid
+from datetime import timedelta
 from django.utils import timezone
+
+def default_password_reset_expiration():
+    return timezone.now() + timedelta(hours=24)
+
 
 
 class UserManager(BaseUserManager):
@@ -124,23 +130,15 @@ class AuditEvent(models.Model):
     def __str__(self):
         return f'{self.action}: {self.description[:80]}'
 
-
-class PasswordResetOTP(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_reset_otps')
-    code_hash = models.CharField(max_length=128)
+class PasswordResetToken(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_reset_tokens')
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField()
-    attempts = models.PositiveSmallIntegerField(default=0)
-    consumed_at = models.DateTimeField(null=True, blank=True)
-
-    @property
-    def is_usable(self):
-        return (
-            self.consumed_at is None
-            and self.expires_at > timezone.now()
-            and self.attempts < 5
-        )
+    used_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(default=default_password_reset_expiration)
 
     class Meta:
         ordering = ['-created_at']
-        indexes = [models.Index(fields=['user', '-created_at'])]
+
+    def is_valid(self):
+        return self.used_at is None and timezone.now() < self.expires_at
