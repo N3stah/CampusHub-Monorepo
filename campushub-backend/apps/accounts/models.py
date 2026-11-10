@@ -37,6 +37,11 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    INVITATION_EMAIL_STATUS_CHOICES = [
+        ('not_sent', 'Not sent'),
+        ('sent', 'Sent'),
+        ('failed', 'Failed'),
+    ]
     ROLE_CHOICES = [
         ('student', 'Student'),
         ('lecturer', 'Lecturer'),
@@ -70,6 +75,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     bio          = models.TextField(blank=True)
     office_hours = models.CharField(max_length=200, blank=True)
     is_active    = models.BooleanField(default=True)
+    must_change_password = models.BooleanField(default=False)
+    initial_password_expires_at = models.DateTimeField(null=True, blank=True)
+    invitation_email_status = models.CharField(
+        max_length=16,
+        choices=INVITATION_EMAIL_STATUS_CHOICES,
+        default='not_sent',
+    )
     is_staff     = models.BooleanField(default=False)
     date_joined  = models.DateTimeField(auto_now_add=True)
     profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True)

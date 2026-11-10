@@ -8,6 +8,15 @@ JWT_SECRET = config('JWT_SECRET', default=SECRET_KEY)
 JWT_ACCESS_MINUTES = config('JWT_ACCESS_MINUTES', default=30, cast=int)
 JWT_REFRESH_DAYS = config('JWT_REFRESH_DAYS', default=7, cast=int)
 
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=15, cast=int)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=EMAIL_HOST_USER)
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -27,6 +36,10 @@ INSTALLED_APPS = [
     'apps.messaging',
     'apps.common',
     'apps.ai',
+    'apps.admissions',
+    'apps.finance',
+    'apps.library',
+    'apps.hostels',
 ]
 
 MIDDLEWARE = [

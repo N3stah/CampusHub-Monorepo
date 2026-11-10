@@ -7,6 +7,7 @@ import PortalShell from '@/components/PortalShell';
 import { getApiErrorMessage, getApiPage, getDepartmentName } from '@/lib/portal';
 import type { Lecturer, School } from '@/types/portal';
 import { useAuth } from '@/context/AuthContext';
+import type { User } from '@/types';
 
 interface LecturerForm {
   first_name: string;
@@ -18,7 +19,6 @@ interface LecturerForm {
   title: string;
   bio: string;
   office_hours: string;
-  password: string;
 }
 
 interface DepartmentOption {
@@ -41,7 +41,6 @@ const emptyForm: LecturerForm = {
   title: '',
   bio: '',
   office_hours: '',
-  password: '',
 };
 
 export default function LecturersPage() {
@@ -55,6 +54,7 @@ export default function LecturersPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeKind, setNoticeKind] = useState<'success' | 'warning'>('success');
   const canManageLecturers = user?.role === 'admin';
 
   useEffect(() => {
@@ -103,7 +103,6 @@ export default function LecturersPage() {
       title: lecturer.title ?? '',
       bio: lecturer.bio ?? '',
       office_hours: lecturer.office_hours ?? '',
-      password: '',
     });
     setFormError(null);
     setIsFormOpen(true);
@@ -113,22 +112,26 @@ export default function LecturersPage() {
     event.preventDefault();
     setSaving(true);
     setFormError(null);
-    const { password, school_id, department, ...lecturerData } = form;
+    const { school_id, department, ...lecturerData } = form;
     void school_id;
     const payload = {
       ...lecturerData,
       role: 'lecturer',
       department: department ? Number(department) : null,
-      ...(password ? { password } : {}),
     };
 
     try {
       if (editingLecturer) {
         await api.patch(`/lecturers/${editingLecturer.id}/`, payload);
         setNotice('Lecturer details updated.');
+        setNoticeKind('success');
       } else {
-        await api.post('/lecturers/', { ...payload, password });
-        setNotice('Lecturer account created.');
+        const { data } = await api.post<User & { welcome_email_status?: string }>('/lecturers/', { ...payload, send_welcome_email: true });
+        const emailSent = data.welcome_email_status === 'sent';
+        setNotice(emailSent
+          ? 'Lecturer account created and initial sign-in email submitted.'
+          : 'Lecturer account created, but the sign-in email could not be sent. Check Gmail SMTP configuration and resend from User accounts.');
+        setNoticeKind(emailSent ? 'success' : 'warning');
       }
       setEditingLecturer(null);
       setIsFormOpen(false);
@@ -147,6 +150,7 @@ export default function LecturersPage() {
     try {
       await api.patch(`/lecturers/${lecturer.id}/`, { is_active: false });
       setNotice('Lecturer account deactivated.');
+      setNoticeKind('success');
       setRefreshKey((key) => key + 1);
     } catch (error) {
       setFormError(getApiErrorMessage(error));
@@ -159,6 +163,7 @@ export default function LecturersPage() {
     try {
       await api.patch(`/lecturers/${lecturer.id}/`, { is_active: true });
       setNotice('Lecturer account reactivated.');
+      setNoticeKind('success');
       setRefreshKey((key) => key + 1);
     } catch (error) {
       setFormError(getApiErrorMessage(error));
@@ -191,7 +196,7 @@ export default function LecturersPage() {
     <PortalShell roles={['admin']}>
       <div className="space-y-4">
         {notice && (
-          <div role="status" className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <div role="status" className={`flex items-center justify-between gap-3 rounded-xl border p-4 text-sm ${noticeKind === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
             <p>{notice}</p>
             <button type="button" onClick={() => setNotice(null)} className="font-semibold">Dismiss</button>
           </div>
@@ -321,11 +326,6 @@ export default function LecturersPage() {
                 <label className="text-sm font-medium text-slate-700">Username
                   <input required autoComplete="username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
                 </label>
-                {!editingLecturer && (
-                  <label className="text-sm font-medium text-slate-700">Initial password
-                    <input required type="password" autoComplete="new-password" minLength={8} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
-                  </label>
-                )}
                 <label className="text-sm font-medium text-slate-700">School
                   <select required value={form.school_id} onChange={(event) => setForm({ ...form, school_id: event.target.value, department: '' })} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100">
                     <option value="">Choose school</option>
