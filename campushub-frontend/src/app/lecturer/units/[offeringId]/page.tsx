@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import PortalShell from '@/components/PortalShell';
+import AtRiskStudentsPanel from '@/components/AtRiskStudentsPanel';
 import api from '@/lib/api';
 import { downloadBlob, getDownloadFilename } from '@/lib/application-files';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
@@ -355,6 +356,8 @@ function LecturerUnitContent() {
   const [assignments, setAssignments] = useState<UnitAssignment[]>([]);
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [roster, setRoster] = useState<CourseRosterEntry[]>([]);
+  const [prefectStatus, setPrefectStatus] = useState<Record<number, boolean>>({});
+  const [prefectSaving, setPrefectSaving] = useState<number | null>(null);
   const [groups, setGroups] = useState<UnitGroupSet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -626,6 +629,22 @@ function LecturerUnitContent() {
     }
   }
 
+  async function toggleClassPrefect(student: CourseRosterEntry) {
+    setPrefectSaving(student.id);
+    setFormError(null);
+    try {
+      const response = await api.patch<{ is_class_prefect: boolean }>(
+        `/academics/enrollments/${student.id}/prefect/`,
+      );
+      setPrefectStatus((current) => ({ ...current, [student.id]: response.data.is_class_prefect }));
+      setNotice(`${student.student_name} ${response.data.is_class_prefect ? 'is now' : 'is no longer'} a class prefect.`);
+    } catch (requestError) {
+      setFormError(getApiErrorMessage(requestError));
+    } finally {
+      setPrefectSaving(null);
+    }
+  }
+
   const filteredRoster = roster.filter((student) => (
     `${student.student_name} ${student.admission_number ?? ''} ${student.course_code ?? ''} ${student.course_title ?? ''}`.toLowerCase().includes(rosterSearch.trim().toLowerCase())
   ));
@@ -756,12 +775,13 @@ function LecturerUnitContent() {
                 <div><h2 id="unit-roster-heading" className="font-semibold">Students in this unit</h2><p className="mt-1 text-xs text-slate-500">Active students enrolled in {unit.course_code}.</p></div>
                 <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{roster.length}</span>
               </div>
+              {activeTab === 'students' && <AtRiskStudentsPanel offeringId={offeringId} />}
               {roster.length > 0 && <div className="border-b border-slate-100 p-4"><label className="block text-sm font-medium text-slate-700">Search by name, registration number, or course<input type="search" value={rosterSearch} onChange={(event) => { setRosterSearch(event.target.value); setRosterPage(1); }} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 sm:max-w-sm" /></label><p className="mt-2 text-xs text-slate-500">{filteredRoster.length} students · showing {filteredRoster.length ? (currentRosterPage - 1) * rosterPageSize + 1 : 0}–{Math.min(currentRosterPage * rosterPageSize, filteredRoster.length)}</p></div>}
               {filteredRoster.length ? (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[36rem] text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3 font-semibold">Student name</th><th className="px-5 py-3 font-semibold">Registration number</th><th className="px-5 py-3 font-semibold">Course</th></tr></thead>
-                    <tbody className="divide-y divide-slate-100">{visibleRoster.map((student) => <tr key={student.student_id}><td className="px-5 py-4 font-medium text-slate-900">{student.student_name}</td><td className="px-5 py-4 text-slate-600">{student.admission_number ?? 'Not provided'}</td><td className="px-5 py-4 text-slate-600">{student.course_code ?? unit.course_code}{student.course_title ? ` · ${student.course_title}` : ''}</td></tr>)}</tbody>
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3 font-semibold">Student name</th><th className="px-5 py-3 font-semibold">Registration number</th><th className="px-5 py-3 font-semibold">Course</th><th className="px-5 py-3 font-semibold">Class role</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">{visibleRoster.map((student) => <tr key={student.student_id}><td className="px-5 py-4 font-medium text-slate-900">{student.student_name}</td><td className="px-5 py-4 text-slate-600">{student.admission_number ?? 'Not provided'}</td><td className="px-5 py-4 text-slate-600">{student.course_code ?? unit.course_code}{student.course_title ? ` · ${student.course_title}` : ''}</td><td className="px-5 py-4"><button type="button" disabled={prefectSaving === student.id} onClick={() => void toggleClassPrefect(student)} className={`rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${prefectStatus[student.id] ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>{prefectSaving === student.id ? 'Saving…' : prefectStatus[student.id] === undefined ? 'Toggle prefect status' : prefectStatus[student.id] ? 'Remove prefect status' : 'Set prefect status'}</button></td></tr>)}</tbody>
                   </table>
                 </div>
               ) : <p className="px-5 py-8 text-center text-sm text-slate-500">{roster.length ? 'No students match your search.' : 'No active students are enrolled in this unit yet.'}</p>}

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
 import api from '@/lib/api';
+import CalendarExportButton from '@/components/CalendarExportButton';
 import type { AcademicUnit, CalendarEvent, CourseAnnouncement, Enrollment, Placement, StudentApplication } from '@/types/portal';
 
 interface StudentAnnouncement extends CourseAnnouncement {
@@ -284,6 +285,7 @@ export default function StudentDashboard() {
             <p className="mt-1 text-xs text-slate-500">Classes and assignment deadlines from your enrolled units.</p>
           </div>
           <div className="flex min-w-0 flex-wrap items-center justify-center gap-1.5 sm:gap-2">
+            <CalendarExportButton />
             <button type="button" aria-label="Previous month" onClick={() => {
               const month = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1);
               navigateMonth(month, month);

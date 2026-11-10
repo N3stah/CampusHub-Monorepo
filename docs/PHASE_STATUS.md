@@ -3,8 +3,7 @@
 > Update this file at the end of every work session.  
 > Format: `[x]` = complete · `[-]` = in progress · `[ ]` = not started
 
-**Last updated:** 2026-10-21 · **Backend:** complete and deployed to Render · **Frontend (Titus):** in progress
-**Last updated:** 2026-11-09 · **Backend:** complete (172 tests, 80% coverage, 26 models, 87+ endpoints, 6 apps) · **Frontend (Titus):** in progress — new module CRUD screens wired to agreed routes; backend endpoints pending
+**Last updated:** 2026-11-10 · **Backend:** complete (172 tests, 80% coverage, 26 models, 87+ endpoints, 6 apps) · **Frontend:** in progress — existing backend workflows integrated; backend endpoint follow-ups remain documented below
 
 | Phase | Slice | Backend (Mark) | Frontend (Titus) | Merged to main |
 |-------|-------|---------------|-------------------|----------------|
@@ -43,19 +42,45 @@
 | P1 | Fix quiz submission edit validation | Move malformed-answer validation outside the JSON decode `except` block in `apps/academics/views.py`. Reject non-dictionaries and invalid/nonexistent question or option values with a structured 400 response and integration tests. |
 | P1 | Preserve accurate assignment submission timestamps | Update `submitted_at` when a file or quiz submission is edited, or add and expose a separate `updated_at` field and UI label. Add tests covering create, edit, and due-date result calculations. |
 | P1 | Verify assignment creation contract for the dedicated frontend route | Confirm the current offering assignment POST endpoint accepts both JSON and multipart payloads, validates lecturer ownership, supported file types and size, quiz questions, due dates and maximum points. Preserve consistent error shapes for frontend display. |
+<<<<<<< Updated upstream
 | P1 | Support lecturers in multiple departments | The deployed model currently stores only one home department through `User.department`. Add a lecturer-department association (or preserve assignments through teaching/unit associations), expose department IDs in lecturer responses and account create/update payloads, and add tests. Frontend already provides one home department and identifies teaching departments separately through unit teaching assignments. |
 | P0 | Persist and return department school relationships | `apps/academics/views.py` currently creates departments without assigning `school_id`, and both department list/detail responses omit the department's school fields. Frontend department creation sends `school_id`, but it is ignored. Add `school_id` handling to create/update/detail/list payloads, validate that the school exists and set `Department.school`, and return at least `school_id` plus `school__name` for every department. Existing departments with a null school must remain detectable and should be assigned by an admin or migration. |
 | P1 | Resolve the academics migration branch | There is an untracked generated merge migration at `campushub-backend/apps/academics/migrations/0014_merge_20261104_1444.py`, joining `0012_enrollment_is_class_prefect` and `0013_preserve_legacy_grade_release_dates`. Run Django migration checks after backend changes are finalized, keep this merge migration only if it is generated consistently, and verify the full migration chain from a clean database. |
 | 5 | Creative features (at-risk, outcomes, ICS, digest) | `[x]` | `[ ]` | `[x]` |
 | 6 | Profile pictures + lecturer placements | `[x]` | `[ ]` | `[x]` |
 | 7 | Messaging (DM + group chat) | `[x]` | `[ ]` | `[x]` |
+=======
+| 5 | At-risk students, placement outcomes, and ICS export | `[x]` | `[x]` | `[x]` |
+| 6 | Profile pictures + lecturer placements | `[x]` | `[x]` | `[x]` |
+| 7 | Messaging (DM + group chat) | `[x]` | `[x]` | `[x]` |
+>>>>>>> Stashed changes
 | Fix | Assignment list leak (security) | `[x]` | n/a | `[x]` |
 | Fix | Users admission/course contract | `[x]` | n/a | `[x]` |
-| Fix | profile_picture_url everywhere + prefect toggle | `[x]` | `[ ]` | `[x]` |
+| Fix | profile_picture_url everywhere + prefect toggle | `[x]` | `[x]` | `[x]` |
 | Upgrade | Next.js 16.4.4 security patch | n/a | `[x]` | `[x]` |
 
 ---
 
+<<<<<<< Updated upstream
+=======
+## Existing backend feature frontend integration
+
+The frontend now consumes the existing backend routes for:
+
+- Lecturer at-risk students and enrollment class-prefect toggling on each offering roster.
+- Department-filtered placement outcomes for placement officers and super admins.
+- Authenticated ICS calendar export from student and lecturer calendars.
+- Profile picture upload through `/auth/me/profile-picture/` using `profile_picture` multipart field.
+- Direct and offering group messaging, including polling, read status, sending, and message deletion.
+- Lecturer accepted-placement outcomes and registrar student onboarding with a required programme (`course_id`).
+
+Backend follow-up: the lecturer offering roster currently omits each enrollment's `is_class_prefect` value. The frontend calls the existing toggle endpoint and reflects the returned state after a change, but cannot display the persisted state on first load. Include `is_class_prefect` in the roster response to make the initial roster state accurate. Continue enforcing all role and ownership rules on the backend; frontend navigation and role filters are not authorization.
+
+---
+
+---
+
+>>>>>>> Stashed changes
 ## Phase 1A — Completed ✅
 
 **Date:** 2026-10-13 (initial) · 2026-10-14 (DRF removed, auth rewritten)
