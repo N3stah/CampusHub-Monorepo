@@ -332,20 +332,16 @@ def resend_user_invitation(request, pk):
         return JsonResponse({'error': 'Reactivate the account before resending its invitation.'}, status=400)
 
     password = secrets.token_urlsafe(24)
-    previous_password = user.password
-    previous_must_change_password = user.must_change_password
-    previous_expiry = user.initial_password_expires_at
-    user.set_password(password)
     sent = send_initial_password(user=user, password=password)
     if sent:
+        user.set_password(password)
         user.must_change_password = True
         user.initial_password_expires_at = timezone.now() + timedelta(hours=48)
-    else:
-        user.password = previous_password
-        user.must_change_password = previous_must_change_password
-        user.initial_password_expires_at = previous_expiry
     user.invitation_email_status = 'sent' if sent else 'failed'
-    user.save(update_fields=['password', 'must_change_password', 'initial_password_expires_at', 'invitation_email_status'])
+    changed_fields = ['invitation_email_status']
+    if sent:
+        changed_fields.extend(['password', 'must_change_password', 'initial_password_expires_at'])
+    user.save(update_fields=changed_fields)
     AuditEvent.objects.create(
         actor=request.user,
         action='user.invitation_resent',
