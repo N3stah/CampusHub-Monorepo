@@ -219,7 +219,7 @@ def _execute_task(user, task_type, params):
     )
     template = TASK_PROMPTS.get(task_type, f"Execute task: {task_type}")
     user_prompt = template.format(**{k: params.get(k, '') for k in params}) if params else template
-    mode = "reasoning" if user.role == "admin" else "chain"
+    mode = 'chain' if user.role == "admin" else "chain"
     router = EnsembleRouter(mode=mode)
     result = router.generate(user_prompt, system_prompt=system_prompt)
     # Log the task
