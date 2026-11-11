@@ -807,24 +807,6 @@ For each route below, decide whether to add a user-facing action and connect it 
 
 ---
 
-### 9. AI Feed & Chat (new surface, backend complete)
-- **Daily feed card:** `GET /api/ai/feed/` — role-specific insights (student: study
-  suggestions/at-risk alerts; lecturer: class overview/intervention suggestions;
-  officer: placement summary; admin: system overview). Cached server-side, so a
-  simple "last updated" card works without client-side caching logic.
-- **Chat panel:** `POST /api/ai/chat/` with `{"message": "..."}` returns
-  `{"conversation_id", "response", "provider"}`. `GET /api/ai/chat/<id>/` for history.
-  A simple chat UI (message list + input) is enough for v1 — no streaming required,
-  the backend returns a complete response per call.
-- **AI tasks:** `GET /api/ai/tasks/` lists what is available for the current role;
-  `POST /api/ai/task/` executes one and returns a **draft only** — e.g. a drafted
-  announcement — which the UI should let the user review and then submit through the
-  *existing* normal endpoint (e.g. the real announcement composer), not a separate
-  auto-publish action. This is deliberate, not a missing feature.
-- **Admin analytics:** `GET /api/ai/analytics/` — a simple stats panel (calls per
-  provider, task success rate) for the admin dashboard.
-
-main
 ### Frontend Fixes Still Needed
 - `<body suppressHydrationWarning>` — Grammarly extension causes hydration mismatch
 - `/dashboard/placments` → `/placements` — URL typo
