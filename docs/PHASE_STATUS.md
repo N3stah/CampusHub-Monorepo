@@ -725,10 +725,11 @@ For each route below, decide whether to add a user-facing action and connect it 
   commented out of `requirements.txt` until there is enough real data to train on)
 - **Zero frontend integration as of this entry** — confirmed by diffing every frontend
   API call against every backend route. See Titus Frontend Guide §9 below.
-- **Model IDs verified (2026-11-07):** the hardcoded model IDs in `router.py`
+- **Model IDs verified (2026-11-11):** the hardcoded model IDs in `router.py`
   (`gemini-3.8-flash`, `z-ai/glm-5.3-flash`, `mistralai/mistral-large-4-1t-a52b`)
-  were confirmed against the live Google AI and NVIDIA NIM catalogs — all three are
+  were confirmed against the live Google AI Studio and NVIDIA NIM catalogs — all three are
   current and valid.
+  Manual API calls verified on Render: Gemini (provider: "gemini" in AI Feed + Chat), NVIDIA GLM (direct API call to integrate.api.nvidia.com succeeded), Mistral (provider: "mistral" in AI Chat + Task). No router.py changes needed.
 
 
 ---
