@@ -927,7 +927,7 @@ Resolved the 500 Internal Server Error when creating assignments as a lecturer, 
 
 ---
 
-## Account provisioning, OTP recovery & Gmail SMTP — 2026-11-10
+## Account provisioning, OTP recovery & Resend email — 2026-11-11
 
 ### Frontend status
 
@@ -935,16 +935,16 @@ Resolved the 500 Internal Server Error when creating assignments as a lecturer, 
 - The Registrar can create a student account at `/registrar/students` after explicitly confirming admission details. The Super Admin account screen creates staff accounts. Both flows request that the API generate initial credentials and email the user; the frontend never generates, displays, or transmits a password.
 - First-login password changes are routed to `/change-password` using the `must_change_password` property returned by `GET /api/auth/me/`. The route guard also applies after a session is restored, not only after an interactive login.
 - `/forgot-password` sends a one-time email code, then confirms the code and new password in a single request. `/reset-password` now directs users to this OTP flow.
-- Gmail SMTP credentials are backend-only configuration. No SMTP secret belongs in frontend environment variables or browser requests.
+- Resend API credentials are backend-only configuration. No email secret belongs in frontend environment variables or browser requests.
 
 ### Backend API implementation status
 
-The backend now provisions initial credentials and sends welcome/OTP mail through the configured Django SMTP backend. Credentials are generated server-side, hashed in the database, and never returned to the frontend. Initial passwords expire after 48 hours and require a first-login change. When SMTP delivery fails, the account remains created and the API returns `welcome_email_status: "failed"` so the operator does not submit a duplicate.
+The backend provisions initial credentials and sends welcome/OTP mail through the configured Django Resend backend. Credentials are generated server-side, hashed in the database, and never returned to the frontend. Initial passwords expire after 48 hours and require a first-login change. When Resend delivery fails, the account remains created and the API returns `welcome_email_status: "failed"` so the operator does not submit a duplicate.
 
 | Purpose | Method and route | Request | Successful response |
 |---|---|---|---|
 | Provision an account | `POST /api/users/` | Account fields plus `send_welcome_email: true`; no password | `201` with created account (never include a password) and `welcome_email_status: "sent"` or `"failed"` |
-| Resend invitation | `POST /api/users/<id>/resend-invitation/` | Super Admin only | Sends a new temporary password if SMTP delivery succeeds; response contains status only |
+| Resend invitation | `POST /api/users/<id>/resend-invitation/` | Super Admin only | Sends a new temporary password if email delivery succeeds; response contains status only |
 | Login profile | `GET /api/auth/me/` | Authenticated | Existing user fields plus `must_change_password` and initial-password expiry |
 | Change first/regular login password | `POST /api/auth/password/change/` | Authenticated `{ "current_password": "...", "new_password": "..." }` | `200` with `must_change_password: false` |
 | Request a recovery code | `POST /api/auth/password/otp/request/` | `{ "email": "..." }` | Generic `200` response regardless of whether an account exists or is eligible |
@@ -958,7 +958,7 @@ Account creation and onboarding:
 2. `POST /api/users/` permits Registrar creation of students only and Super Admin creation of permitted roles; Registrar cannot use the general staff directory. Resend is Super Admin-only.
 3. Generate a random temporary credential, store only Django's password hash, expire it after 48 hours, require a password change at first login, and never return it in JSON, logs, analytics, or audit descriptions.
 4. `POST /api/users/<id>/resend-invitation/` issues a replacement credential only after successful mail delivery. If delivery fails, the prior password remains unchanged.
-5. Delivery status is stored per account and shown on the Super Admin account directory. SMTP acceptance is not a guarantee of inbox delivery; the operator can retry without revealing the credential.
+5. Delivery status is stored per account and shown on the Super Admin account directory. Resend API acceptance is not a guarantee of inbox delivery; the operator can retry without revealing the credential.
 
 OTP recovery requirements:
 
@@ -968,11 +968,11 @@ OTP recovery requirements:
 - Validate the password server-side with the project's password policy and return field-level errors that the frontend can show. JWT refresh/access tokens are stateless and are not currently revoked after a password reset; implement token versioning if immediate session invalidation is required.
 - Audit password reset/change events without recording passwords, OTP values, or sensitive tokens.
 
-Gmail SMTP deployment configuration:
+Resend deployment configuration:
 
-- Configure Django SMTP via `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`, `EMAIL_HOST=smtp.gmail.com`, `EMAIL_PORT=587`, `EMAIL_USE_TLS=true`, `EMAIL_TIMEOUT=15`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and `DEFAULT_FROM_EMAIL`.
-- `EMAIL_HOST_PASSWORD` must be a Google App Password stored only in Render/secret environment configuration; never put it in source control, `.env` committed to git, frontend variables, API payloads, or logs. Enable 2-Step Verification and use a dedicated sending account where possible. Do not use a normal Google account password.
-- Configure and verify the Gmail sender and inbox delivery. Current messages are plain text; do not send credentials in URLs or query strings.
+- Set `RESEND_API_KEY` and `DEFAULT_FROM_EMAIL` in the Render backend environment. The sender must use a domain verified with Resend, including its required DNS records.
+- Keep the API key only in the backend's secret environment configuration; never put it in source control, frontend variables, API payloads, or logs.
+- Current messages are plain text; do not send credentials in URLs or query strings.
 - Provide clear backend health/log signals for mail failures without logging OTPs or credentials; retry mail through an outbox/background job where available.
 
 ### Backend acceptance checklist
@@ -981,7 +981,7 @@ Gmail SMTP deployment configuration:
 2. Tests prove new users receive a hashed temporary credential, `must_change_password=true`, and no credential appears in API output or logs.
 3. Tests prove first login requires password change before accessing protected resources; successful change clears the flag and invalidates prior sessions/tokens as designed.
 4. OTP tests cover generic responses for unknown emails, valid/invalid/expired/replayed codes, expiry, attempt limits, request/resend rate limits, email delivery failure, and reset session invalidation.
-5. Mail tests use a test backend and assert welcome/recovery email content without exposing secrets in logs; deployment smoke-test verifies Gmail SMTP via the configured App Password.
+5. Mail tests use a test backend and assert welcome/recovery email content without exposing secrets in logs; the Resend backend is tested against a mocked API response. Deployment smoke-test still requires a real sender domain and API key.
 6. Add migration/backfill behavior for `must_change_password` so existing users retain access (`false`) while newly provisioned accounts are required to change (`true`).
 
 **Deployment action required:** Add the Gmail sending account and Google App Password to the backend host's secret environment configuration. Enable 2-Step Verification and generate an App Password; do not use or share the normal Google password. Set `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and `DEFAULT_FROM_EMAIL` in Render (or the active backend host), then smoke-test both welcome and OTP email delivery. No SMTP credentials are needed in Vercel/frontend settings.

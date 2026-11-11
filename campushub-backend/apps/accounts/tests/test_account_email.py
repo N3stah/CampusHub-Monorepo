@@ -1,13 +1,18 @@
 import re
 from datetime import timedelta
+from unittest.mock import Mock, patch
 
 import pytest
+import requests
 from django.core import mail
+from django.core.mail import EmailMessage
 from django.test import override_settings
 from django.utils import timezone
 
 from apps.accounts.jwt_utils import make_pair
+from apps.accounts.emailing import send_account_email
 from apps.accounts.models import PasswordResetOTP, User
+from apps.accounts.email_backends import ResendEmailBackend
 
 pytestmark = pytest.mark.django_db
 
@@ -31,8 +36,7 @@ def auth_header(user):
 
 @override_settings(
     EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
-    EMAIL_HOST_USER='campushub@example.test',
-    EMAIL_HOST_PASSWORD='test-app-password',
+    RESEND_API_KEY='re_test-api-key',
     DEFAULT_FROM_EMAIL='campushub@example.test',
 )
 def test_admin_create_sends_random_initial_password_without_returning_it(client):
@@ -65,8 +69,41 @@ def test_admin_create_sends_random_initial_password_without_returning_it(client)
 
 @override_settings(
     EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
-    EMAIL_HOST_USER='campushub@example.test',
-    EMAIL_HOST_PASSWORD='test-app-password',
+    RESEND_API_KEY='re_test-api-key',
+    DEFAULT_FROM_EMAIL='campushub@example.test',
+)
+def test_admin_create_lecturer_sends_initial_password_email(client):
+    admin = create_user('admin@example.test', 'admin', role='admin')
+    response = client.post(
+        '/api/lecturers/',
+        data={
+            'email': 'new-lecturer@example.test',
+            'username': 'new-lecturer',
+            'first_name': 'New',
+            'last_name': 'Lecturer',
+            'role': 'lecturer',
+            'title': 'Lecturer',
+            'send_welcome_email': True,
+        },
+        content_type='application/json',
+        **auth_header(admin),
+    )
+
+    assert response.status_code == 201
+    assert response.json()['welcome_email_status'] == 'sent'
+    assert 'password' not in response.json()
+    account = User.objects.get(email='new-lecturer@example.test')
+    assert account.must_change_password
+    assert account.initial_password_expires_at is not None
+    assert len(mail.outbox) == 1
+    match = re.search(r'Initial password: ([A-Za-z0-9_-]+)', mail.outbox[0].body)
+    assert match
+    assert account.check_password(match.group(1))
+
+
+@override_settings(
+    EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+    RESEND_API_KEY='re_test-api-key',
     DEFAULT_FROM_EMAIL='campushub@example.test',
 )
 def test_admin_can_resend_invitation_without_exposing_password(client):
@@ -84,6 +121,7 @@ def test_admin_can_resend_invitation_without_exposing_password(client):
     assert match and account.check_password(match.group(1))
 
 
+@override_settings(RESEND_API_KEY='', DEFAULT_FROM_EMAIL='')
 def test_resend_failure_does_not_replace_existing_password(client):
     admin = create_user('admin@example.test', 'admin', role='admin')
     account = create_user('student@example.test', 'student')
@@ -104,8 +142,7 @@ def test_non_admin_cannot_resend_invitation(client):
 
 @override_settings(
     EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
-    EMAIL_HOST_USER='campushub@example.test',
-    EMAIL_HOST_PASSWORD='test-app-password',
+    RESEND_API_KEY='re_test-api-key',
     DEFAULT_FROM_EMAIL='campushub@example.test',
 )
 def test_registrar_can_only_create_student_accounts(client):
@@ -145,8 +182,7 @@ def test_registrar_can_only_create_student_accounts(client):
 
 @override_settings(
     EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
-    EMAIL_HOST_USER='campushub@example.test',
-    EMAIL_HOST_PASSWORD='test-app-password',
+    RESEND_API_KEY='re_test-api-key',
     DEFAULT_FROM_EMAIL='campushub@example.test',
 )
 def test_password_otp_can_reset_password_once(client):
@@ -180,8 +216,7 @@ def test_password_otp_can_reset_password_once(client):
 
 @override_settings(
     EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
-    EMAIL_HOST_USER='campushub@example.test',
-    EMAIL_HOST_PASSWORD='test-app-password',
+    RESEND_API_KEY='re_test-api-key',
     DEFAULT_FROM_EMAIL='campushub@example.test',
 )
 def test_expired_password_otp_is_rejected(client):
@@ -253,3 +288,68 @@ def test_expired_initial_password_requires_otp_recovery(client):
     )
     assert response.status_code == 403
     assert 'expired' in response.json()['error'].lower()
+
+
+@override_settings(
+    EMAIL_BACKEND='apps.accounts.email_backends.ResendEmailBackend',
+    RESEND_API_KEY='re_test-api-key',
+    DEFAULT_FROM_EMAIL='CampusHub <noreply@example.test>',
+)
+@patch('apps.accounts.email_backends.requests.post')
+def test_resend_backend_sends_email_via_api(mock_post):
+    mock_post.return_value = Mock(status_code=200)
+    message = EmailMessage(
+        'Test subject',
+        'Plain-text body',
+        to=['student@example.test'],
+    )
+
+    sent_count = ResendEmailBackend().send_messages([message])
+
+    assert sent_count == 1
+    mock_post.assert_called_once_with(
+        'https://api.resend.com/emails',
+        headers={
+            'Authorization': 'Bearer re_test-api-key',
+            'Content-Type': 'application/json',
+        },
+        json={
+            'from': 'CampusHub <noreply@example.test>',
+            'to': ['student@example.test'],
+            'subject': 'Test subject',
+            'text': 'Plain-text body',
+        },
+        timeout=15,
+    )
+
+
+@override_settings(RESEND_API_KEY='re_test-api-key')
+@patch('apps.accounts.email_backends.requests.post')
+def test_resend_backend_raises_for_api_failure(mock_post):
+    mock_post.return_value.raise_for_status.side_effect = requests.HTTPError('API failure')
+    message = EmailMessage('Test subject', 'Body', to=['student@example.test'])
+
+    with pytest.raises(requests.HTTPError):
+        ResendEmailBackend().send_messages([message])
+
+
+@override_settings(
+    EMAIL_BACKEND='apps.accounts.email_backends.ResendEmailBackend',
+    RESEND_API_KEY='re_test-api-key',
+    DEFAULT_FROM_EMAIL='CampusHub <noreply@example.test>',
+)
+@patch('apps.accounts.email_backends.requests.post')
+def test_resend_rejection_logs_response_body(mock_post, caplog):
+    response = Mock(status_code=403, text='{"message":"Sender domain is not verified"}')
+    response.raise_for_status.side_effect = requests.HTTPError(response=response)
+    mock_post.return_value = response
+
+    sent = send_account_email(
+        recipient='student@example.test',
+        subject='Test subject',
+        body='Body',
+    )
+
+    assert not sent
+    assert 'HTTP 403' in caplog.text
+    assert 'Sender domain is not verified' in caplog.text

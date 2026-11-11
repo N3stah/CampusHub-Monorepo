@@ -165,9 +165,13 @@ npm run dev
 
 ### Backend (Render)
 1. Create a Web Service pointing to the `campushub-backend/` directory.
-2. Set the environment variables (see `config/settings/prod.py`).
-3. Render will automatically run `pip install`, `collectstatic`, and `migrate` on deploy.
-4. Do NOT run `seed_data` in production with default passwords. It will refuse to run unless `DEBUG=False` is bypassed with `--force` and `SEED_*_PASSWORD` environment variables are set.
+2. Set the environment variables required by `config/settings/prod.py`, plus:
+   - `RESEND_API_KEY`: API key from Resend.
+   - `DEFAULT_FROM_EMAIL`: sender address on a domain verified with Resend, for example `CampusHub <no-reply@your-domain.com>`.
+3. Verify the sender domain and its DNS records in Resend before sending. Keep the API key only in the Render backend's environment settings; do not put it in the frontend or commit it.
+   Remove any old `EMAIL_BACKEND`, `EMAIL_HOST_*`, or SMTP settings from Render; the application now always uses Resend.
+4. Render will automatically run `pip install`, `collectstatic`, and `migrate` on deploy.
+5. Do NOT run `seed_data` in production with default passwords. It will refuse to run unless `DEBUG=False` is bypassed with `--force` and `SEED_*_PASSWORD` environment variables are set.
 
 > **Security Note:** `seed_data` includes a production guard. It will refuse to run if `DEBUG=False` unless passed `--force`. If forced, it reads passwords from `SEED_*_PASSWORD` environment variables instead of hard-coded defaults. Demo accounts are for local/dev use only.
 

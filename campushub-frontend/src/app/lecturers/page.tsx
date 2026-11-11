@@ -130,7 +130,7 @@ export default function LecturersPage() {
         const emailSent = data.welcome_email_status === 'sent';
         setNotice(emailSent
           ? 'Lecturer account created and initial sign-in email submitted.'
-          : 'Lecturer account created, but the sign-in email could not be sent. Check Gmail SMTP configuration and resend from User accounts.');
+          : 'Lecturer account created, but the sign-in email could not be sent. Check Resend configuration and resend from User accounts.');
         setNoticeKind(emailSent ? 'success' : 'warning');
       }
       setEditingLecturer(null);
