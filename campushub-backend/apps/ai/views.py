@@ -226,7 +226,7 @@ def _execute_task(user, task_type, params):
     AITaskLog.objects.create(
         user=user, task_type=task_type,
         input_summary=_json.dumps(params, default=str)[:500],
-        output_summary=result['content'][:500],
+        output_summary=(result.get('content') or '')[:500],
         provider=result['provider'], success=result['error'] is None,
     )
     return result
