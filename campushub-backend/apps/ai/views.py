@@ -124,7 +124,7 @@ def ai_chat(request):
     # Save AI response
     ai_msg = AIMessage.objects.create(
         conversation=conv, role='assistant',
-        content=result['content'], ai_provider=result['provider'],
+        content=(result.get('content') or ''), ai_provider=result.get('provider', 'unknown'),
     )
 
     return JsonResponse({
@@ -265,7 +265,7 @@ def ai_task_execute(request):
     result = _execute_task(user, task_type, params)
     return JsonResponse({
         'task_type': task_type,
-        'draft': result['content'],
+        'draft': result.get('content'),
         'provider': result['provider'],
         'warning': 'This is a DRAFT. Review and apply through the existing endpoint.',
     })
