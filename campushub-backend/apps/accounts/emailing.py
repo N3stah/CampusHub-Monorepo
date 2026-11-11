@@ -1,6 +1,6 @@
 import logging
-import smtplib
 
+import requests
 from django.conf import settings
 from django.core.mail import send_mail
 
@@ -8,8 +8,8 @@ logger = logging.getLogger(__name__)
 
 
 def send_account_email(*, recipient: str, subject: str, body: str) -> bool:
-    if not settings.EMAIL_HOST_USER or not settings.EMAIL_HOST_PASSWORD or not settings.DEFAULT_FROM_EMAIL:
-        logger.error('Email delivery is not configured; account email was not sent.')
+    if not settings.RESEND_API_KEY or not settings.DEFAULT_FROM_EMAIL:
+        logger.error('Resend email delivery is not configured; account email was not sent.')
         return False
 
     try:
@@ -20,12 +20,23 @@ def send_account_email(*, recipient: str, subject: str, body: str) -> bool:
             [recipient],
             fail_silently=False,
         )
-    except (smtplib.SMTPException, OSError, ValueError):
-        logger.exception('SMTP account email delivery failed.')
+    except requests.HTTPError as error:
+        response = error.response
+        if response is not None:
+            logger.error(
+                'Resend rejected account email with HTTP %s: %s',
+                response.status_code,
+                response.text[:1000],
+            )
+        else:
+            logger.exception('Resend account email delivery failed.')
+        return False
+    except (requests.RequestException, OSError, ValueError):
+        logger.exception('Resend account email delivery failed.')
         return False
 
     if sent_count != 1:
-        logger.error('SMTP backend did not confirm account email delivery.')
+        logger.error('Resend backend did not confirm account email delivery.')
         return False
     return True
 

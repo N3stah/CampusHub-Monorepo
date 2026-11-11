@@ -139,7 +139,7 @@ export default function UsersPage() {
         setNotice(`A new initial sign-in email was submitted for ${account.email}.`);
         setNoticeKind('success');
       } else {
-        setNotice(`Email delivery failed for ${account.email}. Check the Gmail SMTP configuration and retry. The password was not shown.`);
+        setNotice(`Email delivery failed for ${account.email}. Check the Resend API key and verified sender configuration, then retry. The password was not shown.`);
         setNoticeKind('warning');
       }
       setRefreshKey((key) => key + 1);
