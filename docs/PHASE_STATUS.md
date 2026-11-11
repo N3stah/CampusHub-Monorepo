@@ -984,5 +984,33 @@ Resend deployment configuration:
 5. Mail tests use a test backend and assert welcome/recovery email content without exposing secrets in logs; the Resend backend is tested against a mocked API response. Deployment smoke-test still requires a real sender domain and API key.
 6. Add migration/backfill behavior for `must_change_password` so existing users retain access (`false`) while newly provisioned accounts are required to change (`true`).
 
-**Deployment action required:** Add the Resend API key and a verified-domain sender as `RESEND_API_KEY` and `DEFAULT_FROM_EMAIL` in the Render backend environment, then smoke-test both welcome and OTP email delivery. No email credentials are needed in Vercel/frontend settings.
-**Local validation:** Account email/OTP tests use Django's in-memory email backend, and the Resend transport is covered with mocked API responses. Live Resend delivery still requires Render configuration.
+**Deployment action required:** Add the Gmail sending account and Google App Password to the backend host's secret environment configuration. Enable 2-Step Verification and generate an App Password; do not use or share the normal Google password. Set `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and `DEFAULT_FROM_EMAIL` in Render (or the active backend host), then smoke-test both welcome and OTP email delivery. No SMTP credentials are needed in Vercel/frontend settings.
+**Local validation:** The new account email/OTP tests use Django's in-memory email backend. Deployment to Gmail has not been tested until the host's App Password is configured.
+
+## Full capstone audit, OTP fixes & deliverables — 2026-11-11
+
+### Audit and fixes
+
+- The preceding Titus-authored feature change imported `PasswordResetOTP` without defining its model class. Backend hotfix `87a29bf` added the model, merged the two account migration branches in `0010_merge_20261111_0937.py`, and mounted the password change and OTP request/confirm URLs.
+- The OTP confirmation view called `is_usable`, but the model exposes `is_valid()`. Both valid and expired OTP submissions therefore raised `AttributeError`; the view now calls the model's validity method.
+- Invitation resend tests inherited this machine's email configuration and attempted a real configured mail backend. Test settings now explicitly use the in-memory backend with no credentials, while the invitation view only changes the password after mail succeeds.
+- Django system check: no issues (two configured/silenced checks). `makemigrations --check --dry-run`: no changes detected.
+- Final backend test suite: **275 passed**. Coverage: **69.7%** (70% rounded), above the 60% capstone threshold.
+- OpenAPI now has **119 paths and 186 operations**, with no missing, stale, or unsupported routes compared with Django's URL resolver.
+
+### Migration history
+
+The accounts `0008` files are independent branches and are joined by migration `0010`; the deployed history is functional and migration drift is clean. Renumbering the branch files and merge is deferred because Render may already have recorded those migration names. The academics app also has duplicate `0012` and `0014` sequence numbers with merge/reconciliation migrations; do not rename applied migrations without checking the deployed migration table and a restore plan.
+
+### Documentation and delivery status
+
+- `docs/ERD.md` now documents the 45 concrete CampusHub model tables, two implicit many-to-many tables, the current user roles and onboarding fields, the academic period additions, and normalization/anomaly analysis.
+- `campushub-backend/docs/openapi.json`, the root README, `.env.example`, and the account migration notes were refreshed. `REFLECTION.md` has been added.
+- The four required 3+ table SQL queries and the Postman authentication collection are present.
+- The examinations frontend remains a local-data prototype with no backend endpoint. The backend still uses one all-powerful `admin` role while the frontend labels it Super Admin and separates ICT Admin; this is a design mismatch to resolve with the team, not changed in this audit.
+- Backend feature tests are absent for admissions, finance, hostels, and library. OTP attempt count is tracked but a five-attempt lockout is not enforced. The SOLID service layer is partial (`ApplicationService` and `NotificationService` exist; `common/service_api.py` provides shared helpers, not a `ResourceService`).
+- The defense slide deck remains a separate deliverable and is not in the repository.
+
+### Deployment check
+
+The frontend URL returned HTTP 200. The first Render API health request timed out, but a retry returned HTTP 200 with `{"status":"ok"}`. Both supplied deployment URLs responded successfully on retry.

@@ -14,3 +14,4 @@ campushub-frontend/.env*.local
 media/
 *.pdf
 .vscode/
+FETCH_HEAD

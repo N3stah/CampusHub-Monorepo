@@ -241,7 +241,7 @@ def password_otp_confirm(request):
             user=user,
             consumed_at__isnull=True,
         ).first()
-        if not reset_code or not reset_code.is_usable:
+        if not reset_code or not reset_code.is_valid():
             return JsonResponse({'error': 'Invalid or expired verification code.'}, status=400)
         if not check_password(otp, reset_code.code_hash):
             reset_code.attempts += 1

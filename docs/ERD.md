@@ -3,7 +3,7 @@
 **Project:** CampusHub — University Departmental Resource & Placement Portal
 **Stack:** Plain Django (no DRF) + PyJWT · PostgreSQL 18 · Next.js (App Router)
 **Internship:** Spin Mobile LLC — 12-Week Roadmap (Aug 17 – Nov 6, 2026)
-**ERD Version:** v3.0 · **Date:** 2026-11-02
+**ERD Version:** v5.0 · **Date:** 2026-11-11
 **Authors:** Mark Manoti (N3stah) · Titus
 
 > This document matches the models on `main`. Table names are the real Django table names
@@ -20,6 +20,7 @@
 6. [Raw SQL Queries](#6-raw-sql-queries)
 7. [Design Decisions](#7-design-decisions)
 8. [Known Limitations](#8-known-limitations)
+9. [v5.0 Additions and Full-Schema Normalization](#9-v50-additions-and-full-schema-normalization)
 
 ---
 
@@ -27,7 +28,7 @@
 
 | # | Table | Purpose | Key Relationships |
 |---|-------|---------|-------------------|
-| 1 | `accounts_user` | Custom Django user (4 roles) | Central node, links to everything |
+| 1 | `accounts_user` | Custom Django user (11 roles) | Central node, links to everything |
 | 2 | `academics_department` | Academic departments (CS, EE, …) | 1:N to Course, 1:N to User |
 | 3 | `academics_course` | Courses offered per department | 1:N from Department, N:M to User via Enrollment |
 | 4 | `academics_enrollment` | N:M bridge: Student ↔ Course | FK to User + Course |
@@ -50,7 +51,7 @@
 | 21 | `academics_lesson` | Scheduled lesson | FK to Offering |
 | 22 | `academics_attendancerecord` | Per-student attendance | FK to ClassSession + Student |
 
-**Total tables:** 22 (10 original + 12 new academic models, plus Django's own auth/session/migration tables, not documented here).
+**v3 baseline:** 22 model tables. The current schema contains 45 concrete CampusHub model tables plus two implicit many-to-many link tables (47 CampusHub tables total), excluding Django framework tables.
 **Relationship types exercised:** 1:N (Department → Course), N:M (Student ↔ Course via Enrollment), and a role discriminator on User.
 
 ---
@@ -202,7 +203,7 @@ Extends `AbstractBaseUser` + `PermissionsMixin`. `AUTH_USER_MODEL = 'accounts.Us
 | username | CharField(50) | VARCHAR(50) | UNIQUE, NOT NULL | Display name |
 | first_name | CharField(100) | VARCHAR(100) | NOT NULL | |
 | last_name | CharField(100) | VARCHAR(100) | NOT NULL | |
-| role | CharField(20) | VARCHAR(20) | NOT NULL, choices | student, lecturer, officer, admin |
+| role | CharField(20) | VARCHAR(20) | NOT NULL, choices | student, lecturer, officer, admin, ict_admin, registrar, finance, hod, examination, librarian, hostel |
 | department_id | ForeignKey(Department) | BIGINT | FK, NULL, SET_NULL | NULL for admins/officers with no department |
 | gpa | DecimalField(3,2) | NUMERIC(3,2) | NULL | Students only, 0.00–4.00. Admin-editable only |
 | phone_number | CharField(20) | VARCHAR(20) | NOT NULL, blank allowed | Empty string when not provided |
@@ -210,6 +211,9 @@ Extends `AbstractBaseUser` + `PermissionsMixin`. `AUTH_USER_MODEL = 'accounts.Us
 | bio | TextField | TEXT | blank allowed | Lecturer biography |
 | office_hours | CharField(200) | VARCHAR(200) | blank allowed | Lecturer contact hours |
 | is_active | BooleanField | BOOLEAN | DEFAULT TRUE | Controls login access |
+| must_change_password | BooleanField | BOOLEAN | DEFAULT FALSE | Blocks protected routes until initial password change |
+| initial_password_expires_at | DateTimeField | TIMESTAMPTZ | NULL | Temporary initial password expiry |
+| invitation_email_status | CharField(16) | VARCHAR(16) | DEFAULT `not_sent` | `not_sent`, `sent`, or `failed` |
 | is_staff | BooleanField | BOOLEAN | DEFAULT FALSE | Django admin access |
 | date_joined | DateTimeField | TIMESTAMPTZ | auto_now_add | |
 | last_login | DateTimeField | TIMESTAMPTZ | NULL | Maintained by Django auth |
@@ -220,7 +224,7 @@ Constraints:
 UNIQUE (email)
 UNIQUE (username)
 CHECK (gpa >= 0.00 AND gpa <= 4.00 OR gpa IS NULL)               -- user_gpa_range
-CHECK (role IN ('student', 'lecturer', 'officer', 'admin'))      -- user_valid_role
+CHECK (role IN ('student', 'lecturer', 'officer', 'admin', 'ict_admin', 'registrar', 'finance', 'hod', 'examination', 'librarian', 'hostel')) -- user_valid_role
 ```
 
 ### 3.2 `academics_department`
@@ -562,23 +566,24 @@ Every column holds an atomic value and there are no repeating groups.
 - `Enrollment` bridges the N:M relationship between students and courses instead of storing a list of courses on User.
 - `Placement.requirements` is one text block. Filterable skill tags would need a `Skill` table and a bridge table, which is an optional stretch goal.
 
-**Status:** all 10 tables are in 1NF.
+**Status:** the relational columns of the current schema are in 1NF. The `allowed_file_types` list on Assignment and the JSON payload on AIInsight are intentional semi-structured fields; see §9 for their limitations.
 
 ### 5.2 Second Normal Form (2NF)
 
-Every non-key column depends on the whole key. The only table with a meaningful composite uniqueness rule is `Enrollment(student_id, course_id)`. It uses a surrogate primary key (`id`), and `enrolled_at` and `status` both describe the student-course pair as a whole, so there is no partial dependency.
+Every concrete model table uses a surrogate primary key (`id`), so no non-key attribute can depend on only part of a composite primary key. Business uniqueness is enforced separately with unique constraints, including active student Enrollment and student/period/Unit Registration.
 
-**Status:** all 10 tables are in 2NF.
+**Status:** all 45 concrete CampusHub model tables are in 2NF. The two implicit many-to-many link tables use their complete FK pair as the relationship key.
 
 ### 5.3 Third Normal Form (3NF)
 
 No non-key column depends on another non-key column.
 
 - **Course and Department:** a course stores only `department_id`. Anything about the department (its name, its head) is reached by a join, so nothing about the department is repeated on Course.
-- **Application:** `reviewed_at` and `reviewed_by_id` are only filled once a status changes. That is a business rule, not a transitive dependency.
+- **Placement Application:** review state is attached to the application, not duplicated on Placement or User.
+- **Finance, Library and Hostel records:** each stores foreign keys to the authoritative student, book, invoice, room, or parent record rather than copying its descriptive attributes.
 - **User.gpa:** GPA describes the student and does not depend on `department_id` or `role`. A `StudentProfile` table would avoid NULLs for non-students. We kept GPA on User for simplicity, which is a documented design choice (see section 7).
 
-**Status:** all 10 tables are in 3NF, with one acknowledged choice (`gpa` on User).
+**Status:** the relational columns in the current schema satisfy 3NF, with acknowledged design choices for `gpa` on User and semi-structured JSON/list fields noted in §9.
 
 ### 5.4 Anomaly elimination
 
@@ -755,3 +760,162 @@ Every administrative write records who did what, which gives the admin log endpo
 - Rate limiting uses django-ratelimit with the default cache, so limits are per worker process, not global.
 - GPA lives on User. A `StudentProfile` table is a possible later refactor.
 - There is no `semester` on Enrollment, so a student cannot re-enrol in the same course in a later term.
+
+## 9. v5.0 Additions and Full-Schema Normalization
+
+The v5.0 audit compared the ERD with the Django models on 2026-11-11. The original 22 model tables remain; 23 concrete model tables have since been added. The schema now has 45 concrete CampusHub model tables and two implicit many-to-many link tables. Framework-owned Django tables are not included.
+
+### 9.1 v5.0 entity overview
+
+| # | Table | Purpose and key relationships |
+|---|---|---|
+| 23 | `academics_academicperiod` | Academic year/period; parent of Registration and Offering |
+| 24 | `academics_registration` | Student-to-Unit registration in an AcademicPeriod |
+| 25 | `accounts_passwordresettoken` | One-time reset token owned by User |
+| 26 | `accounts_passwordresetotp` | Hashed, expiring one-time recovery code owned by User |
+| 27 | `admissions_application` | Applicant admission request for an academics Course |
+| 28 | `finance_feestructure` | Programme/year fee definition |
+| 29 | `finance_invoice` | Student invoice for a FeeStructure |
+| 30 | `finance_payment` | Payment record against an Invoice |
+| 31 | `finance_paymentreversal` | Audited one-to-one reversal of Payment |
+| 32 | `finance_paymentrequest` | Student payment request against Invoice |
+| 33 | `hostels_hostel` | Hostel inventory and capacity |
+| 34 | `hostels_room` | Room within a Hostel |
+| 35 | `hostels_allocation` | Student allocation/request for a Room |
+| 36 | `library_book` | Library catalogue item |
+| 37 | `library_loan` | Student loan of a Book |
+| 38 | `library_reservation` | Student reservation of a Book |
+| 39 | `messaging_conversation` | Direct or Offering-linked group conversation |
+| 40 | `messaging_conversationparticipant` | User membership and read state in a Conversation |
+| 41 | `messaging_message` | Message and sender within a Conversation |
+| 42 | `ai_conversation` | User-owned AI chat and role context |
+| 43 | `ai_message` | User/assistant message within an AIConversation |
+| 44 | `ai_insight` | User-owned generated insight |
+| 45 | `ai_task_log` | AI task execution summary, optionally linked to User |
+
+`academics_unit_departments` and `academics_studentgroup_members` are implicit many-to-many join tables for `Unit.departments` and `StudentGroup.members`.
+
+### 9.2 v5.0 relationship additions (Mermaid)
+
+```mermaid
+erDiagram
+    USER ||--o{ PASSWORD_RESET_TOKEN : owns
+    USER ||--o{ PASSWORD_RESET_OTP : owns
+    COURSE ||--o{ ADMISSION_APPLICATION : receives
+    COURSE ||--o{ FEE_STRUCTURE : defines
+    FEE_STRUCTURE ||--o{ INVOICE : bills
+    USER ||--o{ INVOICE : owes
+    INVOICE ||--o{ PAYMENT : receives
+    PAYMENT ||--o| PAYMENT_REVERSAL : reversed_by
+    INVOICE ||--o{ PAYMENT_REQUEST : requested_for
+    USER ||--o{ PAYMENT_REQUEST : requests
+    HOSTEL ||--o{ ROOM : contains
+    ROOM ||--o{ ALLOCATION : assigned
+    USER ||--o{ ALLOCATION : receives
+    BOOK ||--o{ LOAN : checked_out
+    USER ||--o{ LOAN : borrows
+    BOOK ||--o{ RESERVATION : reserved
+    USER ||--o{ RESERVATION : places
+    ACADEMIC_PERIOD ||--o{ REGISTRATION : groups
+    UNIT ||--o{ REGISTRATION : registered
+    USER ||--o{ REGISTRATION : registers
+    OFFERING ||--o{ CONVERSATION : hosts
+    CONVERSATION ||--o{ CONVERSATION_PARTICIPANT : includes
+    USER ||--o{ CONVERSATION_PARTICIPANT : joins
+    CONVERSATION ||--o{ MESSAGE : contains
+    USER ||--o{ MESSAGE : sends
+    USER ||--o{ AI_CONVERSATION : starts
+    AI_CONVERSATION ||--o{ AI_MESSAGE : contains
+    USER ||--o{ AI_INSIGHT : receives
+    USER o|--o{ AI_TASK_LOG : triggers
+    DEPARTMENT }o--o{ UNIT : offers
+    STUDENT_GROUP }o--o{ USER : members
+```
+
+### 9.3 v5.0 table definitions
+
+| Table | Columns and relationships |
+|---|---|
+| `academics_academicperiod` | `name`, `academic_year`, `start_date`, `end_date`, `status`, `is_current`, `created_at`; partial unique constraint permits one current period. |
+| `academics_registration` | FKs `student_id`, `academic_period_id`, `unit_id`; `status`, `registered_on`, timestamps; unique student/period/Unit. |
+| `accounts_passwordresettoken` | FK `user_id`; unique UUID `token`, `created_at`, nullable `used_at`, `expires_at`. |
+| `accounts_passwordresetotp` | FK `user_id`; `code_hash`, `created_at`, `expires_at`, `attempts`, nullable `consumed_at`. |
+| `admissions_application` | Applicant name, email and phone; FK `programme_id` to Course; `status`, `notes`, timestamps; unique email/programme. |
+| `finance_feestructure` | FK `programme_id` to Course; `name`, `academic_year`, `amount`, optional `due_date`, `status`, `created_at`; unique name/programme/year. |
+| `finance_invoice` | FK `student_id` to User and `fee_structure_id`; unique generated `invoice_number`, `amount`, `due_date`, `status`, `description`, timestamps. |
+| `finance_payment` | FK `invoice_id`; `amount`, `method`, unique `reference`, `paid_at`, `status`, `created_at`. |
+| `finance_paymentreversal` | One-to-one FK `payment_id`, FK `actor_id` to User; `reason`, `created_at`. |
+| `finance_paymentrequest` | FKs `invoice_id`, `student_id`; `method`, `phone_number`, `status`, `created_at`. |
+| `hostels_hostel` | Unique `name`; `location`, `gender_policy`, `capacity`, `status`, `description`, `created_at`. |
+| `hostels_room` | FK `hostel_id`; `room_number`, `capacity`, `status`, `created_at`; unique hostel/room number. |
+| `hostels_allocation` | FKs `student_id`, `room_id`; `academic_year`, `starts_on`, optional `ends_on`, `status`, timestamps. |
+| `library_book` | Optional unique `isbn`; `title`, `author`, `category`, `total_copies`, `location`, `status`, timestamps. |
+| `library_loan` | FKs `book_id`, `student_id`; `borrowed_on`, `due_date`, optional `returned_on`, `status`, `created_at`. |
+| `library_reservation` | FKs `book_id`, `student_id`; `reserved_on`, optional `expires_on`, `status`, `created_at`. |
+| `messaging_conversation` | `kind`, optional FK `offering_id`, `created_at`. |
+| `messaging_conversationparticipant` | FKs `conversation_id`, `user_id`; `is_admin`, `joined_at`, optional `last_read_at`; unique conversation/user. |
+| `messaging_message` | FKs `conversation_id`, `sender_id`; `body`, `created_at`, optional `deleted_at`. |
+| `ai_conversation` | FK `user_id`; `role_context`, optional `title`, `created_at`, `updated_at`; database table is explicitly `ai_conversation`. |
+| `ai_message` | FK `conversation_id`; `role`, `content`, optional `ai_provider`, `created_at`; database table is `ai_message`. |
+| `ai_insight` | FK `user_id`; `insight_type`, JSON `content`, `generated_at`, optional `expires_at`; database table is `ai_insight`. |
+| `ai_task_log` | Nullable FK `user_id`; `task_type`, input/output summaries, `provider`, `success`, `created_at`; database table is `ai_task_log`. |
+
+The `accounts_user` additions are `must_change_password`, nullable `initial_password_expires_at`, and `invitation_email_status` (`not_sent`, `sent`, `failed`). Its role choices now include `student`, `lecturer`, `officer`, `admin`, `ict_admin`, `registrar`, `finance`, `hod`, `examination`, `librarian`, and `hostel`. `academics_academicperiod` also adds `academic_year` and `status` (`planned`, `active`, `completed`).
+
+### 9.4 Table-by-table 1NF–3NF check
+
+The v3 definitions in §3 cover the original 22 model tables. The following inventory covers every current CampusHub model table; the two generated join tables are included as well. A row is marked 1NF for relational values; the JSON/list exceptions are stated below.
+
+| Table | 1NF | 2NF | 3NF |
+|---|---|---|---|
+| `accounts_user` | Pass | Pass | Pass; GPA-on-User is a documented nullable-role trade-off |
+| `accounts_auditevent` | Pass | Pass | Pass |
+| `accounts_passwordresettoken` | Pass | Pass | Pass |
+| `accounts_passwordresetotp` | Pass | Pass | Pass |
+| `academics_school` | Pass | Pass | Pass |
+| `academics_department` | Pass | Pass | Pass |
+| `academics_course` | Pass | Pass | Pass |
+| `academics_academicperiod` | Pass | Pass | Pass |
+| `academics_registration` | Pass | Pass | Pass |
+| `academics_unit` | Pass | Pass | Pass |
+| `academics_offering` | Pass | Pass | Pass |
+| `academics_unitteachingassignment` | Pass | Pass | Pass |
+| `academics_enrollment` | Pass | Pass | Pass |
+| `academics_classsession` | Pass | Pass | Pass |
+| `academics_assignment` | Exception* | Pass | Pass |
+| `academics_assignmentquestion` | Pass | Pass | Pass |
+| `academics_assignmentsubmission` | Pass | Pass | Pass |
+| `academics_groupset` | Pass | Pass | Pass |
+| `academics_studentgroup` | Pass | Pass | Pass |
+| `academics_lesson` | Pass | Pass | Pass |
+| `academics_attendancerecord` | Pass | Pass | Pass |
+| `academics_unit_departments` | Pass | Pass | Pass |
+| `academics_studentgroup_members` | Pass | Pass | Pass |
+| `resources_resource` | Pass | Pass | Pass |
+| `resources_announcement` | Pass | Pass | Pass |
+| `placements_placement` | Pass | Pass | Pass |
+| `placements_application` | Pass | Pass | Pass |
+| `notifications_notification` | Pass | Pass | Pass |
+| `messaging_conversation` | Pass | Pass | Pass |
+| `messaging_conversationparticipant` | Pass | Pass | Pass |
+| `messaging_message` | Pass | Pass | Pass |
+| `ai_conversation` | Pass | Pass | Pass |
+| `ai_message` | Pass | Pass | Pass |
+| `ai_insight` | Exception* | Pass | Pass |
+| `ai_task_log` | Pass | Pass | Pass |
+| `admissions_application` | Pass | Pass | Pass |
+| `finance_feestructure` | Pass | Pass | Pass |
+| `finance_invoice` | Pass | Pass | Pass |
+| `finance_payment` | Pass | Pass | Pass |
+| `finance_paymentreversal` | Pass | Pass | Pass |
+| `finance_paymentrequest` | Pass | Pass | Pass |
+| `hostels_hostel` | Pass | Pass | Pass |
+| `hostels_room` | Pass | Pass | Pass |
+| `hostels_allocation` | Pass | Pass | Pass |
+| `library_book` | Pass | Pass | Pass |
+| `library_loan` | Pass | Pass | Pass |
+| `library_reservation` | Pass | Pass | Pass |
+
+All concrete tables use a single-column surrogate primary key, so non-key attributes depend on the whole key. Foreign relationships are represented by FKs rather than duplicated descriptive columns, preventing partial and transitive dependencies. The two generated join tables contain only their relationship keys and therefore have no insert, update, or delete anomalies independent of their parent relationship. Admission uniqueness, one-current-period, one-active-enrollment, and payment reversal constraints prevent duplicate or conflicting facts.
+
+**1NF exceptions and anomaly trade-off:** `Assignment.allowed_file_types` stores a list and `AIInsight.content` stores a JSON payload. These are treated as opaque values by the relational API, but their contents are not individually queryable normalized attributes. If file-type entries or insight attributes need independent filtering, constraints, or reporting, move them to child/typed tables. Decomposing normalized relations also prevents insert/update/delete anomalies: parent entities can exist independently of child records, descriptive values live once at their source, and FKs preserve the relationships.

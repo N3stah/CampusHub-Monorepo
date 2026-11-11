@@ -9,4 +9,7 @@ urlpatterns = [
     path('me/profile-picture/', views.upload_profile_picture, name='upload-profile-picture'),
     path('password/reset/', views.password_reset_request_view, name='password_reset_request'),
     path('password/reset/confirm/', views.password_reset_confirm_view, name='password_reset_confirm'),
+    path('password/change/', views.password_change_view, name='password_change'),
+    path('password/otp/request/', views.password_otp_request, name='password_otp_request'),
+    path('password/otp/confirm/', views.password_otp_confirm, name='password_otp_confirm'),
 ]

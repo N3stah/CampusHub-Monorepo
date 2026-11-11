@@ -20,3 +20,9 @@ PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
 
 # Disable rate limiting in tests (all requests come from 127.0.0.1)
 RATELIMIT_ENABLE = False
+
+# Tests never inherit local or deployment mail credentials.
+EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
+EMAIL_HOST_USER = ''
+EMAIL_HOST_PASSWORD = ''
+DEFAULT_FROM_EMAIL = ''

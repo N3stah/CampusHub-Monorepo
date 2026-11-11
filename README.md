@@ -22,11 +22,31 @@ CampusHub is a centralised web portal for university students, lecturers, and pl
 | Architecture | Vertical Slice Architecture (VSA) |
 | Deployment | Render (Backend) + Vercel (Frontend) |
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Browser[Next.js 16 frontend] -->|JSON + JWT| API[Django API]
+    API --> Accounts[Accounts and role access]
+    API --> Academic[Academics, admissions and campus services]
+    API --> Learning[Resources, placements, messaging and notifications]
+    API --> Assist[AI features]
+    Accounts --> DB[(PostgreSQL)]
+    Academic --> DB
+    Learning --> DB
+    Assist --> DB
+    API --> Media[MEDIA_ROOT uploads]
+```
+
+The backend is organized into 11 product apps: `accounts`, `academics`, `admissions`, `finance`, `hostels`, `library`, `resources`, `placements`, `messaging`, `notifications`, and `ai`. `common` contains shared request validation, JSON parsing, pagination, and API error helpers. Business workflows include `ApplicationService` for placement applications and `NotificationService` for notifications; the shared `service_api.py` module is a helper layer, not a separate service class. Views use plain Django `JsonResponse` handlers and handwritten serializers; Django REST Framework is not installed.
+
+The frontend has role-aware navigation and permission checks for 11 account roles. These client-side checks improve the UI but do not replace backend authorization. The Examinations page is currently a local-data prototype and does not call a backend endpoint.
+
 ---
 
 ## API Endpoints
 
-The API is fully documented in [`campushub-backend/docs/openapi.json`](campushub-backend/docs/openapi.json). All endpoints are JSON-only (`JsonResponse`), use Bearer JWT auth, and return standard error shapes `{"error": "..."}`.
+The API is documented in [`campushub-backend/docs/openapi.json`](campushub-backend/docs/openapi.json). JSON endpoints use Django `JsonResponse`; file downloads, CSV exports, and calendar exports use their appropriate content types. Protected routes use JWT auth and structured errors.
 
 | Group | Base Path | Description |
 |-------|-----------|-------------|
@@ -35,10 +55,15 @@ The API is fully documented in [`campushub-backend/docs/openapi.json`](campushub
 | Lecturers | `/api/lecturers/` | Lecturer directory management |
 | Admin | `/api/admin/` | Stats and audit logs |
 | Academics | `/api/academics/` | Departments, Courses, Offerings, Assignments & Attachments, Lessons, Attendance |
+| Admissions | `/api/admissions/` | Admission application intake and review |
+| Finance | `/api/finance/` | Fee structures, invoices, payments and requests |
+| Library | `/api/library/` | Books, loans and reservations |
+| Hostels | `/api/hostels/` | Hostels, rooms and allocations |
 | Resources | `/api/resources/` | File uploads, announcements, downloads |
 | Placements | `/api/placements/` | Job listings and applications |
 | Notifications | `/api/notifications/` | User notifications, unread counts |
 | Messaging | `/api/messaging/` | Direct messages & offering group conversations |
+| AI | `/api/ai/` | Chat, insights, task execution and analytics |
 | Health | `/api/health/` | Render health check |
 
 ---
@@ -64,8 +89,15 @@ The academics module implements a 4-level hierarchy: **School -> Department -> U
 |------|-------------|
 | `student` | Access own records, resources, enroll, apply for placements |
 | `lecturer` | Upload resources, post announcements, view course rosters |
-| `officer` | Manage placement listings, review applications, post placements |
-| `admin` | Full CRUD on all entities, manage users and departments |
+| `officer` | Manage placement listings and review applications |
+| `admin` | Super Admin account and system administration |
+| `ict_admin` | Academic and IT administration |
+| `registrar` | Academic periods, registrations, admissions and student onboarding |
+| `finance` | Fees, invoices, payments and payment requests |
+| `hod` | Department-level academic oversight |
+| `examination` | Academic results and examination workflows |
+| `librarian` | Library catalogue and circulation |
+| `hostel` | Hostel inventory and student allocations |
 
 ---
 
@@ -149,13 +181,20 @@ npm run dev
 3. Set the `NEXT_PUBLIC_API_URL` environment variable to your live Render backend URL.
 4. Deploy.
 
+### Live deployment
+
+- Backend: [campushub-backend-nbgc.onrender.com](https://campushub-backend-nbgc.onrender.com)
+- Frontend: [campus-hub-monorepo.vercel.app](https://campus-hub-monorepo.vercel.app)
+
 ---
 
 ## Documentation
 
-- [`docs/ERD.md`](docs/ERD.md): Database design document with Mermaid ERD, normalization write-up, and raw SQL queries.
+- [`docs/ERD.md`](docs/ERD.md): Current schema, normalization write-up, and raw SQL queries.
 - [`docs/PHASE_STATUS.md`](docs/PHASE_STATUS.md): Detailed phase tracker and blocker log.
-- [`campushub-backend/docs/openapi.json`](campushub-backend/docs/openapi.json): Minimal OpenAPI 3 spec.
+- [`campushub-backend/docs/openapi.json`](campushub-backend/docs/openapi.json): OpenAPI 3 endpoint reference.
+- [`campushub-backend/docs/CampusHub_Auth.postman_collection.json`](campushub-backend/docs/CampusHub_Auth.postman_collection.json): Authentication request collection.
+- [`REFLECTION.md`](REFLECTION.md): Capstone reflection.
 
 ---
 
