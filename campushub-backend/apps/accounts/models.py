@@ -142,3 +142,29 @@ class PasswordResetToken(models.Model):
 
     def is_valid(self):
         return self.used_at is None and timezone.now() < self.expires_at
+
+from django.utils import timezone
+
+class PasswordResetOTP(models.Model):
+    code_hash = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    consumed_at = models.DateTimeField(blank=True, null=True)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='password_reset_otps',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at'], name='accounts_pa_user_id_92b775_idx'),
+        ]
+
+    def is_valid(self):
+        return self.consumed_at is None and timezone.now() < self.expires_at
+
+    def __str__(self):
+        return f'OTP for {self.user.email} ({self.created_at})'
