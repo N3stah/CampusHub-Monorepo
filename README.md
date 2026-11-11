@@ -136,6 +136,7 @@ npm run dev
 2. Set the environment variables required by `config/settings/prod.py`, plus:
    - `RESEND_API_KEY`: API key from Resend.
    - `DEFAULT_FROM_EMAIL`: sender address on a domain verified with Resend, for example `CampusHub <no-reply@your-domain.com>`.
+   - `FRONTEND_URL`: public frontend origin used for links in account emails, for example `https://your-app.vercel.app`.
 3. Verify the sender domain and its DNS records in Resend before sending. Keep the API key only in the Render backend's environment settings; do not put it in the frontend or commit it.
    Remove any old `EMAIL_BACKEND`, `EMAIL_HOST_*`, or SMTP settings from Render; the application now always uses Resend.
 4. Render will automatically run `pip install`, `collectstatic`, and `migrate` on deploy.

@@ -11,6 +11,7 @@ JWT_REFRESH_DAYS = config('JWT_REFRESH_DAYS', default=7, cast=int)
 EMAIL_BACKEND = 'apps.accounts.email_backends.ResendEmailBackend'
 RESEND_API_KEY = config('RESEND_API_KEY', default='')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='')
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000').rstrip('/')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
