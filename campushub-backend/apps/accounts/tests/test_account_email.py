@@ -38,6 +38,7 @@ def auth_header(user):
     EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
     RESEND_API_KEY='re_test-api-key',
     DEFAULT_FROM_EMAIL='campushub@example.test',
+    FRONTEND_URL='https://campushub.example.test/',
 )
 def test_admin_create_sends_random_initial_password_without_returning_it(client):
     admin = create_user('admin@example.test', 'admin', role='admin')
@@ -65,6 +66,10 @@ def test_admin_create_sends_random_initial_password_without_returning_it(client)
     match = re.search(r'Initial password: ([A-Za-z0-9_-]+)', mail.outbox[0].body)
     assert match
     assert account.check_password(match.group(1))
+    assert 'Sign in to CampusHub: https://campushub.example.test/login' in mail.outbox[0].body
+    html_body = mail.outbox[0].alternatives[0][0]
+    assert 'href="https://campushub.example.test/login"' in html_body
+    assert '>Sign in to CampusHub</a>' in html_body
 
 
 @override_settings(
