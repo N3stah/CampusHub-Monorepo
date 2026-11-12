@@ -26,11 +26,12 @@ def setup(db):
     s2 = User.objects.create_user(email='s2@t.com', username='s2', password='TestPass123!', first_name='S', last_name='2', role='student', admission_number='ADM002')
     admin = User.objects.create_user(email='admin@t.com', username='admin', password='TestPass123!', first_name='A', last_name='dmin', role='admin')
     ict_admin = User.objects.create_user(email='ict@t.com', username='ict', password='TestPass123!', first_name='I', last_name='CT', role='ict_admin')
+    finance = User.objects.create_user(email='finance@t.com', username='finance', password='TestPass123!', first_name='F', last_name='inance', role='finance')
     UnitTeachingAssignment.objects.create(offering=o1, lecturer=l1)
     UnitTeachingAssignment.objects.create(offering=o2, lecturer=l2)
     Enrollment.objects.create(student=s1, course=c1, status='active')
     Enrollment.objects.create(student=s2, course=c2, status='active')
-    return type('S', (), dict(dept=dept, c1=c1, c2=c2, u1=u1, u2=u2, o1=o1, o2=o2, l1=l1, l2=l2, s1=s1, s2=s2, admin=admin, ict_admin=ict_admin))()
+    return type('S', (), dict(dept=dept, c1=c1, c2=c2, u1=u1, u2=u2, o1=o1, o2=o2, l1=l1, l2=l2, s1=s1, s2=s2, admin=admin, ict_admin=ict_admin, finance=finance))()
 
 
 def _h(u):
@@ -74,6 +75,37 @@ def test_broadcast_recipients_are_role_scoped(client, setup):
 
     response = client.get('/api/messaging/recipients/?role=lecturer', **_h(setup.s1))
     assert response.status_code == 403
+
+
+def test_super_admin_can_target_any_role_or_all_active_users(client, setup):
+    finance_response = client.get('/api/messaging/recipients/?role=finance', **_h(setup.admin))
+    assert finance_response.status_code == 200
+    assert [item['id'] for item in finance_response.json()['results']] == [setup.finance.id]
+
+    all_response = client.get('/api/messaging/recipients/?role=all', **_h(setup.admin))
+    assert all_response.status_code == 200
+    all_recipient_ids = {item['id'] for item in all_response.json()['results']}
+    assert setup.admin.id not in all_recipient_ids
+    assert {setup.finance.id, setup.ict_admin.id, setup.l1.id, setup.s1.id}.issubset(all_recipient_ids)
+
+    denied = client.get('/api/messaging/recipients/?role=finance', **_h(setup.ict_admin))
+    assert denied.status_code == 403
+
+
+def test_super_admin_all_user_broadcast_requires_explicit_confirmation(client, setup):
+    payload = {
+        'role': 'all',
+        'body': 'School-wide update',
+        'allow_replies': False,
+    }
+    response = _post(client, '/api/messaging/broadcast/', payload, _h(setup.admin))
+    assert response.status_code == 400
+
+    payload['confirm_all'] = True
+    response = _post(client, '/api/messaging/broadcast/', payload, _h(setup.admin))
+    assert response.status_code == 201
+    assert response.json() == {'delivery': 'notification', 'recipient_count': 6}
+    assert not Notification.objects.filter(recipient=setup.admin, message='School-wide update').exists()
 
 
 def test_lecturer_can_broadcast_only_to_students(client, setup):

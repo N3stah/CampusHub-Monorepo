@@ -63,6 +63,6 @@ Lecturer access is based on the authenticated user's teaching assignments and ac
 
 ## Messaging
 
-- Super admins and ICT administrators can message all active students or lecturers; lecturers can message all active students. Sender-side audience and recipient selection are checked again by the API.
+- Super admins can message any active account by role or selected recipients, and can send to all active campus users after confirming the school-wide audience. ICT administrators can message students or lecturers; lecturers can message students. The API enforces the sender's role permissions and validates every recipient.
 - With **Allow replies** enabled, each recipient gets a private chat with the sender. With replies disabled, each recipient receives an in-app notification instead.
 - Message notifications link directly to their chat or notification. The messaging screen also retains direct conversations and course group chats.

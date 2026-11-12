@@ -14,11 +14,20 @@ from .models import Conversation, ConversationParticipant, Message
 
 
 def _broadcast_roles(user):
-    if user.role in {'admin', 'ict_admin'}:
+    if user.role == 'admin':
+        return {role for role, _ in User.ROLE_CHOICES} | {'all'}
+    if user.role == 'ict_admin':
         return {'student', 'lecturer'}
     if user.role == 'lecturer':
         return {'student'}
     return set()
+
+
+def _broadcast_recipient_queryset(user, role):
+    recipients = User.objects.filter(is_active=True).exclude(pk=user.pk)
+    if role != 'all':
+        recipients = recipients.filter(role=role)
+    return recipients
 
 
 def _broadcast_recipient_data(user):
@@ -130,7 +139,7 @@ def broadcast_recipients(request):
     if role not in _broadcast_roles(request.user):
         return JsonResponse({'error': 'You cannot send messages to this audience'}, status=403)
 
-    users = User.objects.filter(role=role, is_active=True).exclude(pk=request.user.pk)
+    users = _broadcast_recipient_queryset(request.user, role)
     return collection_response(
         users,
         request,
@@ -170,6 +179,9 @@ def send_broadcast(request):
         return JsonResponse({'error': f'Message must be at most {max_length} characters'}, status=400)
 
     recipient_ids = data.get('recipient_ids')
+    if role == 'all' and recipient_ids is None and data.get('confirm_all') is not True:
+        return JsonResponse({'error': 'Confirm delivery to all active campus users'}, status=400)
+
     if recipient_ids is not None:
         if (
             not isinstance(recipient_ids, list)
@@ -180,20 +192,12 @@ def send_broadcast(request):
             return JsonResponse({'error': 'recipient_ids must be a non-empty list of user IDs'}, status=400)
         recipient_ids = list(dict.fromkeys(recipient_ids))
         recipients = list(
-            User.objects.filter(
-                pk__in=recipient_ids,
-                role=role,
-                is_active=True,
-            ).exclude(pk=user.pk).order_by('id')
+            _broadcast_recipient_queryset(user, role).filter(pk__in=recipient_ids).order_by('id')
         )
         if len(recipients) != len(recipient_ids):
             return JsonResponse({'error': 'One or more recipients are unavailable for this audience'}, status=400)
     else:
-        recipients = list(
-            User.objects.filter(role=role, is_active=True)
-            .exclude(pk=user.pk)
-            .order_by('id')
-        )
+        recipients = list(_broadcast_recipient_queryset(user, role).order_by('id'))
 
     if not recipients:
         return JsonResponse({'error': 'There are no active recipients in this audience'}, status=400)

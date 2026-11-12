@@ -5,6 +5,8 @@ import PortalShell from '@/components/PortalShell';
 import api from '@/lib/api';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
 import { useAuth } from '@/context/AuthContext';
+import { roleLabels as campusRoleLabels } from '@/lib/role-access';
+import type { CampusRole } from '@/types';
 import type { AcademicUnit, DirectoryUser } from '@/types/portal';
 
 interface ChatMessage {
@@ -40,12 +42,30 @@ interface BroadcastRecipient {
   last_name: string;
 }
 
-type BroadcastRole = 'student' | 'lecturer';
+type BroadcastAudience = 'all' | CampusRole;
 
-const roleLabels: Record<BroadcastRole, string> = {
-  student: 'Students',
-  lecturer: 'Lecturers',
-};
+const broadcastRoles: CampusRole[] = [
+  'student',
+  'lecturer',
+  'officer',
+  'admin',
+  'ict_admin',
+  'registrar',
+  'finance',
+  'hod',
+  'examination',
+  'librarian',
+  'hostel',
+];
+
+const broadcastAudienceOptions: { value: BroadcastAudience; label: string }[] = [
+  { value: 'all', label: 'All active campus users' },
+  ...broadcastRoles.map((role) => ({ value: role, label: campusRoleLabels[role] })),
+];
+
+function isBroadcastAudience(value: string): value is BroadcastAudience {
+  return broadcastAudienceOptions.some((option) => option.value === value);
+}
 
 export default function MessagingPage() {
   const { user } = useAuth();
@@ -57,10 +77,11 @@ export default function MessagingPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
   const [broadcastDraft, setBroadcastDraft] = useState('');
-  const [audienceRole, setAudienceRole] = useState<BroadcastRole | ''>('');
+  const [audienceRole, setAudienceRole] = useState<BroadcastAudience | ''>('');
   const [recipientSearch, setRecipientSearch] = useState('');
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<number[]>([]);
   const [selectAllRecipients, setSelectAllRecipients] = useState(false);
+  const [confirmAllRecipients, setConfirmAllRecipients] = useState(false);
   const [allowReplies, setAllowReplies] = useState(true);
   const [recipientId, setRecipientId] = useState('');
   const [offeringId, setOfferingId] = useState('');
@@ -260,14 +281,16 @@ export default function MessagingPage() {
       const response = await api.post<{ delivery: 'chat' | 'notification'; recipient_count: number }>('/messaging/broadcast/', {
         role: audienceRole,
         ...(selectAllRecipients ? {} : { recipient_ids: selectedRecipientIds }),
+        ...(audienceRole === 'all' && selectAllRecipients ? { confirm_all: confirmAllRecipients } : {}),
         body: broadcastDraft.trim(),
         allow_replies: allowReplies,
       });
       setBroadcastDraft('');
       setSelectedRecipientIds([]);
       setSelectAllRecipients(false);
+      setConfirmAllRecipients(false);
       setNotice(
-        `Sent to ${response.data.recipient_count} ${roleLabels[audienceRole].toLowerCase()} as ${response.data.delivery === 'chat' ? 'private chats' : 'notifications'}.`,
+        `Sent to ${response.data.recipient_count} ${response.data.recipient_count === 1 ? 'recipient' : 'recipients'} as ${response.data.delivery === 'chat' ? 'private chats' : 'notifications'}.`,
       );
       if (response.data.delivery === 'chat') await loadConversations();
     } catch (requestError) {
@@ -364,15 +387,22 @@ export default function MessagingPage() {
                     value={audienceRole}
                     onChange={(event) => {
                       const role = event.target.value;
-                      setAudienceRole(role === 'student' || role === 'lecturer' ? role : '');
+                      setAudienceRole(isBroadcastAudience(role) ? role : '');
                       setBroadcastRecipients([]);
                       setSelectedRecipientIds([]);
                       setSelectAllRecipients(false);
+                      setConfirmAllRecipients(false);
                     }}
                     className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                   >
-                    {user.role !== 'lecturer' && <option value="lecturer">All lecturers</option>}
-                    <option value="student">All students</option>
+                    {user.role === 'admin'
+                      ? broadcastAudienceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)
+                      : user.role === 'ict_admin'
+                        ? <>
+                          <option value="lecturer">Lecturers</option>
+                          <option value="student">Students</option>
+                        </>
+                        : <option value="student">Students</option>}
                   </select>
                 </label>
                 <label className="block text-sm font-semibold text-slate-700">
@@ -411,7 +441,7 @@ export default function MessagingPage() {
                   <div>
                     <p className="text-sm font-semibold text-slate-800">Recipients</p>
                     <p className="text-xs text-slate-500" aria-live="polite">
-                      {loadingRecipients ? 'Loading people…' : `${broadcastRecipients.length} active ${roleLabels[audienceRole || 'student'].toLowerCase()}`}
+                      {loadingRecipients ? 'Loading people…' : `${broadcastRecipients.length} ${audienceRole === 'all' ? 'active campus users' : `active ${campusRoleLabels[audienceRole || 'student']} accounts`}`}
                     </p>
                   </div>
                   <button
@@ -419,6 +449,7 @@ export default function MessagingPage() {
                     onClick={() => {
                       setSelectAllRecipients(!selectAllRecipients);
                       setSelectedRecipientIds([]);
+                      setConfirmAllRecipients(false);
                     }}
                     disabled={loadingRecipients || broadcastRecipients.length === 0}
                     className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
@@ -453,13 +484,26 @@ export default function MessagingPage() {
                     </label>
                   )) : <p className="p-4 text-center text-sm text-slate-500">No matching recipients.</p>}
                 </div>
+                {audienceRole === 'all' && selectAllRecipients && (
+                  <label className="flex cursor-pointer items-start gap-3 border-t border-amber-200 bg-amber-50 p-3.5">
+                    <input
+                      type="checkbox"
+                      checked={confirmAllRecipients}
+                      onChange={(event) => setConfirmAllRecipients(event.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-amber-400 text-blue-700 focus:ring-blue-600"
+                    />
+                    <span className="text-xs leading-5 text-amber-900">
+                      I confirm this message should go to all {broadcastRecipients.length} active campus users.
+                    </span>
+                  </label>
+                )}
                 <div className="flex items-center justify-between gap-3 border-t border-slate-100 p-3.5">
                   <p className="text-xs font-medium text-slate-500">
                     {selectAllRecipients ? `All ${broadcastRecipients.length} selected` : `${selectedRecipientIds.length} selected`}
                   </p>
                   <button
                     type="submit"
-                    disabled={busy || loadingRecipients || (!selectAllRecipients && selectedRecipientIds.length === 0) || !broadcastDraft.trim() || (!allowReplies && broadcastDraft.trim().length > 255)}
+                    disabled={busy || loadingRecipients || (!selectAllRecipients && selectedRecipientIds.length === 0) || (audienceRole === 'all' && selectAllRecipients && !confirmAllRecipients) || !broadcastDraft.trim() || (!allowReplies && broadcastDraft.trim().length > 255)}
                     className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busy ? 'Sending…' : allowReplies ? 'Send as chat' : 'Send notification'}
