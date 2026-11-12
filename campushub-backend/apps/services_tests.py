@@ -78,6 +78,42 @@ def test_periods_support_frontend_fields_filters_and_reject_overlap(django_user_
 
 
 @pytest.mark.django_db
+def test_registrar_can_manage_searchable_programme_enrolments(django_user_model):
+    registrar = create_user(django_user_model, role='registrar', suffix='registrar-enrolments')
+    student = create_user(django_user_model, role='student', suffix='registrar-enrolment-student')
+    student.admission_number = 'REG-1001'
+    student.save(update_fields=['admission_number'])
+    department = Department.objects.create(name='Registrar Engineering', code='RENG')
+    programme = Course.objects.create(title='Registrar Engineering', code='RENG1', department=department)
+    client = api_client(registrar)
+
+    created = client.post('/api/academics/admin/enrollments/', json.dumps({
+        'admission_number': student.admission_number,
+        'course_id': programme.id,
+    }), content_type='application/json')
+    assert created.status_code == 201, created.content
+    enrollment_id = created.json()['id']
+
+    listing = client.get('/api/academics/admin/enrollments/?status=active&search=REG-1001&page=1&page_size=25')
+    assert listing.status_code == 200
+    assert listing.json()['count'] == 1
+    listed_enrollment = listing.json()['results'][0]
+    assert listed_enrollment['student_email'] == student.email
+    assert listed_enrollment['course_title'] == programme.title
+    assert listed_enrollment['department_name'] == department.name
+
+    updated = client.patch(
+        f'/api/academics/admin/enrollments/{enrollment_id}/',
+        json.dumps({'status': 'dropped'}),
+        content_type='application/json',
+    )
+    assert updated.status_code == 200, updated.content
+    assert updated.json()['status'] == 'dropped'
+    assert client.get('/api/academics/admin/enrollments/?status=active').json()['count'] == 0
+    assert api_client(student).get('/api/academics/admin/enrollments/').status_code == 403
+
+
+@pytest.mark.django_db
 def test_student_registration_uses_authenticated_student_and_scopes_results(django_user_model):
     student = create_user(django_user_model, role='student', suffix='student2')
     another_student = create_user(django_user_model, role='student', suffix='student3')

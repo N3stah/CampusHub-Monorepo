@@ -1,11 +1,22 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import api from '@/lib/api';
 import PortalShell from '@/components/PortalShell';
 import { Alert } from '@/components/ui';
+import DirectoryPage from '@/components/DirectoryPage';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
 import type { Course } from '@/types/portal';
+
+interface RegistrarStudent {
+  id: number;
+  first_name: string;
+  last_name: string;
+  admission_number: string | null;
+  email: string;
+  role: 'student';
+}
 
 interface StudentAccountForm {
   first_name: string;
@@ -37,6 +48,7 @@ export default function RegistrarStudentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeKind, setNoticeKind] = useState<'success' | 'warning'>('success');
+  const [directoryRefresh, setDirectoryRefresh] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -72,6 +84,7 @@ export default function RegistrarStudentsPage() {
       }
       setForm(initialForm);
       setConfirmed(false);
+      setDirectoryRefresh((current) => current + 1);
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
     } finally {
@@ -81,15 +94,25 @@ export default function RegistrarStudentsPage() {
 
   return (
     <PortalShell roles={['registrar']}>
-      <section className="mx-auto max-w-3xl space-y-6">
-        <header>
-          <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Registrar office</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight">Register a student account</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">Create the account after confirming the student’s admission details. CampusHub generates an initial password and emails the sign-in instructions; staff never see or transmit that password.</p>
+      <section className="mx-auto max-w-7xl space-y-8">
+        <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div>
+            <Link href="/registrar" className="text-sm font-semibold text-blue-700 hover:underline">← Registrar office</Link>
+            <p className="mt-4 text-sm font-semibold uppercase tracking-wide text-blue-700">Registrar office</p>
+            <h1 className="mt-1 text-3xl font-bold tracking-tight">Student accounts</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Search active student records and register admitted students. Initial sign-in instructions are sent directly to the student’s verified email.</p>
+          </div>
+          <a href="#student-directory" className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+            Browse student directory
+          </a>
         </header>
         {notice && <p role="status" className={`rounded-lg border p-3 text-sm ${noticeKind === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>{notice}</p>}
         {error && <Alert tone="error">{error}</Alert>}
-        <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+        <form id="register-student-account" onSubmit={handleSubmit} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Register an admitted student</h2>
+            <p className="mt-1 text-sm text-slate-600">Confirm the student’s admission details before creating their account.</p>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-medium text-slate-700">First name
               <input required autoComplete="given-name" value={form.first_name} onChange={(event) => setForm({ ...form, first_name: event.target.value })} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" />
@@ -126,6 +149,32 @@ export default function RegistrarStudentsPage() {
             {saving ? 'Creating account and sending email…' : 'Confirm admission and send login email'}
           </button>
         </form>
+        <div id="student-directory">
+          <DirectoryPage<RegistrarStudent>
+            title="Student directory"
+            description="Find active student accounts by name, admission number, or email. Account access changes remain restricted to authorized administrators."
+            endpoint="/users/"
+            searchPlaceholder="Search name, admission number, or email"
+            filters={{ role: 'student' }}
+            refreshKey={directoryRefresh}
+            getKey={(student) => student.id}
+            emptyMessage="No active student accounts match this search."
+            columns={[
+              {
+                label: 'Student',
+                render: (student) => <span className="font-semibold text-slate-900">{student.first_name} {student.last_name}</span>,
+              },
+              {
+                label: 'Admission number',
+                render: (student) => <span className="text-slate-700">{student.admission_number || 'Not assigned'}</span>,
+              },
+              {
+                label: 'Email',
+                render: (student) => <span className="break-all text-slate-600">{student.email}</span>,
+              },
+            ]}
+          />
+        </div>
       </section>
     </PortalShell>
   );
