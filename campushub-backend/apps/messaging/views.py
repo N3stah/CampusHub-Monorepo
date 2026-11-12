@@ -7,8 +7,26 @@ from django.db import transaction
 from apps.accounts.jwt_utils import jwt_required
 from apps.accounts.models import User
 from apps.academics.models import Offering, UnitTeachingAssignment, Enrollment
+from apps.notifications.models import Notification
 from apps.notifications.services import NotificationService
+from apps.common.service_api import collection_response
 from .models import Conversation, ConversationParticipant, Message
+
+
+def _broadcast_roles(user):
+    if user.role in {'admin', 'ict_admin'}:
+        return {'student', 'lecturer'}
+    if user.role == 'lecturer':
+        return {'student'}
+    return set()
+
+
+def _broadcast_recipient_data(user):
+    return {
+        'id': user.id,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+    }
 
 
 def _is_participant(user, conv):
@@ -107,6 +125,119 @@ def create_direct_conversation(request):
 @csrf_exempt
 @require_http_methods(["GET"])
 @jwt_required
+def broadcast_recipients(request):
+    role = request.GET.get('role', '')
+    if role not in _broadcast_roles(request.user):
+        return JsonResponse({'error': 'You cannot send messages to this audience'}, status=403)
+
+    users = User.objects.filter(role=role, is_active=True).exclude(pk=request.user.pk)
+    return collection_response(
+        users,
+        request,
+        _broadcast_recipient_data,
+        search_fields=('first_name', 'last_name', 'email'),
+        ordering_fields={'first_name': 'first_name', 'last_name': 'last_name', 'email': 'email'},
+        default_ordering=('first_name', 'last_name', 'id'),
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@jwt_required
+def send_broadcast(request):
+    user = request.user
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, TypeError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({'error': 'Expected a JSON object'}, status=400)
+
+    role = data.get('role')
+    if role not in _broadcast_roles(user):
+        return JsonResponse({'error': 'You cannot send messages to this audience'}, status=403)
+
+    body = data.get('body')
+    if not isinstance(body, str) or not body.strip():
+        return JsonResponse({'error': 'Message is required'}, status=400)
+    body = body.strip()
+
+    allow_replies = data.get('allow_replies')
+    if not isinstance(allow_replies, bool):
+        return JsonResponse({'error': 'allow_replies must be true or false'}, status=400)
+    max_length = 5000 if allow_replies else 255
+    if len(body) > max_length:
+        return JsonResponse({'error': f'Message must be at most {max_length} characters'}, status=400)
+
+    recipient_ids = data.get('recipient_ids')
+    if recipient_ids is not None:
+        if (
+            not isinstance(recipient_ids, list)
+            or not recipient_ids
+            or len(recipient_ids) > 10000
+            or any(isinstance(value, bool) or not isinstance(value, int) for value in recipient_ids)
+        ):
+            return JsonResponse({'error': 'recipient_ids must be a non-empty list of user IDs'}, status=400)
+        recipient_ids = list(dict.fromkeys(recipient_ids))
+        recipients = list(
+            User.objects.filter(
+                pk__in=recipient_ids,
+                role=role,
+                is_active=True,
+            ).exclude(pk=user.pk).order_by('id')
+        )
+        if len(recipients) != len(recipient_ids):
+            return JsonResponse({'error': 'One or more recipients are unavailable for this audience'}, status=400)
+    else:
+        recipients = list(
+            User.objects.filter(role=role, is_active=True)
+            .exclude(pk=user.pk)
+            .order_by('id')
+        )
+
+    if not recipients:
+        return JsonResponse({'error': 'There are no active recipients in this audience'}, status=400)
+
+    with transaction.atomic():
+        if allow_replies:
+            for recipient in recipients:
+                conversation = (
+                    Conversation.objects.filter(kind='direct', participants__user=user)
+                    .filter(participants__user=recipient)
+                    .distinct()
+                    .first()
+                )
+                if conversation is None:
+                    conversation = Conversation.objects.create(kind='direct')
+                    ConversationParticipant.objects.create(conversation=conversation, user=user)
+                    ConversationParticipant.objects.create(conversation=conversation, user=recipient)
+                Message.objects.create(conversation=conversation, sender=user, body=body)
+                NotificationService.notify(
+                    recipient=recipient,
+                    verb='New message',
+                    message=f'New message from {user.get_full_name()}',
+                    actor=user,
+                    link=f'/messaging/?conversation={conversation.id}',
+                )
+            delivery = 'chat'
+        else:
+            notifications = NotificationService.notify_bulk(
+                recipients=recipients,
+                verb='Message',
+                message=body,
+                actor=user,
+            )
+            for notification in notifications:
+                notification.link = f'/notifications/?notification={notification.id}'
+            Notification.objects.bulk_update(notifications, ['link'])
+            delivery = 'notification'
+
+    return JsonResponse({'delivery': delivery, 'recipient_count': len(recipients)}, status=201)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+@jwt_required
 def group_conversation(request, pk):
     user = request.user
     try:
@@ -163,7 +294,13 @@ def messages(request, pk):
             return JsonResponse({'error': 'body is required'}, status=400)
         msg = Message.objects.create(conversation=conv, sender=user, body=body)
         for p in ConversationParticipant.objects.filter(conversation=conv).exclude(user=user):
-            NotificationService.notify(recipient=p.user, verb='message', message=f'New message from {user.get_full_name()}', actor=user)
+            NotificationService.notify(
+                recipient=p.user,
+                verb='New message',
+                message=f'New message from {user.get_full_name()}',
+                actor=user,
+                link=f'/messaging/?conversation={conv.id}',
+            )
         return JsonResponse(_serialize_message(msg), status=201)
 
 
