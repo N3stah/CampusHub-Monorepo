@@ -757,45 +757,71 @@ def unit_teaching_assignment(request, pk):
 @jwt_required
 def admin_enrollment_list_create(request):
     user = request.user
-    if user.role != 'admin':
-        return JsonResponse({'error': 'Only admins can manage admissions'}, status=403)
+    if user.role not in {'admin', 'registrar'}:
+        return JsonResponse({'error': 'Only Registrar or Admin can manage programme enrolments'}, status=403)
         
     if request.method == 'GET':
-        enrollments = Enrollment.objects.all().select_related('student', 'course').order_by('-enrolled_at')
+        enrollments = Enrollment.objects.select_related(
+            'student', 'course', 'course__department', 'course__department__school',
+        )
         
         def fmt(e):
             return {
                 'id': e.id,
                 'student_id': e.student_id,
                 'student_name': e.student.get_full_name(),
-            'profile_picture_url': e.student.profile_picture.url if e.student.profile_picture else None,
                 'admission_number': e.student.admission_number,
+                'student_email': e.student.email,
+                'school_name': e.course.department.school.name if e.course.department.school else None,
+                'department_name': e.course.department.name,
                 'course_id': e.course_id,
                 'course_code': e.course.code,
+                'course_title': e.course.title,
                 'status': e.status,
-                'enrolled_at': e.enrolled_at.isoformat()
+                'enrolled_at': e.enrolled_at.isoformat(),
             }
-        return paginate_queryset(enrollments, request, fmt)
+        return collection_response(
+            enrollments,
+            request,
+            fmt,
+            search_fields=('student__first_name', 'student__last_name', 'student__email', 'student__admission_number', 'course__code', 'course__title'),
+            filters={'status': 'status', 'course_id': 'course_id'},
+            ordering_fields={'enrolled_at': 'enrolled_at', 'student_name': 'student__last_name', 'course_code': 'course__code'},
+            default_ordering=('-enrolled_at',),
+        )
         
     elif request.method == 'POST':
         try:
             data = json.loads(request.body)
+            if not isinstance(data, dict):
+                return JsonResponse({'error': 'Request body must be an object'}, status=400)
             admission_number = data.get('admission_number')
-            course_id = data.get('course_id')
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+        if not isinstance(admission_number, str) or not admission_number.strip():
+            return JsonResponse({'error': 'admission_number is required'}, status=400)
+        try:
+            course_id = int(data.get('course_id'))
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'course_id must be an integer'}, status=400)
             
-        if not admission_number or not course_id:
-            return JsonResponse({'error': 'admission_number and course_id are required'}, status=400)
-            
-        student = User.objects.filter(admission_number=admission_number, role='student').first()
+        student = User.objects.filter(
+            admission_number=admission_number.strip(),
+            role='student',
+            is_active=True,
+        ).first()
         if not student:
             return JsonResponse({'error': 'Student not found with that admission number'}, status=400)
             
         try:
-            course = Course.objects.get(pk=course_id)
+            course = Course.objects.get(pk=course_id, is_active=True)
         except Course.DoesNotExist:
             return JsonResponse({'error': 'Course not found'}, status=404)
+
+        current_enrollment = Enrollment.objects.filter(student=student, status='active').first()
+        if current_enrollment and current_enrollment.course_id == course.id:
+            return JsonResponse({'error': 'Student is already actively enrolled in this programme'}, status=409)
             
         with transaction.atomic():
             # Drop existing active enrollment
@@ -816,8 +842,8 @@ def admin_enrollment_list_create(request):
 @jwt_required
 def admin_enrollment_update(request, pk):
     user = request.user
-    if user.role != 'admin':
-        return JsonResponse({'error': 'Only admins can update enrollments'}, status=403)
+    if user.role not in {'admin', 'registrar'}:
+        return JsonResponse({'error': 'Only Registrar or Admin can update programme enrolments'}, status=403)
         
     try:
         enrollment = Enrollment.objects.get(pk=pk)
@@ -826,13 +852,46 @@ def admin_enrollment_update(request, pk):
         
     try:
         data = json.loads(request.body)
-        course_id = data.get('course_id')
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
-        
+
+    if not isinstance(data, dict):
+        return JsonResponse({'error': 'Request body must be an object'}, status=400)
+
+    if 'status' in data:
+        status = data['status']
+        if not isinstance(status, str) or status not in {'active', 'dropped', 'completed'}:
+            return JsonResponse({'error': 'Invalid enrolment status'}, status=400)
+        if status == 'active' and Enrollment.objects.filter(
+            student=enrollment.student,
+            status='active',
+        ).exclude(pk=enrollment.pk).exists():
+            return JsonResponse({'error': 'Student already has an active programme enrolment'}, status=409)
+        enrollment.status = status
+        enrollment.save(update_fields=['status'])
+        AuditEvent.objects.create(
+            actor=user,
+            action='admin.enrollment_status_update',
+            description=f'Updated {enrollment.student.email} programme enrolment status to {status}',
+        )
+        return JsonResponse({
+            'id': enrollment.id,
+            'student_id': enrollment.student_id,
+            'course_id': enrollment.course_id,
+            'status': enrollment.status,
+        })
+
+    course_id = data.get('course_id')
+    if course_id is None:
+        return JsonResponse({'error': 'status or course_id is required'}, status=400)
+    try:
+        course_id = int(course_id)
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'course_id must be an integer'}, status=400)
+
     if course_id and int(course_id) != enrollment.course_id:
         try:
-            new_course = Course.objects.get(pk=course_id)
+            new_course = Course.objects.get(pk=course_id, is_active=True)
         except Course.DoesNotExist:
             return JsonResponse({'error': 'Course not found'}, status=404)
             

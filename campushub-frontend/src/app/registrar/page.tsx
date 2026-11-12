@@ -2,17 +2,18 @@
 
 import AdminCard from '@/components/AdminCard';
 import PortalShell from '@/components/PortalShell';
-import ServiceOverview from '@/components/ServiceOverview';
+import ServiceOverview, { type ServiceMetric } from '@/components/ServiceOverview';
 
-const registrarMetrics = [
+const registrarMetrics: ServiceMetric[] = [
   { label: 'Applications awaiting review', endpoint: '/admissions/applications/', params: { status: 'under_review' }, href: '/admissions' },
+  { label: 'Active student accounts', endpoint: '/users/', params: { role: 'student' }, href: '/registrar/students' },
   { label: 'Programme enrolments', endpoint: '/academics/admin/enrollments/', params: { status: 'active' }, href: '/admin/enrollments' },
   { label: 'Unit registrations', endpoint: '/academics/registrations/', params: { status: 'registered' }, href: '/academics/registration' },
 ];
 
 const registrarWorkflows = [
   { title: 'Admissions', description: 'Review applicants and record admission decisions.', href: '/admissions' },
-  { title: 'Register student account', description: 'Confirm admitted student details and send initial login instructions.', href: '/registrar/students' },
+  { title: 'Student accounts', description: 'Search the active student directory or register an admitted student.', href: '/registrar/students' },
   { title: 'Programme enrolments', description: 'Assign admitted students to programmes and manage enrolment status.', href: '/admin/enrollments' },
   { title: 'Semester registration', description: 'Review and support student registration for academic periods.', href: '/academics/registration' },
   { title: 'Academic periods', description: 'Review academic-year and semester schedules.', href: '/academics/periods' },
@@ -38,9 +39,6 @@ export default function RegistrarPage() {
             {registrarWorkflows.map((item) => <AdminCard key={item.href} {...item} />)}
           </div>
         </section>
-        <p className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
-          Programme enrolments use the existing academic endpoint. Admissions applications and academic periods use the agreed REST routes and require their matching backend endpoints.
-        </p>
       </section>
     </PortalShell>
   );
