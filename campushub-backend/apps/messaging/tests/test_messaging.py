@@ -6,6 +6,7 @@ from apps.academics.models import (
 )
 from apps.accounts.jwt_utils import make_pair
 from apps.messaging.models import Conversation, ConversationParticipant, Message
+from apps.notifications.models import Notification
 
 pytestmark = pytest.mark.django_db
 
@@ -24,11 +25,12 @@ def setup(db):
     s1 = User.objects.create_user(email='s1@t.com', username='s1', password='TestPass123!', first_name='S', last_name='1', role='student', admission_number='ADM001')
     s2 = User.objects.create_user(email='s2@t.com', username='s2', password='TestPass123!', first_name='S', last_name='2', role='student', admission_number='ADM002')
     admin = User.objects.create_user(email='admin@t.com', username='admin', password='TestPass123!', first_name='A', last_name='dmin', role='admin')
+    ict_admin = User.objects.create_user(email='ict@t.com', username='ict', password='TestPass123!', first_name='I', last_name='CT', role='ict_admin')
     UnitTeachingAssignment.objects.create(offering=o1, lecturer=l1)
     UnitTeachingAssignment.objects.create(offering=o2, lecturer=l2)
     Enrollment.objects.create(student=s1, course=c1, status='active')
     Enrollment.objects.create(student=s2, course=c2, status='active')
-    return type('S', (), dict(dept=dept, c1=c1, c2=c2, u1=u1, u2=u2, o1=o1, o2=o2, l1=l1, l2=l2, s1=s1, s2=s2, admin=admin))()
+    return type('S', (), dict(dept=dept, c1=c1, c2=c2, u1=u1, u2=u2, o1=o1, o2=o2, l1=l1, l2=l2, s1=s1, s2=s2, admin=admin, ict_admin=ict_admin))()
 
 
 def _h(u):
@@ -65,6 +67,97 @@ def test_dm_get_or_create(client, setup):
     assert r1.json()['id'] == r2.json()['id']
 
 
+def test_broadcast_recipients_are_role_scoped(client, setup):
+    response = client.get('/api/messaging/recipients/?role=lecturer', **_h(setup.admin))
+    assert response.status_code == 200
+    assert {item['id'] for item in response.json()['results']} == {setup.l1.id, setup.l2.id}
+
+    response = client.get('/api/messaging/recipients/?role=lecturer', **_h(setup.s1))
+    assert response.status_code == 403
+
+
+def test_lecturer_can_broadcast_only_to_students(client, setup):
+    response = _post(client, '/api/messaging/broadcast/', {
+        'role': 'student',
+        'recipient_ids': [setup.s1.id],
+        'body': 'Class update',
+        'allow_replies': True,
+    }, _h(setup.l1))
+    assert response.status_code == 201
+    assert response.json() == {'delivery': 'chat', 'recipient_count': 1}
+
+    denied = _post(client, '/api/messaging/broadcast/', {
+        'role': 'lecturer',
+        'body': 'Not allowed',
+        'allow_replies': False,
+    }, _h(setup.l1))
+    assert denied.status_code == 403
+
+
+def test_ict_admin_can_broadcast_to_students_or_lecturers(client, setup):
+    for role in ('student', 'lecturer'):
+        response = _post(client, '/api/messaging/broadcast/', {
+            'role': role,
+            'recipient_ids': [setup.s1.id] if role == 'student' else [setup.l1.id],
+            'body': 'Campus update',
+            'allow_replies': False,
+        }, _h(setup.ict_admin))
+        assert response.status_code == 201
+
+
+def test_reply_enabled_broadcast_creates_private_chats(client, setup):
+    response = _post(client, '/api/messaging/broadcast/', {
+        'role': 'lecturer',
+        'recipient_ids': [setup.l1.id, setup.l2.id],
+        'body': 'Staff update',
+        'allow_replies': True,
+    }, _h(setup.admin))
+    assert response.status_code == 201
+    assert response.json()['recipient_count'] == 2
+    assert Conversation.objects.filter(kind='direct').count() == 2
+    assert Message.objects.filter(body='Staff update', sender=setup.admin).count() == 2
+
+    for recipient in (setup.l1, setup.l2):
+        notification = Notification.objects.get(recipient=recipient, verb='New message')
+        conversation_id = ConversationParticipant.objects.get(
+            user=recipient,
+        ).conversation_id
+        assert notification.link == f'/messaging/?conversation={conversation_id}'
+
+
+def test_reply_disabled_broadcast_creates_notifications_only(client, setup):
+    response = _post(client, '/api/messaging/broadcast/', {
+        'role': 'student',
+        'recipient_ids': [setup.s1.id, setup.s2.id],
+        'body': 'Read-only update',
+        'allow_replies': False,
+    }, _h(setup.admin))
+    assert response.status_code == 201
+    assert response.json() == {'delivery': 'notification', 'recipient_count': 2}
+    assert Conversation.objects.count() == 0
+
+    for recipient in (setup.s1, setup.s2):
+        notification = Notification.objects.get(recipient=recipient, verb='Message')
+        assert notification.message == 'Read-only update'
+        assert notification.link == f'/notifications/?notification={notification.id}'
+
+
+def test_broadcast_validates_audience_and_notification_length(client, setup):
+    denied = _post(client, '/api/messaging/broadcast/', {
+        'role': 'admin',
+        'body': 'Not allowed',
+        'allow_replies': True,
+    }, _h(setup.ict_admin))
+    assert denied.status_code == 403
+
+    too_long = _post(client, '/api/messaging/broadcast/', {
+        'role': 'student',
+        'body': 'x' * 256,
+        'allow_replies': False,
+    }, _h(setup.admin))
+    assert too_long.status_code == 400
+
+
 # --- Group conversation ---
 
 def test_group_student_enrolled(client, setup):
@@ -93,6 +186,7 @@ def test_send_and_list(client, setup):
     r = _post(client, f'/api/messaging/conversations/{cid}/messages/', {'body': 'Hello!'}, _h(setup.s1))
     assert r.status_code == 201
     assert r.json()['body'] == 'Hello!'
+    assert Notification.objects.get(recipient=setup.l1).link == f'/messaging/?conversation={cid}'
     r = client.get(f'/api/messaging/conversations/{cid}/messages/', **_h(setup.s1))
     assert r.json()['count'] == 1
 

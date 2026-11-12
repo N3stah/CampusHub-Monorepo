@@ -60,3 +60,9 @@ Run backend tests from `campushub-backend`:
 - Assignment detail pages manage deadlines and attachments; submissions can be searched, previewed, marked as draft or released, and exported through the unit gradebook. Grade changes are audited.
 
 Lecturer access is based on the authenticated user's teaching assignments and active course enrolments. Use accounts provisioned for the local database to verify role-specific flows.
+
+## Messaging
+
+- Super admins and ICT administrators can message all active students or lecturers; lecturers can message all active students. Sender-side audience and recipient selection are checked again by the API.
+- With **Allow replies** enabled, each recipient gets a private chat with the sender. With replies disabled, each recipient receives an in-app notification instead.
+- Message notifications link directly to their chat or notification. The messaging screen also retains direct conversations and course group chats.

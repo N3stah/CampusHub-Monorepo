@@ -24,7 +24,7 @@ const navigation: { label: string; href: string; roles: User['role'][] }[] = [
   { label: 'Attendance', href: '/lecturer/attendance', roles: ['lecturer'] },
   { label: 'Learning materials / notes', href: '/lecturer/materials', roles: ['lecturer'] },
   { label: 'Assignments', href: '/assignments', roles: ['student', 'lecturer'] },
-  { label: 'Messages', href: '/messaging', roles: ['student', 'lecturer', 'admin'] },
+  { label: 'Messages', href: '/messaging', roles: ['student', 'lecturer', 'admin', 'ict_admin'] },
   { label: 'Student placements', href: '/lecturer/placements', roles: ['lecturer'] },
   { label: 'My courses', href: '/courses', roles: ['student'] },
   { label: 'Semester registration', href: '/academics/registration', roles: ['student', 'registrar'] },

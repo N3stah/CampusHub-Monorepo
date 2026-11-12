@@ -63,6 +63,15 @@ export default function NotificationsPage() {
     return () => controller.abort();
   }, [loadNotifications]);
 
+  useEffect(() => {
+    if (loading) return;
+    const notificationId = new URLSearchParams(window.location.search).get('notification');
+    if (!notificationId || !/^\d+$/.test(notificationId)) return;
+    const notification = document.getElementById(`notification-${notificationId}`);
+    notification?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    notification?.focus({ preventScroll: true });
+  }, [loading, notifications]);
+
   const markAsRead = async (notification: Notification) => {
     setBusyNotificationId(notification.id);
     setActionError(null);
@@ -139,9 +148,17 @@ export default function NotificationsPage() {
         {!loadError && notifications.length > 0 && (
           <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             {notifications.map((notification) => {
-              const href = getInternalHref(notification.link);
+              const internalHref = getInternalHref(notification.link);
+              const href = internalHref?.startsWith('/notifications/')
+                ? `${internalHref}#notification-${notification.id}`
+                : internalHref;
               return (
-                <li key={notification.id} className={`flex items-start gap-4 p-4 sm:p-5 ${notification.is_read ? '' : 'bg-blue-50/50'}`}>
+                <li
+                  id={`notification-${notification.id}`}
+                  key={notification.id}
+                  tabIndex={-1}
+                  className={`flex items-start gap-4 p-4 outline-none transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 sm:p-5 ${notification.is_read ? '' : 'bg-blue-50/50'}`}
+                >
                   <span
                     aria-label={notification.is_read ? 'Read' : 'Unread'}
                     className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${notification.is_read ? 'bg-slate-300' : 'bg-blue-600'}`}
@@ -154,8 +171,12 @@ export default function NotificationsPage() {
                       <time dateTime={notification.created_at}>{formatDate(notification.created_at)}</time>
                     </p>
                     {href && (
-                      <Link href={href} className="mt-3 inline-block text-sm font-semibold text-blue-700 hover:underline">
-                        View update
+                      <Link
+                        href={href}
+                        onClick={() => { if (!notification.is_read) void markAsRead(notification); }}
+                        className="mt-3 inline-block text-sm font-semibold text-blue-700 hover:underline"
+                      >
+                        {href.startsWith('/messaging/') ? 'Open conversation' : 'View notification'}
                       </Link>
                     )}
                   </div>
