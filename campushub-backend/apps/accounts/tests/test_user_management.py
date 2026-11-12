@@ -140,6 +140,83 @@ def test_only_admin_can_create_users(client):
     assert not User.objects.filter(email='other@example.test').exists()
 
 
+def test_admin_stats_directory_searches_and_filters_students(client):
+    admin = make_user('directory-admin@example.test', 'directory-admin', role='admin')
+    department = Department.objects.create(name='Computing', code='COMP')
+    matching = make_user('ada@example.test', 'ada-lovelace', department=department)
+    matching.first_name = 'Ada'
+    matching.last_name = 'Lovelace'
+    matching.save(update_fields=['first_name', 'last_name'])
+    make_user('grace@example.test', 'grace-hopper')
+    other_department = Department.objects.create(name='Business', code='BUS')
+    other_ada = make_user('other-ada@example.test', 'other-ada', department=other_department)
+    other_ada.first_name = 'Ada'
+    other_ada.last_name = 'Byron'
+    other_ada.save(update_fields=['first_name', 'last_name'])
+
+    response = client.get(
+        '/api/admin/stats/directory/students/?search=Ada&department_id={}&account_status=active'.format(department.id),
+        **auth_header(admin),
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result['count'] == 1
+    assert result['results'][0]['id'] == matching.id
+    assert result['results'][0]['name'] == 'Ada Lovelace'
+    assert result['results'][0]['status'] == 'Active'
+
+
+def test_admin_stats_directory_filters_and_searches_applications(client):
+    admin = make_user('applications-admin@example.test', 'applications-admin', role='admin')
+    student = make_user('applicant@example.test', 'applicant')
+    student.first_name = 'Morgan'
+    student.last_name = 'Student'
+    student.save(update_fields=['first_name', 'last_name'])
+    department = Department.objects.create(name='Computing', code='COMP')
+    course = Course.objects.create(code='COMP101', title='Computing', department=department)
+    Enrollment.objects.create(student=student, course=course)
+    placement = Placement.objects.create(
+        title='Campus software internship',
+        company='Campus Systems',
+        location='Main campus',
+        description='Support the campus software team.',
+        requirements='Currently enrolled.',
+        deadline=(timezone.now() + timedelta(days=14)).date(),
+        slots_available=1,
+        posted_by=admin,
+    )
+    application = Application.objects.create(
+        student=student,
+        placement=placement,
+        status='pending',
+        cover_note='Interested in this role.',
+    )
+
+    response = client.get(
+        '/api/admin/stats/directory/applications/?search=Campus&status=pending',
+        **auth_header(admin),
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result['count'] == 1
+    assert result['results'][0]['id'] == application.id
+    assert result['results'][0]['name'] == 'Morgan Student'
+    assert result['results'][0]['status'] == 'Pending'
+
+
+def test_non_admin_cannot_open_admin_stats_directories(client):
+    student = make_user('directory-student@example.test', 'directory-student')
+
+    response = client.get(
+        '/api/admin/stats/directory/students/',
+        **auth_header(student),
+    )
+
+    assert response.status_code == 403
+
+
 def test_officer_can_only_list_student_accounts(client):
     officer = make_user('officer@example.test', 'officer-one', role='officer')
     student = make_user('student@example.test', 'student-one')

@@ -18,7 +18,6 @@ const navigation: { label: string; href: string; roles: User['role'][] }[] = [
   { label: 'Registrar office', href: '/registrar', roles: ['registrar'] },
   { label: 'Library management', href: '/library', roles: ['librarian'] },
   { label: 'Hostel management', href: '/hostels', roles: ['hostel'] },
-  { label: 'CampusHub AI', href: '/ai', roles: ['student', 'lecturer', 'officer', 'admin'] },
   { label: 'Units', href: '/lecturer/units', roles: ['lecturer'] },
   { label: 'Lesson plan', href: '/lecturer/lessons', roles: ['lecturer'] },
   { label: 'Attendance', href: '/lecturer/attendance', roles: ['lecturer'] },
@@ -242,6 +241,21 @@ export default function PortalShell({ children, roles }: PortalShellProps) {
       <main className="fixed bottom-0 left-0 right-0 top-16 overflow-y-auto lg:left-60">
         <div className="portal-content mx-auto min-w-0 max-w-7xl px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-8">{children}</div>
       </main>
+      {pathname !== '/ai' && (
+        <Link
+          href="/ai"
+          aria-label="Open Campus AI"
+          title="Campus AI"
+          className="fixed bottom-4 right-4 z-40 inline-flex min-h-12 items-center gap-2.5 rounded-full border border-slate-200 bg-white/95 px-4 text-sm font-bold text-slate-800 shadow-lg shadow-slate-900/10 backdrop-blur transition hover:border-blue-200 hover:bg-white hover:text-blue-800 hover:shadow-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 sm:bottom-6 sm:right-6"
+        >
+          <span aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-900 text-white">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 18.5 4 20l1.2-3.1A8 8 0 1 1 8 19m2-8h.01M14 11h.01M17 11h.01" />
+            </svg>
+          </span>
+          <span>Campus AI</span>
+        </Link>
+      )}
     </div>
   );
 }

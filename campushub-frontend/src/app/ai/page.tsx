@@ -263,7 +263,7 @@ export default function AIPage() {
   const feedTime = feed ? new Date(feed.generated_at).toLocaleString() : '';
 
   return (
-    <PortalShell roles={['student', 'lecturer', 'officer', 'admin']}>
+    <PortalShell>
       <section className="space-y-7">
         <header>
           <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">CampusHub AI</p>
