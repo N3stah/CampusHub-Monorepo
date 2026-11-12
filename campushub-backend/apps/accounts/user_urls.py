@@ -9,5 +9,6 @@ urlpatterns = [
     path('lecturers/', user_views.lecturer_list_create, name='lecturer-list-create'),
     path('lecturers/<int:pk>/', user_views.lecturer_detail_update, name='lecturer-detail-update'),
     path('admin/stats/', admin_views.admin_stats, name='admin-stats'),
+    path('admin/stats/directory/<str:metric>/', admin_views.admin_stat_directory, name='admin-stat-directory'),
     path('admin/logs/', admin_views.admin_logs, name='admin-logs'),
 ]

@@ -66,3 +66,8 @@ Lecturer access is based on the authenticated user's teaching assignments and ac
 - Super admins can message any active account by role or selected recipients, and can send to all active campus users after confirming the school-wide audience. ICT administrators can message students or lecturers; lecturers can message students. The API enforces the sender's role permissions and validates every recipient.
 - With **Allow replies** enabled, each recipient gets a private chat with the sender. With replies disabled, each recipient receives an in-app notification instead.
 - Message notifications link directly to their chat or notification. The messaging screen also retains direct conversations and course group chats.
+
+## Super Admin campus stats and Campus AI
+
+- Every campus statistic opens a paginated directory with server-side search and relevant role, status, department, or school filters.
+- Campus AI is available from the floating **Campus AI** shortcut for every signed-in role. AI analytics remain limited to Super Admin; task drafts are shown only for roles with configured tasks.
