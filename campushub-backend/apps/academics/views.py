@@ -5,7 +5,7 @@ import mimetypes
 from django.http import HttpResponse, JsonResponse, FileResponse
 from django.http.multipartparser import MultiPartParser
 from django.db import transaction, IntegrityError
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -21,6 +21,7 @@ from datetime import date, timedelta
 from apps.common.service_api import collection_response, date_value, integer_value, json_payload, require_role
 
 User = get_user_model()
+ACADEMIC_ADMIN_ROLES = {'admin', 'ict_admin'}
 
 # --- Academic Period Views ---
 
@@ -142,8 +143,8 @@ def department_list_create(request):
         return JsonResponse(list(departments), safe=False)
         
     elif request.method == 'POST':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can create departments'}, status=403)
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can create departments'}, status=403)
             
         try:
             data = json.loads(request.body)
@@ -191,8 +192,8 @@ def department_detail_update_delete(request, pk):
         })
         
     elif request.method == 'PATCH':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can update departments'}, status=403)
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can update departments'}, status=403)
             
         try:
             data = json.loads(request.body)
@@ -231,11 +232,15 @@ def department_detail_update_delete(request, pk):
         })
         
     elif request.method == 'DELETE':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can delete departments'}, status=403)
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can delete departments'}, status=403)
             
-        if Course.objects.filter(department=dept).exists() or User.objects.filter(department=dept).exists():
-            return JsonResponse({'error': 'Cannot delete department with active courses or members'}, status=400)
+        if (
+            Course.objects.filter(department=dept).exists()
+            or User.objects.filter(department=dept).exists()
+            or dept.units.exists()
+        ):
+            return JsonResponse({'error': 'Cannot delete department with courses, members, or shared units'}, status=400)
             
         dept.delete()
         AuditEvent.objects.create(actor=user, action='department.delete', description=f'Deleted department {pk}')
@@ -254,7 +259,10 @@ def course_list_create(request):
         active_filter = request.GET.get('is_active', 'true').lower()
         if active_filter not in {'true', 'false'}:
             return JsonResponse({'error': 'is_active must be true or false'}, status=400)
-        courses = Course.objects.filter(is_active=(active_filter == 'true')).select_related('department')
+        include_inactive = request.GET.get('include_inactive', '').lower() == 'true'
+        courses = Course.objects.select_related('department')
+        if not include_inactive:
+            courses = courses.filter(is_active=(active_filter == 'true'))
         if department_id:
             try:
                 courses = courses.filter(department_id=int(department_id))
@@ -282,8 +290,8 @@ def course_list_create(request):
         return JsonResponse(data, safe=False)
         
     elif request.method == 'POST':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can create courses'}, status=403)
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can create courses'}, status=403)
             
         try:
             data = json.loads(request.body)
@@ -342,8 +350,8 @@ def course_detail_update_delete(request, pk):
         return JsonResponse(data)
         
     elif request.method == 'PATCH':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can update courses'}, status=403)
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can update courses'}, status=403)
             
         try:
             data = json.loads(request.body)
@@ -371,14 +379,18 @@ def course_detail_update_delete(request, pk):
         course.code = data.get('code', course.code)
         course.credits = data.get('credits', course.credits)
         course.description = data.get('description', course.description)
+        if 'is_active' in data:
+            if not isinstance(data['is_active'], bool):
+                return JsonResponse({'error': 'is_active must be true or false'}, status=400)
+            course.is_active = data['is_active']
         
         course.save()
         AuditEvent.objects.create(actor=user, action='course.update', description=f'Updated course {course.code}')
         return JsonResponse({'id': course.id, 'code': course.code, 'title': course.title, 'is_active': course.is_active})
         
     elif request.method == 'DELETE':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can delete courses'}, status=403)
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can delete courses'}, status=403)
             
         course.is_active = False
         course.save()
@@ -532,11 +544,13 @@ def course_bulk_assign_lecturer(request):
 def school_list_create(request):
     user = request.user
     if request.method == 'GET':
-        schools = School.objects.all().values('id', 'name', 'code', 'is_active')
+        schools = School.objects.annotate(
+            department_count=Count('departments', distinct=True),
+        ).values('id', 'name', 'code', 'is_active', 'department_count')
         return paginate_queryset(schools, request)
     elif request.method == 'POST':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can create schools'}, status=403)
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can create schools'}, status=403)
         try:
             data = json.loads(request.body)
             name = data.get('name')
@@ -563,8 +577,8 @@ def school_detail_update_delete(request, pk):
     if request.method == 'GET':
         return JsonResponse({'id': school.id, 'name': school.name, 'code': school.code, 'is_active': school.is_active})
     elif request.method == 'PATCH':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can update schools'}, status=403)
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can update schools'}, status=403)
         try:
             data = json.loads(request.body)
         except json.JSONDecodeError:
@@ -583,8 +597,8 @@ def school_detail_update_delete(request, pk):
         AuditEvent.objects.create(actor=user, action='school.update', description=f'Updated school {school.code}')
         return JsonResponse({'id': school.id, 'name': school.name, 'code': school.code, 'is_active': school.is_active})
     elif request.method == 'DELETE':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can delete schools'}, status=403)
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can delete schools'}, status=403)
         if Department.objects.filter(school=school).exists():
             return JsonResponse({'error': 'Cannot delete school with active departments'}, status=400)
         school.delete()
@@ -619,6 +633,8 @@ def format_unit(unit):
         'credits': unit.credits,
         'description': unit.description,
         'is_active': unit.is_active,
+        'department_ids': list(unit.departments.values_list('id', flat=True)),
+        'course_ids': list(unit.offerings.values_list('course_id', flat=True)),
         'departments': list(unit.departments.values('id', 'name', 'code')),
         'offerings': [
             {
@@ -659,8 +675,8 @@ def unit_list_create(request):
             default_ordering=('code',),
         )
     elif request.method == 'POST':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can create units'}, status=403)
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can create units'}, status=403)
         try:
             data = json.loads(request.body)
             code = data.get('code')
@@ -668,17 +684,31 @@ def unit_list_create(request):
             credits = data.get('credits', 3)
             description = data.get('description', '')
             department_ids = data.get('department_ids', [])
+            course_ids = data.get('course_ids', [])
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
         if not code or not title:
             return JsonResponse({'error': 'Code and title are required'}, status=400)
+        if not isinstance(department_ids, list) or not isinstance(course_ids, list):
+            return JsonResponse({'error': 'department_ids and course_ids must be lists'}, status=400)
         if Unit.objects.filter(code=code).exists():
             return JsonResponse({'error': 'Unit code already exists'}, status=400)
-        unit = Unit.objects.create(code=code, title=title, credits=credits, description=description)
-        if department_ids:
-            depts = Department.objects.filter(id__in=department_ids)
+        if any(type(department_id) is not int for department_id in department_ids):
+            return JsonResponse({'error': 'department_ids must contain integer ids'}, status=400)
+        if any(type(course_id) is not int for course_id in course_ids):
+            return JsonResponse({'error': 'course_ids must contain integer ids'}, status=400)
+        depts = list(Department.objects.filter(id__in=department_ids))
+        if len(depts) != len(set(department_ids)):
+            return JsonResponse({'error': 'One or more departments were not found'}, status=400)
+        courses = list(Course.objects.filter(id__in=course_ids))
+        if len(courses) != len(set(course_ids)):
+            return JsonResponse({'error': 'One or more programmes were not found'}, status=400)
+        with transaction.atomic():
+            unit = Unit.objects.create(code=code, title=title, credits=credits, description=description)
             unit.departments.set(depts)
-        AuditEvent.objects.create(actor=user, action='unit.create', description=f'Created unit {unit.code}')
+            for course in courses:
+                Offering.objects.get_or_create(unit=unit, course=course, defaults={'is_active': True})
+            AuditEvent.objects.create(actor=user, action='unit.create', description=f'Created unit {unit.code}')
         return JsonResponse(format_unit(unit), status=201)
 
 @csrf_exempt
@@ -693,36 +723,65 @@ def unit_detail_update_delete(request, pk):
     if request.method == 'GET':
         return JsonResponse(format_unit(unit))
     elif request.method == 'PATCH':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can update units'}, status=403)
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can update units'}, status=403)
         try:
             data = json.loads(request.body)
         except json.JSONDecodeError:
             return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        department_ids = data.get('department_ids')
+        course_ids = data.get('course_ids')
+        if department_ids is not None and not isinstance(department_ids, list):
+            return JsonResponse({'error': 'department_ids must be a list'}, status=400)
+        if course_ids is not None and not isinstance(course_ids, list):
+            return JsonResponse({'error': 'course_ids must be a list'}, status=400)
+        if department_ids is not None and any(type(department_id) is not int for department_id in department_ids):
+            return JsonResponse({'error': 'department_ids must contain integer ids'}, status=400)
+        if course_ids is not None and any(type(course_id) is not int for course_id in course_ids):
+            return JsonResponse({'error': 'course_ids must contain integer ids'}, status=400)
+        depts = None
+        if department_ids is not None:
+            depts = list(Department.objects.filter(id__in=department_ids))
+            if len(depts) != len(set(department_ids)):
+                return JsonResponse({'error': 'One or more departments were not found'}, status=400)
+        courses = None
+        if course_ids is not None:
+            courses = list(Course.objects.filter(id__in=course_ids))
+            if len(courses) != len(set(course_ids)):
+                return JsonResponse({'error': 'One or more programmes were not found'}, status=400)
         unit.title = data.get('title', unit.title)
         unit.code = data.get('code', unit.code)
         unit.credits = data.get('credits', unit.credits)
         unit.description = data.get('description', unit.description)
-        if 'department_ids' in data:
-            depts = Department.objects.filter(id__in=data['department_ids'])
-            unit.departments.set(depts)
-        unit.save()
-        AuditEvent.objects.create(actor=user, action='unit.update', description=f'Updated unit {unit.code}')
+        if 'is_active' in data:
+            if not isinstance(data['is_active'], bool):
+                return JsonResponse({'error': 'is_active must be true or false'}, status=400)
+            unit.is_active = data['is_active']
+        with transaction.atomic():
+            unit.save()
+            if depts is not None:
+                unit.departments.set(depts)
+            if courses is not None:
+                Offering.objects.filter(unit=unit).exclude(course__in=courses).delete()
+                for course in courses:
+                    Offering.objects.get_or_create(unit=unit, course=course, defaults={'is_active': True})
+            AuditEvent.objects.create(actor=user, action='unit.update', description=f'Updated unit {unit.code}')
         return JsonResponse(format_unit(unit))
     elif request.method == 'DELETE':
-        if user.role != 'admin':
-            return JsonResponse({'error': 'Only admins can delete units'}, status=403)
-        unit.delete()
-        AuditEvent.objects.create(actor=user, action='unit.delete', description=f'Deleted unit {pk}')
-        return JsonResponse({'message': 'Unit deleted successfully'})
+        if user.role not in ACADEMIC_ADMIN_ROLES:
+            return JsonResponse({'error': 'Only academic administrators can deactivate units'}, status=403)
+        unit.is_active = False
+        unit.save(update_fields=['is_active'])
+        AuditEvent.objects.create(actor=user, action='unit.deactivate', description=f'Deactivated unit {unit.code}')
+        return JsonResponse({'message': 'Unit deactivated successfully'})
 
 @csrf_exempt
 @require_http_methods(["POST"])
 @jwt_required
 def unit_teaching_assignment(request, pk):
     user = request.user
-    if user.role != 'admin':
-        return JsonResponse({'error': 'Only admins can assign lecturers'}, status=403)
+    if user.role not in ACADEMIC_ADMIN_ROLES:
+        return JsonResponse({'error': 'Only academic administrators can assign lecturers'}, status=403)
     try:
         unit = Unit.objects.get(pk=pk)
     except Unit.DoesNotExist:
@@ -731,23 +790,38 @@ def unit_teaching_assignment(request, pk):
         data = json.loads(request.body)
         course_id = data.get('course_id')
         lecturer_id = data.get('lecturer_id')
+        lecturer_ids = data.get('lecturer_ids')
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    if not course_id or not lecturer_id:
-        return JsonResponse({'error': 'course_id and lecturer_id are required'}, status=400)
+    if not course_id or (lecturer_ids is None and not lecturer_id):
+        return JsonResponse({'error': 'course_id and lecturer_id or lecturer_ids are required'}, status=400)
+    if lecturer_ids is None:
+        lecturer_ids = [lecturer_id]
+    if not isinstance(lecturer_ids, list):
+        return JsonResponse({'error': 'lecturer_ids must be a list'}, status=400)
+    if any(type(lecturer_id) is not int for lecturer_id in lecturer_ids):
+        return JsonResponse({'error': 'lecturer_ids must contain integer ids'}, status=400)
     try:
         course = Course.objects.get(pk=course_id)
     except Course.DoesNotExist:
         return JsonResponse({'error': 'Course not found'}, status=404)
-    lecturer = User.objects.filter(pk=lecturer_id, role='lecturer').first()
-    if not lecturer:
-        return JsonResponse({'error': 'Lecturer must be a user with role=lecturer'}, status=400)
-    offering, _ = Offering.objects.get_or_create(unit=unit, course=course, defaults={'is_active': True})
-    assignment, created = UnitTeachingAssignment.objects.get_or_create(offering=offering, lecturer=lecturer)
-    if not created:
-        return JsonResponse({'error': 'Lecturer already assigned to this offering'}, status=400)
-    AuditEvent.objects.create(actor=user, action='unit.teaching_assigned', description=f'Assigned {lecturer.email} to {unit.code} in {course.code}')
-    return JsonResponse({'id': assignment.id, 'offering_id': offering.id, 'lecturer_id': lecturer.id}, status=201)
+    lecturers = list(User.objects.filter(pk__in=lecturer_ids, role='lecturer'))
+    if len(lecturers) != len(set(lecturer_ids)):
+        return JsonResponse({'error': 'Every lecturer_id must reference an existing lecturer'}, status=400)
+    with transaction.atomic():
+        offering, _ = Offering.objects.get_or_create(unit=unit, course=course, defaults={'is_active': True})
+        UnitTeachingAssignment.objects.filter(offering=offering).exclude(lecturer__in=lecturers).delete()
+        for lecturer in lecturers:
+            UnitTeachingAssignment.objects.get_or_create(offering=offering, lecturer=lecturer)
+        AuditEvent.objects.create(
+            actor=user,
+            action='unit.teaching_assigned',
+            description=f'Updated lecturer assignments for {unit.code} in {course.code}.',
+        )
+    return JsonResponse({
+        'offering_id': offering.id,
+        'lecturer_ids': [lecturer.id for lecturer in lecturers],
+    }, status=200)
 
 
 # --- Admin Enrollment (Admissions) Views ---

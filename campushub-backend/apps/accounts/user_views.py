@@ -197,10 +197,17 @@ def _visible_users(request):
         requested_role = request.GET.get('role')
         if requested_role not in (None, '', 'student'):
             raise PermissionError('This role may only view student accounts.')
+    elif request.user.role == 'ict_admin':
+        users = User.objects.filter(role='student', is_active=True).select_related('department')
+        requested_role = request.GET.get('role')
+        if requested_role not in (None, '', 'student'):
+            raise PermissionError('ICT administrators may only view student directory entries.')
     else:
         raise PermissionError('Permission denied.')
 
     department_id = request.GET.get('department_id')
+    if request.user.role == 'ict_admin' and not department_id:
+        raise PermissionError('ICT administrators must filter student accounts by department.')
     if department_id:
         try:
             department_id = int(department_id)
@@ -219,6 +226,19 @@ def _student_lookup_data(user):
         'last_name': user.last_name,
         'email': user.email,
         'role': user.role,
+        'is_active': user.is_active,
+    }
+
+
+def _academic_lecturer_lookup_data(user):
+    return {
+        'id': user.id,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'email': user.email,
+        'role': user.role,
+        'department': user.department_id,
+        'is_active': user.is_active,
     }
 
 
@@ -359,6 +379,8 @@ def _get_user_for_request(request, pk):
         return user, None
     if request.user.role == 'officer' and user.role == 'student':
         return user, None
+    if request.user.role == 'ict_admin' and user.role == 'student':
+        return user, None
     return None, JsonResponse({'error': 'Permission denied.'}, status=403)
 
 
@@ -370,7 +392,28 @@ def user_detail_update_deactivate(request, pk):
     if error:
         return error
     if request.method == 'GET':
+        if request.user.role == 'ict_admin':
+            return JsonResponse(_student_lookup_data(user))
         return JsonResponse(_user_data(user))
+    if request.user.role == 'ict_admin':
+        if request.method != 'PATCH':
+            return JsonResponse({'error': 'ICT administrators may only update student department assignments.'}, status=403)
+        data, error = _json_data(request)
+        if error:
+            return error
+        if set(data) != {'department'}:
+            return JsonResponse({'error': 'ICT administrators may only update the department assignment.'}, status=403)
+        try:
+            _set_user_fields(user, data)
+            user.save(update_fields=['department'])
+            AuditEvent.objects.create(
+                actor=request.user,
+                action='student.department_assigned',
+                description=f'Updated department assignment for {user.get_full_name()}.',
+            )
+        except ValueError as validation_error:
+            return JsonResponse({'error': str(validation_error)}, status=400)
+        return JsonResponse(_student_lookup_data(user))
     if request.user.role != 'admin':
         return JsonResponse({'error': 'Only admins can modify user accounts.'}, status=403)
     if request.user.pk == user.pk:
@@ -420,9 +463,11 @@ def user_detail_update_deactivate(request, pk):
 @jwt_required
 def lecturer_list_create(request):
     if request.method == 'GET':
-        if request.user.role not in {'admin', 'officer', 'lecturer'}:
+        if request.user.role not in {'admin', 'officer', 'lecturer', 'ict_admin'}:
             return JsonResponse({'error': 'Permission denied.'}, status=403)
         lecturers = User.objects.filter(role='lecturer').select_related('department')
+        if request.user.role == 'ict_admin':
+            lecturers = lecturers.filter(is_active=True)
         search = request.GET.get('search', '').strip()
         if search:
             lecturers = lecturers.filter(
@@ -438,7 +483,10 @@ def lecturer_list_create(request):
             except ValueError:
                 return JsonResponse({'error': 'department_id must be an integer.'}, status=400)
             lecturers = lecturers.filter(department_id=department_id)
-        results = [_user_data(user) for user in lecturers]
+        results = [
+            _academic_lecturer_lookup_data(user) if request.user.role == 'ict_admin' else _user_data(user)
+            for user in lecturers
+        ]
         return JsonResponse({'count': len(results), 'next': None, 'previous': None, 'results': results})
 
     if request.user.role != 'admin':
@@ -488,10 +536,29 @@ def lecturer_detail_update(request, pk):
         user = User.objects.select_related('department').get(pk=pk, role='lecturer')
     except User.DoesNotExist:
         return JsonResponse({'error': 'Lecturer not found.'}, status=404)
-    if request.user.role not in {'admin', 'officer', 'lecturer'}:
+    if request.user.role not in {'admin', 'officer', 'lecturer', 'ict_admin'}:
         return JsonResponse({'error': 'Permission denied.'}, status=403)
     if request.method == 'GET':
+        if request.user.role == 'ict_admin':
+            return JsonResponse(_academic_lecturer_lookup_data(user))
         return JsonResponse(_user_data(user))
+    if request.user.role == 'ict_admin':
+        data, error = _json_data(request)
+        if error:
+            return error
+        if set(data) != {'department'}:
+            return JsonResponse({'error': 'ICT administrators may only update lecturer department assignments.'}, status=403)
+        try:
+            _set_user_fields(user, data)
+            user.save(update_fields=['department'])
+            AuditEvent.objects.create(
+                actor=request.user,
+                action='lecturer.department_assigned',
+                description=f'Updated department assignment for {user.get_full_name()}.',
+            )
+        except ValueError as validation_error:
+            return JsonResponse({'error': str(validation_error)}, status=400)
+        return JsonResponse(_academic_lecturer_lookup_data(user))
     if request.user.role != 'admin':
         return JsonResponse({'error': 'Only admins can modify lecturer accounts.'}, status=403)
     if request.user.pk == user.pk:
