@@ -10,7 +10,7 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def setup(db):
+def setup(db, active_period, register_unit):
     dept = Department.objects.create(name='CS', code='CS')
     course = Course.objects.create(code='CS101', title='Intro', department=dept)
     unit = Unit.objects.create(code='CS101U', title='Unit')
@@ -21,6 +21,7 @@ def setup(db):
     admin = User.objects.create_user(email='admin@t.com', username='admin', password='TestPass123!', first_name='A', last_name='dmin', role='admin')
     UnitTeachingAssignment.objects.create(offering=offering, lecturer=lecturer)
     enrollment = Enrollment.objects.create(student=student, course=course, status='active')
+    register_unit(student, unit)
     return type('S', (), dict(dept=dept, course=course, unit=unit, offering=offering, lecturer=lecturer, other_lecturer=other_lecturer, student=student, admin=admin, enrollment=enrollment))()
 
 

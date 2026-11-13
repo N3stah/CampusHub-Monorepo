@@ -7,7 +7,7 @@ from apps.accounts.jwt_utils import make_pair
 pytestmark = pytest.mark.django_db
 
 @pytest.fixture
-def setup_data(db):
+def setup_data(db, active_period, register_unit):
     lecturer = User.objects.create_user(email='lec@test.com', username='lec', password='pass', first_name='L', last_name='M', role='lecturer')
     students = []
     for i in range(6):
@@ -22,6 +22,7 @@ def setup_data(db):
     
     for s in students:
         Enrollment.objects.create(student=s, course=course, status='active')
+        register_unit(s, unit)
     
     return {'lecturer': lecturer, 'students': students, 'offering': offering}
 

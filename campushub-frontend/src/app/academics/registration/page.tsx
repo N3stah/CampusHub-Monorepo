@@ -42,24 +42,18 @@ export default function SemesterRegistrationPage() {
         <header>
           <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Student academic services</p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight">Semester registration</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">Register for an offered unit in the active academic period and review your current registrations.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Review the units assigned to you by the Registrar for each academic period.</p>
         </header>
         <ApiCrudWorkspace
-          title="My unit registrations"
-          description="Choose an active academic period and unit. Historical registrations should be cancelled or completed, not erased."
+          title="My registered units"
+          description="The Registrar assigns units for each academic period. Contact the Registrar if a unit is missing."
           endpoint="/academics/registrations/"
-          fields={[
-            { name: 'student_id', label: 'Student account', required: true, defaultValue: String(user?.id ?? ''), readOnly: true, hidden: true },
-            { name: 'academic_period_id', label: 'Academic period', type: 'number', required: true, lookup: { endpoint: '/academics/periods/', params: { status: 'active' }, labelFields: ['academic_year', 'name'] } },
-            { name: 'unit_id', label: 'Unit', type: 'number', required: true, lookup: { endpoint: '/academics/units/', params: { is_active: 'true' }, labelFields: ['code', 'title'] } },
-            { name: 'status', label: 'Status', required: true, defaultValue: 'registered', hidden: true },
-            { name: 'registered_on', label: 'Registration date', type: 'date', required: true, defaultValue: () => new Date().toISOString().slice(0, 10), hidden: true },
-          ]}
+          fields={[]}
           displayFields={['academic_period_name', 'unit_code', 'unit_title', 'status', 'registered_on']}
           displayLabels={{ academic_period_name: 'Academic period', unit_code: 'Unit code', unit_title: 'Unit', registered_on: 'Registered on' }}
+          allowCreate={false}
           allowEdit={false}
           allowDelete={false}
-          baseParams={{ scope: 'self' }}
         />
       </section>
     </PortalShell>

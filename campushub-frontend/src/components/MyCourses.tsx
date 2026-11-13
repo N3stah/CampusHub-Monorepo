@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
 import { downloadBlob, getDownloadFilename } from '@/lib/application-files';
-import type { AcademicUnit, Enrollment } from '@/types/portal';
+import type { AcademicUnit, Enrollment, UnitRegistration } from '@/types/portal';
 
 interface MyCoursesProps {
   compact?: boolean;
@@ -28,15 +28,22 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
 
   const loadCourses = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [enrollmentPage, unitPage] = await Promise.all([
+      const [enrollmentPage, unitPage, registrationPage] = await Promise.all([
         getApiPage<Enrollment>('/academics/enrollments/', {}, signal),
         getApiPage<AcademicUnit>('/academics/units/', {}, signal),
+        getApiPage<UnitRegistration>('/academics/registrations/', {}, signal),
       ]);
       const activeCourseIds = new Set(enrollmentPage.results
         .filter((enrollment) => enrollment.status === 'active')
         .map((enrollment) => enrollment.course_id));
+      const registeredUnitIds = new Set(registrationPage.results
+        .filter((registration) => (
+          registration.status === 'registered'
+          && registration.academic_period_status === 'active'
+        ))
+        .map((registration) => registration.unit_id));
       setUnits(unitPage.results.flatMap((unit) => unit.offerings
-        .filter((offering) => activeCourseIds.has(offering.course_id))
+        .filter((offering) => offering.is_active && activeCourseIds.has(offering.course_id) && registeredUnitIds.has(unit.id))
         .map((offering) => ({
           id: unit.id,
           offering_id: offering.offering_id,
@@ -68,7 +75,7 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
         <div>
           <h2 id="my-courses-heading" className="font-semibold">My units</h2>
-          <p className="mt-1 text-xs text-slate-500">Units in your active programme</p>
+          <p className="mt-1 text-xs text-slate-500">Units registered for this semester</p>
         </div>
         {units.length > 0 && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{units.length}</span>}
       </div>
@@ -97,8 +104,8 @@ export default function MyCourses({ compact = false }: MyCoursesProps) {
         </ul>
       ) : (
         <div className="px-5 py-8 text-center">
-          <p className="text-sm font-medium text-slate-700">No units in your active programme</p>
-          <p className="mt-1 text-sm text-slate-500">Units will appear here once they are added to your programme.</p>
+          <p className="text-sm font-medium text-slate-700">No units registered for this semester</p>
+          <p className="mt-1 text-sm text-slate-500">Your units will appear here after the Registrar registers you.</p>
         </div>
       )}
     </section>

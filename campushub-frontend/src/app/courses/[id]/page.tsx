@@ -10,7 +10,7 @@ import { DownloadResourceButton } from '@/components/MyCourses';
 import api from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
-import type { AcademicUnit, ClassSession, Course, CourseAnnouncement, CourseResource, CourseRosterEntry, UnitAssignment, UnitGroup } from '@/types/portal';
+import type { AcademicUnit, ClassSession, Course, CourseAnnouncement, CourseResource, CourseRosterEntry, UnitAssignment, UnitGroup, UnitRegistration } from '@/types/portal';
 
 const allowedResourceExtensions = new Set(['pdf', 'docx', 'pptx', 'xlsx', 'png', 'jpg']);
 const maxResourceSize = 10 * 1024 * 1024;
@@ -230,13 +230,26 @@ function CourseDetailContent() {
 
   const loadCourse = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [response, unitPage] = await Promise.all([
+      const [response, unitPage, registrationPage] = await Promise.all([
         api.get<Course>(`/academics/courses/${courseId}/`, { signal }),
         getApiPage<AcademicUnit>('/academics/units/', {}, signal),
+        user?.role === 'student'
+          ? getApiPage<UnitRegistration>('/academics/registrations/', {}, signal)
+          : Promise.resolve(null),
       ]);
       if (signal?.aborted) return;
+      const registeredUnitIds = new Set((registrationPage?.results ?? [])
+        .filter((registration) => (
+          registration.status === 'registered'
+          && registration.academic_period_status === 'active'
+        ))
+        .map((registration) => registration.unit_id));
       const units = unitPage.results.flatMap((unit) => unit.offerings
-        .filter((offering) => offering.course_id === Number(courseId))
+        .filter((offering) => (
+          offering.is_active
+          && offering.course_id === Number(courseId)
+          && (user?.role !== 'student' || registeredUnitIds.has(unit.id))
+        ))
         .map((offering) => ({
           id: unit.id,
           offering_id: offering.offering_id,
@@ -252,7 +265,7 @@ function CourseDetailContent() {
     } finally {
       if (!signal?.aborted) setCourseLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, user]);
 
   const selectedUnitMatch = course && typeof window !== 'undefined'
     ? window.location.hash.match(/^#unit-(\d+)$/)

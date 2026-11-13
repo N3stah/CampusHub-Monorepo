@@ -72,7 +72,7 @@ describe('admin units', () => {
   it('opens legacy unit responses with selected department and programme checkboxes', async () => {
     render(<AdminUnits />);
 
-    await screen.findByText(/CS101/);
+    await screen.findByRole('button', { name: /CS101/ });
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
 
     const checkboxes = screen.getAllByRole('checkbox');

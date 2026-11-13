@@ -2,11 +2,11 @@ import pytest
 from apps.accounts.models import User
 from apps.academics.models import (
     Department, Course, Unit, Offering, UnitTeachingAssignment,
-    ClassSession, Enrollment, Assignment, AssignmentSubmission, AttendanceRecord
+    ClassSession, Enrollment, AcademicPeriod, Registration, Assignment, AssignmentSubmission, AttendanceRecord
 )
 from apps.accounts.jwt_utils import make_pair
 from django.utils import timezone
-from datetime import timedelta
+from datetime import date, timedelta
 
 pytestmark = pytest.mark.django_db
 
@@ -70,11 +70,28 @@ def _session(offering):
     )
 
 
+def _register(student, offering):
+    Enrollment.objects.create(student=student, course=offering.course, status='active')
+    today = date.today()
+    period = AcademicPeriod.objects.create(
+        name='Current semester',
+        start_date=today - timedelta(days=30),
+        end_date=today + timedelta(days=120),
+        status='active',
+    )
+    Registration.objects.create(
+        student=student,
+        academic_period=period,
+        unit=offering.unit,
+        registered_on=today,
+    )
+
+
 # --- Auth & routing ---
 
 def test_at_risk_success_lecturer(client, lecturer, offering, student):
     """Assigned lecturer gets 200 with correct data shape."""
-    Enrollment.objects.create(student=student, course=offering.course, status='active')
+    _register(student, offering)
     token, _ = make_pair(lecturer)
     headers = {'HTTP_AUTHORIZATION': f'Bearer {token}'}
     response = client.get(f'/api/academics/offerings/{offering.id}/at-risk/', **headers)
@@ -91,7 +108,7 @@ def test_at_risk_success_lecturer(client, lecturer, offering, student):
 
 def test_at_risk_success_admin(client, admin_user, offering, student):
     """Admin also gets 200."""
-    Enrollment.objects.create(student=student, course=offering.course, status='active')
+    _register(student, offering)
     token, _ = make_pair(admin_user)
     headers = {'HTTP_AUTHORIZATION': f'Bearer {token}'}
     response = client.get(f'/api/academics/offerings/{offering.id}/at-risk/', **headers)
@@ -142,7 +159,7 @@ def test_at_risk_400_bad_missed_threshold(client, lecturer, offering):
 
 def test_at_risk_attendance_boundary(client, lecturer, offering, student):
     """Rate exactly at threshold (0.75) is NOT flagged (uses <)."""
-    Enrollment.objects.create(student=student, course=offering.course, status='active')
+    _register(student, offering)
     s = _session(offering)
     AttendanceRecord.objects.create(session=s, student=student, date='2026-01-01', status='present')
     AttendanceRecord.objects.create(session=s, student=student, date='2026-01-02', status='present')
@@ -159,7 +176,7 @@ def test_at_risk_attendance_boundary(client, lecturer, offering, student):
 
 def test_at_risk_flagged_low_attendance(client, lecturer, offering, student):
     """Student below threshold is flagged."""
-    Enrollment.objects.create(student=student, course=offering.course, status='active')
+    _register(student, offering)
     s = _session(offering)
     AttendanceRecord.objects.create(session=s, student=student, date='2026-01-01', status='present')
     AttendanceRecord.objects.create(session=s, student=student, date='2026-01-02', status='present')
@@ -175,7 +192,7 @@ def test_at_risk_flagged_low_attendance(client, lecturer, offering, student):
 
 def test_at_risk_excused_excluded(client, lecturer, offering, student):
     """Excused absences excluded from both numerator and denominator."""
-    Enrollment.objects.create(student=student, course=offering.course, status='active')
+    _register(student, offering)
     s = _session(offering)
     AttendanceRecord.objects.create(session=s, student=student, date='2026-01-01', status='present')
     AttendanceRecord.objects.create(session=s, student=student, date='2026-01-02', status='present')
@@ -192,7 +209,7 @@ def test_at_risk_excused_excluded(client, lecturer, offering, student):
 
 def test_at_risk_missed_assignments(client, lecturer, offering, student):
     """2+ missed past-due assignments -> flagged."""
-    Enrollment.objects.create(student=student, course=offering.course, status='active')
+    _register(student, offering)
     a1 = _past_assignment(offering, 'HW1')
     a2 = _past_assignment(offering, 'HW2')
     a3 = _past_assignment(offering, 'HW3')
@@ -208,7 +225,7 @@ def test_at_risk_missed_assignments(client, lecturer, offering, student):
 
 def test_at_risk_custom_threshold(client, lecturer, offering, student):
     """Custom attendance_threshold changes who is flagged."""
-    Enrollment.objects.create(student=student, course=offering.course, status='active')
+    _register(student, offering)
     s = _session(offering)
     AttendanceRecord.objects.create(session=s, student=student, date='2026-01-01', status='present')
     AttendanceRecord.objects.create(session=s, student=student, date='2026-01-02', status='present')
@@ -223,8 +240,8 @@ def test_at_risk_custom_threshold(client, lecturer, offering, student):
 
 def test_at_risk_sort_order(client, lecturer, offering, student, student2):
     """At-risk students appear before non-at-risk."""
-    Enrollment.objects.create(student=student, course=offering.course, status='active')
-    Enrollment.objects.create(student=student2, course=offering.course, status='active')
+    _register(student, offering)
+    _register(student2, offering)
     s = _session(offering)
     AttendanceRecord.objects.create(session=s, student=student, date='2026-01-01', status='absent')
     AttendanceRecord.objects.create(session=s, student=student, date='2026-01-02', status='absent')

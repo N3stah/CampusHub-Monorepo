@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from apps.accounts.jwt_utils import jwt_required
 from apps.academics.models import Course, Enrollment
+from apps.academics.access import student_has_offering_access, student_ids_for_unit, unit_offering_ids
 from apps.notifications.services import NotificationService
 from .models import Resource, Announcement
 
@@ -280,7 +281,9 @@ def announcement_list_create(request, course_id):
         )
         if not sf or sf <= now:
             if grp:
-                recipients = list(grp.members.values_list('id', flat=True))
+                recipients = list(grp.members.filter(
+                    id__in=student_ids_for_unit(offering.unit_id),
+                ).values_list('id', flat=True))
             else:
                 recipients = list(Enrollment.objects.filter(
                     course=course, status='active'
@@ -345,7 +348,7 @@ def announcement_detail_update_delete(request, course_id, pk):
 @require_http_methods(["GET", "POST"])
 @jwt_required
 def offering_resource_list_create(request, offering_id):
-    from apps.academics.models import Offering, Enrollment, UnitTeachingAssignment
+    from apps.academics.models import Offering, UnitTeachingAssignment
     from apps.notifications.services import NotificationService
     try:
         offering = Offering.objects.get(pk=offering_id)
@@ -357,11 +360,15 @@ def offering_resource_list_create(request, offering_id):
     
     # Permission: enrolled student, assigned lecturer, or admin
     is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists() or course.lecturer_id == user.id
-    if user.role != 'admin' and not is_lecturer and not Enrollment.objects.filter(student=user, course=course, status='active').exists():
+    if user.role != 'admin' and not is_lecturer and not (
+        user.role == 'student' and student_has_offering_access(user, offering.id)
+    ):
         return JsonResponse({'error': 'Permission denied'}, status=403)
         
     if request.method == 'GET':
-        resources = Resource.objects.filter(offering=offering).select_related('uploaded_by')
+        resources = Resource.objects.filter(
+            offering_id__in=unit_offering_ids(offering.unit_id),
+        ).select_related('uploaded_by')
         data = [format_resource(r, request) for r in resources]
         return JsonResponse(data, safe=False)
         
@@ -410,7 +417,7 @@ def offering_resource_delete(request, offering_id, pk):
         return JsonResponse({'error': 'Resource not found'}, status=404)
         
     user = request.user
-    is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists() or course.lecturer_id == user.id
+    is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists() or offering.course.lecturer_id == user.id
     if user.role != 'admin' and resource.uploaded_by_id != user.id and not is_lecturer:
         return JsonResponse({'error': 'You can only delete resources you uploaded'}, status=403)
         
@@ -424,7 +431,7 @@ def offering_resource_delete(request, offering_id, pk):
 @require_http_methods(["GET", "POST"])
 @jwt_required
 def offering_announcement_list_create(request, offering_id):
-    from apps.academics.models import Offering, Enrollment, UnitTeachingAssignment
+    from apps.academics.models import Offering, UnitTeachingAssignment
     try:
         offering = Offering.objects.get(pk=offering_id)
     except Offering.DoesNotExist:
@@ -434,11 +441,15 @@ def offering_announcement_list_create(request, offering_id):
     user = request.user
 
     is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists() or course.lecturer_id == user.id
-    if user.role != 'admin' and not is_lecturer and not Enrollment.objects.filter(student=user, course=course, status='active').exists():
+    if user.role != 'admin' and not is_lecturer and not (
+        user.role == 'student' and student_has_offering_access(user, offering.id)
+    ):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     if request.method == 'GET':
-        announcements = Announcement.objects.filter(offering=offering).select_related('author')
+        announcements = Announcement.objects.filter(
+            offering_id__in=unit_offering_ids(offering.unit_id),
+        ).select_related('author')
         announcements = announcements.filter(
             Q(scheduled_for__isnull=True) | Q(dispatched_at__isnull=False)
         )
@@ -474,9 +485,12 @@ def offering_announcement_list_create(request, offering_id):
         grp = None
         if group_id:
             from apps.academics.models import StudentGroup
-            grp = StudentGroup.objects.filter(pk=group_id).first()
+            grp = StudentGroup.objects.filter(
+                pk=group_id,
+                group_set__offering__unit_id=offering.unit_id,
+            ).first()
             if not grp:
-                return JsonResponse({'error': 'Group not found'}, status=400)
+                return JsonResponse({'error': 'Select a group for this unit'}, status=400)
 
         now = timezone.now()
         announcement = Announcement.objects.create(
@@ -485,11 +499,11 @@ def offering_announcement_list_create(request, offering_id):
         )
         if not sf or sf <= now:
             if grp:
-                recipients = list(grp.members.values_list('id', flat=True))
+                recipients = list(grp.members.filter(
+                    id__in=student_ids_for_unit(offering.unit_id),
+                ).values_list('id', flat=True))
             else:
-                recipients = list(Enrollment.objects.filter(
-                    course=course, status='active'
-                ).values_list('student', flat=True))
+                recipients = list(student_ids_for_unit(offering.unit_id))
             if recipients:
                 NotificationService.notify_bulk(
                     recipients=recipients, verb='announcement_added',
@@ -516,7 +530,9 @@ def offering_announcement_delete(request, offering_id, pk):
         return JsonResponse({'error': 'Announcement not found'}, status=404)
         
     user = request.user
-    if user.role != 'admin' and announcement.author_id != user.id and offering.course.lecturer_id != user.id:
+    from apps.academics.models import UnitTeachingAssignment
+    is_lecturer = UnitTeachingAssignment.objects.filter(offering=offering, lecturer=user).exists()
+    if user.role != 'admin' and announcement.author_id != user.id and not is_lecturer and offering.course.lecturer_id != user.id:
         return JsonResponse({'error': 'You do not have permission to delete this announcement'}, status=403)
         
     announcement.delete()

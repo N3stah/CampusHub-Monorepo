@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiErrorMessage, getApiPage } from '@/lib/portal';
 import api from '@/lib/api';
 import CalendarExportButton from '@/components/CalendarExportButton';
-import type { AcademicUnit, CalendarEvent, CourseAnnouncement, Enrollment, Placement, StudentApplication } from '@/types/portal';
+import type { AcademicUnit, CalendarEvent, CourseAnnouncement, Enrollment, Placement, StudentApplication, UnitRegistration } from '@/types/portal';
 
 interface StudentAnnouncement extends CourseAnnouncement {
   course_code: string;
@@ -56,6 +56,7 @@ function monthDays(value: Date) {
 export default function StudentDashboard() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [units, setUnits] = useState<AcademicUnit[]>([]);
+  const [registrations, setRegistrations] = useState<UnitRegistration[]>([]);
   const [announcements, setAnnouncements] = useState<StudentAnnouncement[]>([]);
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [applications, setApplications] = useState<StudentApplication[]>([]);
@@ -76,13 +77,15 @@ export default function StudentDashboard() {
 
   const loadCoursesAndUpdates = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [enrollmentPage, unitPage] = await Promise.all([
+      const [enrollmentPage, unitPage, registrationPage] = await Promise.all([
         getApiPage<Enrollment>('/academics/enrollments/', {}, signal),
         getApiPage<AcademicUnit>('/academics/units/', {}, signal),
+        getApiPage<UnitRegistration>('/academics/registrations/', {}, signal),
       ]);
       const activeCourses = enrollmentPage.results.filter((enrollment) => enrollment.status === 'active');
       setEnrollments(enrollmentPage.results);
       setUnits(unitPage.results);
+      setRegistrations(registrationPage.results);
       setCourseError(null);
       setLoadingCourses(false);
 
@@ -189,8 +192,14 @@ export default function StudentDashboard() {
 
   const activeCourses = enrollments.filter((enrollment) => enrollment.status === 'active');
   const activeCourseIds = new Set(activeCourses.map((enrollment) => enrollment.course_id));
+  const registeredUnitIds = new Set(registrations
+    .filter((registration) => (
+      registration.status === 'registered'
+      && registration.academic_period_status === 'active'
+    ))
+    .map((registration) => registration.unit_id));
   const activeUnits = units.flatMap((unit) => unit.offerings
-    .filter((offering) => activeCourseIds.has(offering.course_id))
+    .filter((offering) => offering.is_active && activeCourseIds.has(offering.course_id) && registeredUnitIds.has(unit.id))
     .map((offering) => ({ unit, offering })));
   const eventsByDate = useMemo(() => {
     const grouped = new Map<string, CalendarEvent[]>();
@@ -388,7 +397,7 @@ export default function StudentDashboard() {
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <div>
               <h2 id="student-courses-heading" className="font-semibold">My units</h2>
-              <p className="mt-1 text-xs text-slate-500">Units in your active programme</p>
+              <p className="mt-1 text-xs text-slate-500">Units registered for this semester</p>
             </div>
             <Link href="/courses" className="text-sm font-semibold text-blue-700 hover:underline">All units</Link>
           </div>
@@ -415,7 +424,7 @@ export default function StudentDashboard() {
               ))}
             </ul>
           ) : (
-            <p className="p-6 text-center text-sm text-slate-500">No units have been added to your active programme yet.</p>
+            <p className="p-6 text-center text-sm text-slate-500">No units registered for this semester. The Registrar will add your units here.</p>
           )}
         </section>
 
