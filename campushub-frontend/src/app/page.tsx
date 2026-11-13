@@ -159,7 +159,7 @@ export default function Home() {
           <div className="max-w-2xl">
             <p className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-3.5 py-1.5 text-[0.7rem] font-bold uppercase tracking-[0.14em] text-blue-800 shadow-sm">
               <span aria-hidden="true" className="h-2 w-2 rounded-full bg-emerald-500" />
-              The campus, in sync
+              Your campus, all in one place
             </p>
             <h1 className="mt-6 text-4xl font-extrabold leading-[1.08] tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
               One portal for every role on campus
@@ -170,6 +170,9 @@ export default function Home() {
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link href="/login" className="inline-flex min-h-12 items-center justify-center rounded-xl bg-blue-700 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2">
                 Sign in to CampusHub
+              </Link>
+              <Link href="#campushub-features" className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white/80 px-6 py-3 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-800">
+                Explore features
               </Link>
             </div>
             <p className="mt-5 text-xs leading-5 text-slate-500">

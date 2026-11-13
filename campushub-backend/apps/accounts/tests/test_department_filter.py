@@ -14,6 +14,13 @@ def admin_user(db):
     )
 
 @pytest.fixture
+def ict_admin(db):
+    return User.objects.create_user(
+        email='ict@test.com', username='ict', password='pass',
+        first_name='ICT', last_name='Admin', role='ict_admin'
+    )
+
+@pytest.fixture
 def dept(db):
     return Department.objects.create(name='CS', code='CS')
 
@@ -52,3 +59,56 @@ def test_filter_lecturers_by_department(client, admin_user, dept):
     response = client.get(f'/api/lecturers/?department_id={dept.id}', **headers)
     assert response.status_code == 200
     assert response.json()['count'] == 1
+
+def test_ict_admin_can_view_department_rosters_and_move_members(client, ict_admin, dept, student_in_dept):
+    other_dept = Department.objects.create(name='Math', code='MATH')
+    lecturer = User.objects.create_user(
+        email='lec@test.com', username='lec', password='pass',
+        first_name='Lec', last_name='User', role='lecturer', department=dept
+    )
+    token, _ = make_pair(ict_admin)
+    headers = {'HTTP_AUTHORIZATION': f'Bearer {token}'}
+
+    students_response = client.get(
+        f'/api/users/?role=student&department_id={dept.id}',
+        **headers,
+    )
+    assert students_response.status_code == 200
+    assert students_response.json()['count'] == 1
+    assert students_response.json()['results'][0]['is_active'] is True
+    assert client.get('/api/users/?role=student', **headers).status_code == 403
+
+    lecturers_response = client.get(f'/api/lecturers/?department_id={dept.id}', **headers)
+    assert lecturers_response.status_code == 200
+    assert lecturers_response.json()['count'] == 1
+    assert lecturers_response.json()['results'][0]['is_active'] is True
+
+    response = client.patch(
+        f'/api/users/{student_in_dept.id}/',
+        data={'department': other_dept.id},
+        content_type='application/json',
+        **headers,
+    )
+    assert response.status_code == 200
+    student_in_dept.refresh_from_db()
+    assert student_in_dept.department_id == other_dept.id
+
+    response = client.patch(
+        f'/api/lecturers/{lecturer.id}/',
+        data={'department': other_dept.id},
+        content_type='application/json',
+        **headers,
+    )
+    assert response.status_code == 200
+    lecturer.refresh_from_db()
+    assert lecturer.department_id == other_dept.id
+
+    response = client.patch(
+        f'/api/lecturers/{lecturer.id}/',
+        data={'email': 'changed@test.com'},
+        content_type='application/json',
+        **headers,
+    )
+    assert response.status_code == 403
+    lecturer.refresh_from_db()
+    assert lecturer.email == 'lec@test.com'
