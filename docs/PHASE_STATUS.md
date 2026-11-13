@@ -725,10 +725,11 @@ For each route below, decide whether to add a user-facing action and connect it 
   commented out of `requirements.txt` until there is enough real data to train on)
 - **Zero frontend integration as of this entry** — confirmed by diffing every frontend
   API call against every backend route. See Titus Frontend Guide §9 below.
-- **Model IDs verified (2026-11-07):** the hardcoded model IDs in `router.py`
+- **Model IDs verified (2026-11-11):** the hardcoded model IDs in `router.py`
   (`gemini-3.8-flash`, `z-ai/glm-5.3-flash`, `mistralai/mistral-large-4-1t-a52b`)
-  were confirmed against the live Google AI and NVIDIA NIM catalogs — all three are
+  were confirmed against the live Google AI Studio and NVIDIA NIM catalogs — all three are
   current and valid.
+  Manual API calls verified on Render: Gemini (provider: "gemini" in AI Feed + Chat), NVIDIA GLM (direct API call to integrate.api.nvidia.com succeeded), Mistral (provider: "mistral" in AI Chat + Task). No router.py changes needed.
 
 
 ---
@@ -807,24 +808,6 @@ For each route below, decide whether to add a user-facing action and connect it 
 
 ---
 
-### 9. AI Feed & Chat (new surface, backend complete)
-- **Daily feed card:** `GET /api/ai/feed/` — role-specific insights (student: study
-  suggestions/at-risk alerts; lecturer: class overview/intervention suggestions;
-  officer: placement summary; admin: system overview). Cached server-side, so a
-  simple "last updated" card works without client-side caching logic.
-- **Chat panel:** `POST /api/ai/chat/` with `{"message": "..."}` returns
-  `{"conversation_id", "response", "provider"}`. `GET /api/ai/chat/<id>/` for history.
-  A simple chat UI (message list + input) is enough for v1 — no streaming required,
-  the backend returns a complete response per call.
-- **AI tasks:** `GET /api/ai/tasks/` lists what is available for the current role;
-  `POST /api/ai/task/` executes one and returns a **draft only** — e.g. a drafted
-  announcement — which the UI should let the user review and then submit through the
-  *existing* normal endpoint (e.g. the real announcement composer), not a separate
-  auto-publish action. This is deliberate, not a missing feature.
-- **Admin analytics:** `GET /api/ai/analytics/` — a simple stats panel (calls per
-  provider, task success rate) for the admin dashboard.
-
-main
 ### Frontend Fixes Still Needed
 - `<body suppressHydrationWarning>` — Grammarly extension causes hydration mismatch
 - `/dashboard/placments` → `/placements` — URL typo
