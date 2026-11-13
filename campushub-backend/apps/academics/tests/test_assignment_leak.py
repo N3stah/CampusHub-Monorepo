@@ -11,7 +11,7 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def setup(db):
+def setup(db, active_period, register_unit):
     dept = Department.objects.create(name='CS', code='CS')
     course1 = Course.objects.create(code='CS101', title='Intro', department=dept)
     unit1 = Unit.objects.create(code='CS101U', title='Unit 1')
@@ -25,6 +25,7 @@ def setup(db):
     UnitTeachingAssignment.objects.create(offering=offering2, lecturer=lecturer2)
     student = User.objects.create_user(email='student@test.com', username='student', password='pass', first_name='Stu', last_name='Dent', role='student', admission_number='ADM001')
     Enrollment.objects.create(student=student, course=course1, status='active')
+    register_unit(student, unit1)
     admin = User.objects.create_user(email='admin@test.com', username='admin', password='pass', first_name='Admin', last_name='User', role='admin')
     officer = User.objects.create_user(email='officer@test.com', username='officer', password='pass', first_name='Off', last_name='Cer', role='officer')
     a1 = Assignment.objects.create(offering=offering1, title='HW1', assignment_type='file', due_at=timezone.now() + timedelta(days=7), max_points=100, is_published=True)

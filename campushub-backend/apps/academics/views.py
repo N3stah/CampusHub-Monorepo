@@ -17,6 +17,7 @@ from .models import Department, Course, Enrollment, School, Unit, Offering, Acad
 from apps.common.pagination import paginate_queryset
 from apps.common.file_guards import MAX_FILE_SIZE
 from apps.notifications.services import NotificationService
+from .access import student_has_offering_access, student_ids_for_unit, student_unit_offering_ids, unit_offering_ids
 from datetime import date, timedelta
 from apps.common.service_api import collection_response, date_value, integer_value, json_payload, require_role
 
@@ -788,38 +789,40 @@ def unit_teaching_assignment(request, pk):
         return JsonResponse({'error': 'Unit not found'}, status=404)
     try:
         data = json.loads(request.body)
-        course_id = data.get('course_id')
+        if not isinstance(data, dict):
+            return JsonResponse({'error': 'Expected a JSON object'}, status=400)
         lecturer_id = data.get('lecturer_id')
         lecturer_ids = data.get('lecturer_ids')
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
-    if not course_id or (lecturer_ids is None and not lecturer_id):
-        return JsonResponse({'error': 'course_id and lecturer_id or lecturer_ids are required'}, status=400)
+    if 'course_id' in data:
+        return JsonResponse({'error': 'Lecturers must be assigned to the unit, not an individual programme'}, status=400)
+    if lecturer_ids is None and not lecturer_id:
+        return JsonResponse({'error': 'lecturer_id or lecturer_ids are required'}, status=400)
     if lecturer_ids is None:
         lecturer_ids = [lecturer_id]
     if not isinstance(lecturer_ids, list):
         return JsonResponse({'error': 'lecturer_ids must be a list'}, status=400)
     if any(type(lecturer_id) is not int for lecturer_id in lecturer_ids):
         return JsonResponse({'error': 'lecturer_ids must contain integer ids'}, status=400)
-    try:
-        course = Course.objects.get(pk=course_id)
-    except Course.DoesNotExist:
-        return JsonResponse({'error': 'Course not found'}, status=404)
     lecturers = list(User.objects.filter(pk__in=lecturer_ids, role='lecturer'))
     if len(lecturers) != len(set(lecturer_ids)):
         return JsonResponse({'error': 'Every lecturer_id must reference an existing lecturer'}, status=400)
+    offerings = Offering.objects.filter(unit=unit, is_active=True, course__is_active=True)
+    if not offerings.exists():
+        return JsonResponse({'error': 'The unit has no active programme offerings'}, status=400)
     with transaction.atomic():
-        offering, _ = Offering.objects.get_or_create(unit=unit, course=course, defaults={'is_active': True})
-        UnitTeachingAssignment.objects.filter(offering=offering).exclude(lecturer__in=lecturers).delete()
-        for lecturer in lecturers:
-            UnitTeachingAssignment.objects.get_or_create(offering=offering, lecturer=lecturer)
+        for offering in offerings:
+            UnitTeachingAssignment.objects.filter(offering=offering).exclude(lecturer__in=lecturers).delete()
+            for lecturer in lecturers:
+                UnitTeachingAssignment.objects.get_or_create(offering=offering, lecturer=lecturer)
         AuditEvent.objects.create(
             actor=user,
             action='unit.teaching_assigned',
-            description=f'Updated lecturer assignments for {unit.code} in {course.code}.',
+            description=f'Updated lecturer assignments for {unit.code}.',
         )
     return JsonResponse({
-        'offering_id': offering.id,
+        'offering_ids': list(offerings.values_list('id', flat=True)),
         'lecturer_ids': [lecturer.id for lecturer in lecturers],
     }, status=200)
 
@@ -1176,30 +1179,32 @@ def offering_roster(request, pk):
     if not is_offering_lecturer(user, offering):
         return JsonResponse({'error': 'Only the assigned lecturer or admin can view the roster'}, status=403)
         
-    enrollments = Enrollment.objects.filter(course=offering.course, status='active').select_related('student')
+    students = User.objects.filter(
+        role='student',
+        is_active=True,
+        unit_registrations__unit=offering.unit,
+        unit_registrations__status='registered',
+        unit_registrations__academic_period__status='active',
+    ).distinct()
         
     search = request.GET.get('search', '').strip()
         
     if search:
         
-        enrollments = enrollments.filter(
-        
-            Q(student__first_name__icontains=search) |
-        
-            Q(student__last_name__icontains=search) |
-        
-            Q(student__admission_number__icontains=search)
-        
+        students = students.filter(
+            Q(first_name__icontains=search) |
+            Q(last_name__icontains=search) |
+            Q(admission_number__icontains=search)
         )
     data = [
         {
-            'id': e.id,
-            'student_id': e.student.id,
-            'student_name': e.student.get_full_name(),
-            'profile_picture_url': e.student.profile_picture.url if e.student.profile_picture else None,
-            'student_email': e.student.email,
-            'admission_number': e.student.admission_number
-        } for e in enrollments
+            'id': student.id,
+            'student_id': student.id,
+            'student_name': student.get_full_name(),
+            'profile_picture_url': student.profile_picture.url if student.profile_picture else None,
+            'student_email': student.email,
+            'admission_number': student.admission_number
+        } for student in students
     ]
     return JsonResponse({'count': len(data), 'results': data})
 
@@ -1216,7 +1221,11 @@ def offering_sessions(request, pk):
     if request.method == 'GET':
         if not is_offering_lecturer(user, offering) and user.role != 'student':
             return JsonResponse({'error': 'Permission denied'}, status=403)
-        sessions = offering.sessions.all().values('id', 'day_of_week', 'start_time', 'end_time', 'starts_on', 'ends_on', 'location')
+        if user.role == 'student' and not student_has_offering_access(user, offering.id):
+            return JsonResponse({'error': 'You are not registered for this unit'}, status=403)
+        sessions = ClassSession.objects.filter(
+            offering_id__in=unit_offering_ids(offering.unit_id)
+        ).values('id', 'day_of_week', 'start_time', 'end_time', 'starts_on', 'ends_on', 'location')
         return JsonResponse(list(sessions), safe=False)
         
     elif request.method == 'POST':
@@ -1256,8 +1265,7 @@ def session_delete(request, pk):
 def _get_calendar_events(user, query_params=None):
     """Build calendar events for a user from sessions, assignments, and lessons."""
     if user.role == 'student':
-        course_ids = Enrollment.objects.filter(student=user, status='active').values_list('course_id', flat=True)
-        offerings = Offering.objects.filter(course_id__in=course_ids)
+        offerings = Offering.objects.filter(id__in=student_unit_offering_ids(user))
     elif user.role == 'lecturer':
         offering_ids = UnitTeachingAssignment.objects.filter(lecturer=user).values_list('offering_id', flat=True)
         offerings = Offering.objects.filter(id__in=offering_ids)
@@ -1431,8 +1439,7 @@ def _multipart_form_data(request):
 def assignment_list(request):
     user = request.user
     if user.role == 'student':
-        course_ids = Enrollment.objects.filter(student=user, status='active').values_list('course_id', flat=True)
-        offering_ids = Offering.objects.filter(course_id__in=course_ids).values_list('id', flat=True)
+        offering_ids = student_unit_offering_ids(user)
         assignments = Assignment.objects.filter(offering_id__in=offering_ids, is_published=True)
     elif user.role == 'lecturer':
         offering_ids = UnitTeachingAssignment.objects.filter(lecturer=user).values_list('offering_id', flat=True)
@@ -1460,14 +1467,17 @@ def offering_assignments(request, pk):
             if not is_offering_lecturer(user, offering):
                 return JsonResponse({'error': 'Permission denied'}, status=403)
         elif user.role == 'student':
-            if not Enrollment.objects.filter(student=user, course=offering.course, status='active').exists():
-                return JsonResponse({'error': 'You are not enrolled in this course'}, status=403)
+            if not student_has_offering_access(user, offering.id):
+                return JsonResponse({'error': 'You are not registered for this unit'}, status=403)
         else:
             return JsonResponse({'error': 'Unsupported role'}, status=403)
         if user.role == 'student':
-            assignments = offering.assignments.filter(is_published=True)
+            assignments = Assignment.objects.filter(
+                offering_id__in=unit_offering_ids(offering.unit_id),
+                is_published=True,
+            )
         else:
-            assignments = offering.assignments.all()
+            assignments = Assignment.objects.filter(offering_id__in=unit_offering_ids(offering.unit_id))
         return paginate_queryset(assignments, request, lambda a: format_assignment(a, include_questions=True, include_correct=is_offering_lecturer(user, offering)))
         
     elif request.method == 'POST':
@@ -1518,11 +1528,9 @@ def offering_assignments(request, pk):
             return JsonResponse({'error': f'Invalid request data: {exc}'}, status=400)
         except IntegrityError as exc:
             return JsonResponse({'error': f'Database error: {exc}'}, status=400)
-        # Notify enrolled students if assignment is published
+        # Notify students registered for this unit if the assignment is published.
         if assignment.is_published:
-            student_ids = list(Enrollment.objects.filter(
-                course=offering.course, status='active'
-            ).values_list('student_id', flat=True))
+            student_ids = list(student_ids_for_unit(offering.unit_id))
             if student_ids:
                 NotificationService.notify_bulk(
                     recipients=student_ids,
@@ -1549,8 +1557,8 @@ def assignment_detail(request, pk):
         if user.role == 'student':
             if not assignment.is_published:
                 return JsonResponse({'error': 'Assignment not found'}, status=404)
-            if not Enrollment.objects.filter(student=user, course=assignment.offering.course, status='active').exists():
-                return JsonResponse({'error': 'You are not enrolled in this course'}, status=403)
+            if not student_has_offering_access(user, assignment.offering_id):
+                return JsonResponse({'error': 'You are not registered for this unit'}, status=403)
         elif not is_lecturer and user.role != 'admin':
             return JsonResponse({'error': 'Permission denied'}, status=403)
         return JsonResponse(format_assignment(assignment, include_questions=True, include_correct=is_lecturer))
@@ -1625,8 +1633,8 @@ def assignment_attachment(request, pk):
     if user.role == 'student':
         if not assignment.is_published:
             return JsonResponse({'error': 'Assignment not found'}, status=404)
-        if not Enrollment.objects.filter(student=user, course=assignment.offering.course, status='active').exists():
-            return JsonResponse({'error': 'You are not enrolled in this course'}, status=403)
+        if not student_has_offering_access(user, assignment.offering_id):
+            return JsonResponse({'error': 'You are not registered for this unit'}, status=403)
     elif not is_lecturer and user.role != 'admin':
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
@@ -1679,12 +1687,8 @@ def assignment_submission(request, pk):
         return JsonResponse({'error': 'Assignment not found'}, status=404)
 
     if user.role == 'student':
-        if not Enrollment.objects.filter(
-            student=user,
-            course=assignment.offering.course,
-            status='active',
-        ).exists():
-            return JsonResponse({'error': 'You are not enrolled in this course'}, status=403)
+        if not student_has_offering_access(user, assignment.offering_id):
+            return JsonResponse({'error': 'You are not registered for this unit'}, status=403)
         if not assignment.is_published:
             return JsonResponse({'error': 'Assignment not yet published'}, status=403)
 
@@ -1875,8 +1879,10 @@ def offering_grades_csv(request, pk):
     if not is_offering_lecturer(user, offering):
         return JsonResponse({'error': 'Only assigned lecturers or admins can export grades'}, status=403)
         
-    enrollments = Enrollment.objects.filter(course=offering.course, status='active').select_related('student')
-    assignments = offering.assignments.all()
+    students = User.objects.filter(
+        id__in=student_ids_for_unit(offering.unit_id),
+    ).order_by('last_name', 'first_name')
+    assignments = Assignment.objects.filter(offering_id__in=unit_offering_ids(offering.unit_id))
     
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="grades_offering_{pk}.csv"'
@@ -1885,10 +1891,10 @@ def offering_grades_csv(request, pk):
     header = ['Student', 'Admission Number'] + [a.title for a in assignments]
     writer.writerow(header)
     
-    for e in enrollments:
-        row = [e.student.get_full_name(), e.student.admission_number or '']
+    for student in students:
+        row = [student.get_full_name(), student.admission_number or '']
         for a in assignments:
-            sub = AssignmentSubmission.objects.filter(assignment=a, student=e.student).first()
+            sub = AssignmentSubmission.objects.filter(assignment=a, student=student).first()
             row.append(str(sub.score) if sub and sub.score is not None else '')
         writer.writerow(row)
         
@@ -1917,20 +1923,20 @@ def offering_groups(request, pk):
         return JsonResponse({'error': 'Offering not found'}, status=404)
         
     if request.method == 'GET':
-        try:
-            group_set = offering.group_set
-        except GroupSet.DoesNotExist:
-            return JsonResponse({'count': 0, 'results': []})
-            
         if is_offering_lecturer(user, offering) or user.role == 'admin':
-            groups = group_set.groups.all()
+            groups = StudentGroup.objects.filter(
+                group_set__offering_id__in=unit_offering_ids(offering.unit_id),
+            )
             data = [format_group(g, include_members=True) for g in groups]
             return JsonResponse({'count': len(data), 'results': data})
-        else:
-            group = group_set.groups.filter(members=user).first()
-            if group:
-                return JsonResponse({'count': 1, 'results': [format_group(group, include_members=True)]})
-            return JsonResponse({'count': 0, 'results': []})
+        if user.role != 'student' or not student_has_offering_access(user, offering.id):
+            return JsonResponse({'error': 'You are not registered for this unit'}, status=403)
+        groups = StudentGroup.objects.filter(
+            group_set__offering_id__in=unit_offering_ids(offering.unit_id),
+            members=user,
+        ).distinct()
+        data = [format_group(group, include_members=True) for group in groups]
+        return JsonResponse({'count': len(data), 'results': data})
             
     elif request.method == 'POST':
         if not is_offering_lecturer(user, offering):
@@ -1949,10 +1955,8 @@ def offering_groups(request, pk):
             return JsonResponse({'error': 'students_per_group must be at least 1'}, status=400)
             
         students = list(User.objects.filter(
-            enrollments__course=offering.course,
-            enrollments__status='active',
-            role='student'
-        ).distinct())
+            id__in=student_ids_for_unit(offering.unit_id),
+        ).order_by('last_name', 'first_name'))
         
         if not students:
             return JsonResponse({'error': 'No enrolled students to group'}, status=400)
@@ -2007,21 +2011,22 @@ def offering_roster_csv(request, pk):
     if not is_offering_lecturer(user, offering):
         return JsonResponse({'error': 'Only assigned lecturers or admins can export roster'}, status=403)
 
-    enrollments = Enrollment.objects.filter(course=offering.course).select_related('student').order_by('student__last_name')
+    students = User.objects.filter(
+        id__in=student_ids_for_unit(offering.unit_id),
+    ).order_by('last_name', 'first_name')
 
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="roster_offering_{pk}.csv"'
 
     writer = csv.writer(response)
-    writer.writerow(['Student', 'Email', 'Admission Number', 'Enrollment Status', 'Enrolled At'])
+    writer.writerow(['Student', 'Email', 'Admission Number', 'Registration Status'])
 
-    for e in enrollments:
+    for student in students:
         writer.writerow([
-            e.student.get_full_name(),
-            e.student.email,
-            e.student.admission_number or '',
-            e.status,
-            e.enrolled_at.isoformat() if e.enrolled_at else ''
+            student.get_full_name(),
+            student.email,
+            student.admission_number or '',
+            'registered',
         ])
 
     return response
@@ -2040,8 +2045,7 @@ def student_dashboard(request):
     enrollments = Enrollment.objects.filter(student=user, status='active').select_related('course')
     courses = [{'id': e.course.id, 'code': e.course.code, 'title': e.course.title} for e in enrollments]
 
-    course_ids = [e.course_id for e in enrollments]
-    offering_ids = list(Offering.objects.filter(course_id__in=course_ids).values_list('id', flat=True))
+    offering_ids = student_unit_offering_ids(user)
 
     upcoming = Assignment.objects.filter(
         offering_id__in=offering_ids, is_published=True,
@@ -2067,7 +2071,10 @@ def student_dashboard(request):
         for s in recent_grades
     ]
 
-    groups = StudentGroup.objects.filter(members=user).select_related('group_set__offering')
+    groups = StudentGroup.objects.filter(
+        members=user,
+        group_set__offering_id__in=offering_ids,
+    ).select_related('group_set__offering')
     groups_data = [
         {'group_id': g.id, 'group_name': g.name, 'offering_id': g.group_set.offering_id, 'members_count': g.members.count()}
         for g in groups
@@ -2197,11 +2204,12 @@ def offering_lessons(request, pk):
 
     if request.method == 'GET':
         is_lect = is_offering_lecturer(user, offering)
-        is_stu = user.role == 'student' and Enrollment.objects.filter(
-            student=user, course=offering.course, status='active').exists()
+        is_stu = user.role == 'student' and student_has_offering_access(user, offering.id)
         if not is_lect and not is_stu and user.role != 'admin':
             return JsonResponse({'error': 'Permission denied'}, status=403)
-        lessons = offering.lessons.all().order_by('scheduled_at')
+        lessons = Lesson.objects.filter(
+            offering_id__in=unit_offering_ids(offering.unit_id),
+        ).order_by('scheduled_at')
         data = [format_lesson(l) for l in lessons]
         return JsonResponse({'count': len(data), 'results': data})
 
@@ -2299,23 +2307,23 @@ def format_attendance_session(session):
 
 
 def _build_attendance_records(session, attendance_date):
-    """Build AttendanceRow list — one per enrolled student, unmarked = status null."""
-    enrollments = Enrollment.objects.filter(
-        course=session.offering.course, status='active'
-    ).select_related('student').order_by('student__last_name', 'student__first_name')
+    """Build attendance rows for current unit registrants; unmarked records have a null status."""
+    students = User.objects.filter(
+        id__in=student_ids_for_unit(session.offering.unit_id),
+    ).order_by('last_name', 'first_name')
     saved = {
         r.student_id: r for r in AttendanceRecord.objects.filter(
             session=session, date=attendance_date
         )
     }
     records = []
-    for e in enrollments:
-        r = saved.get(e.student_id)
+    for student in students:
+        r = saved.get(student.id)
         records.append({
-            'student_id': e.student_id,
-            'student_name': e.student.get_full_name(),
-            'profile_picture_url': e.student.profile_picture.url if e.student.profile_picture else None,
-            'admission_number': e.student.admission_number or None,
+            'student_id': student.id,
+            'student_name': student.get_full_name(),
+            'profile_picture_url': student.profile_picture.url if student.profile_picture else None,
+            'admission_number': student.admission_number or None,
             'course_code': session.offering.course.code,
             'course_title': session.offering.course.title,
             'status': r.status if r else None,
@@ -2365,6 +2373,7 @@ def session_attendance(request, pk):
             return JsonResponse({'error': 'records must be a list'}, status=400)
 
         valid_statuses = {'present', 'late', 'absent', 'excused'}
+        registered_student_ids = set(student_ids_for_unit(session.offering.unit_id))
         with transaction.atomic():
             for row in records_data:
                 sid = row.get('student_id')
@@ -2372,6 +2381,8 @@ def session_attendance(request, pk):
                 note = row.get('note', '')
                 if not sid or status not in valid_statuses:
                     return JsonResponse({'error': f'Invalid record: student_id and valid status required'}, status=400)
+                if sid not in registered_student_ids:
+                    return JsonResponse({'error': 'Attendance can only be recorded for students registered in this unit'}, status=400)
                 AttendanceRecord.objects.update_or_create(
                     session=session,
                     student_id=sid,
@@ -2409,15 +2420,21 @@ def offering_at_risk(request, pk):
     except ValueError:
         return JsonResponse({'error': 'missed_threshold must be an integer'}, status=400)
 
-    enrollments = Enrollment.objects.filter(
-        course=offering.course, status='active'
-    ).select_related('student')
+    students = User.objects.filter(
+        id__in=student_ids_for_unit(offering.unit_id),
+    )
 
-    session_ids = list(ClassSession.objects.filter(offering=offering).values_list('id', flat=True))
+    session_ids = list(ClassSession.objects.filter(
+        offering_id__in=unit_offering_ids(offering.unit_id),
+    ).values_list('id', flat=True))
 
     now = timezone.now()
     past_assignment_ids = list(
-        Assignment.objects.filter(offering=offering, is_published=True, due_at__lt=now)
+        Assignment.objects.filter(
+            offering_id__in=unit_offering_ids(offering.unit_id),
+            is_published=True,
+            due_at__lt=now,
+        )
         .values_list('id', flat=True)
     )
     total_assignments = len(past_assignment_ids)
@@ -2440,8 +2457,7 @@ def offering_at_risk(request, pk):
         submitted_count_map[sid] = submitted_count_map.get(sid, 0) + 1
 
     data = []
-    for e in enrollments:
-        student = e.student
+    for student in students:
         sid = student.id
         att = attendance_map.get(sid, {'attended': 0, 'total': 0})
         attended = att['attended']
@@ -2590,6 +2606,7 @@ def _serialize_registration(registration):
         'student_name': registration.student.get_full_name(),
         'academic_period_id': registration.academic_period_id,
         'academic_period_name': f'{registration.academic_period.academic_year or registration.academic_period.start_date.year} {registration.academic_period.name}',
+        'academic_period_status': registration.academic_period.status,
         'unit_id': registration.unit_id,
         'unit_code': registration.unit.code,
         'unit_title': registration.unit.title,
@@ -2621,27 +2638,20 @@ def registration_list_create(request):
             default_ordering=('-registered_on',),
         )
 
-    if user.role not in {'student', 'registrar', 'admin'}:
-        return JsonResponse({'error': 'Forbidden'}, status=403)
+    if user.role not in {'registrar', 'admin'}:
+        return JsonResponse({'error': 'Only Registrar or Admin can assign units'}, status=403)
     payload, error = json_payload(request)
     if error:
         return error
-    if user.role == 'student':
-        student = user
-    else:
-        try:
-            student = User.objects.get(pk=int(payload.get('student_id')), role='student', is_active=True)
-        except (User.DoesNotExist, TypeError, ValueError):
-            return JsonResponse({'error': 'Select an active student'}, status=400)
+    try:
+        student = User.objects.get(pk=int(payload.get('student_id')), role='student', is_active=True)
+    except (User.DoesNotExist, TypeError, ValueError):
+        return JsonResponse({'error': 'Select an active student'}, status=400)
     try:
         period = AcademicPeriod.objects.get(pk=int(payload.get('academic_period_id')))
         unit = Unit.objects.get(pk=int(payload.get('unit_id')), is_active=True)
     except (AcademicPeriod.DoesNotExist, Unit.DoesNotExist, TypeError, ValueError):
         return JsonResponse({'error': 'Select an existing academic period and active unit'}, status=400)
-    if user.role == 'student' and (
-        period.status != 'active' or period.start_date > date.today() or period.end_date < date.today()
-    ):
-        return JsonResponse({'error': 'Registration is only available during an active academic period'}, status=400)
     registered_on, date_error = date_value(payload.get('registered_on', date.today().isoformat()), 'registered_on')
     if date_error:
         return JsonResponse({'error': date_error}, status=400)
@@ -2650,15 +2660,9 @@ def registration_list_create(request):
     status = payload.get('status', 'registered')
     if not isinstance(status, str) or status not in {'registered', 'dropped', 'completed'}:
         return JsonResponse({'error': 'Invalid registration status'}, status=400)
-    if status != 'registered' and user.role == 'student':
-        return JsonResponse({'error': 'Students can only create registered records'}, status=403)
     offerings = Offering.objects.filter(unit=unit, is_active=True).filter(Q(period=period) | Q(period__isnull=True))
     if not offerings.exists():
         return JsonResponse({'error': 'The unit is not offered in this academic period'}, status=400)
-    if user.role == 'student':
-        eligible_courses = Enrollment.objects.filter(student=user, status='active').values_list('course_id', flat=True)
-        if not offerings.filter(course_id__in=eligible_courses).exists():
-            return JsonResponse({'error': 'You are not enrolled in a programme offering this unit'}, status=403)
     registration, created = Registration.objects.get_or_create(
         student=student,
         academic_period=period,

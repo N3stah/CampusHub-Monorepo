@@ -33,8 +33,7 @@ export default function AdminUnits() {
   const [form, setForm] = useState<UnitForm>(emptyForm);
   const [editing, setEditing] = useState<AcademicUnit | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null);
-  const [assignmentCourseId, setAssignmentCourseId] = useState('');
-  const [assignmentLecturerIds, setAssignmentLecturerIds] = useState<number[]>([]);
+  const [assignmentSelection, setAssignmentSelection] = useState<{ unitId: number; lecturerIds: number[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [assigning, setAssigning] = useState(false);
@@ -74,6 +73,13 @@ export default function AdminUnits() {
   }, [loadData]);
 
   const selectedUnit = units.find((unit) => unit.id === selectedUnitId) ?? null;
+  const currentLecturerIds = [...new Set(selectedUnit?.offerings
+    .filter((offering) => offering.is_active)
+    .flatMap((offering) => offering.lecturers.map((lecturer) => lecturer.id)) ?? [])];
+  const assignmentLecturerIds = assignmentSelection?.unitId === selectedUnitId
+    ? assignmentSelection.lecturerIds
+    : currentLecturerIds;
+
   function toggleId(values: number[], id: number): number[] {
     return values.includes(id) ? values.filter((value) => value !== id) : [...values, id];
   }
@@ -95,6 +101,20 @@ export default function AdminUnits() {
   function resetForm() {
     setEditing(null);
     setForm(emptyForm);
+    setAssignmentSelection(null);
+  }
+
+  function toggleAssignmentLecturer(id: number) {
+    if (selectedUnitId === null) return;
+    setAssignmentSelection((current) => {
+      const currentIds = current?.unitId === selectedUnitId
+        ? current.lecturerIds
+        : currentLecturerIds;
+      return {
+        unitId: selectedUnitId,
+        lecturerIds: toggleId(currentIds, id),
+      };
+    });
   }
 
   async function saveUnit(event: FormEvent<HTMLFormElement>) {
@@ -162,26 +182,19 @@ export default function AdminUnits() {
     }
   }
 
-  function chooseOffering(courseId: string) {
-    setAssignmentCourseId(courseId);
-    const offering = selectedUnit?.offerings.find((item) => item.course_id === Number(courseId));
-    setAssignmentLecturerIds(offering?.lecturers.map((lecturer) => lecturer.id) ?? []);
-  }
-
   async function saveTeachingAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedUnit || !assignmentCourseId) return;
+    if (!selectedUnit) return;
     setAssigning(true);
     setError(null);
     setNotice(null);
     try {
       await api.post(`/academics/units/${selectedUnit.id}/teaching-assignments/`, {
-        course_id: Number(assignmentCourseId),
         lecturer_ids: assignmentLecturerIds,
       });
-      setNotice('Teaching assignments saved.');
+      setNotice('Lecturers assigned to this unit across its active programme offerings.');
+      setAssignmentSelection(null);
       await loadData();
-      setAssignmentCourseId(String(Number(assignmentCourseId)));
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
     } finally {
@@ -195,7 +208,7 @@ export default function AdminUnits() {
         <Link href="/admin" className="text-sm font-semibold text-blue-700 hover:underline">← Administration</Link>
         <p className="mt-4 text-sm font-semibold uppercase tracking-wide text-blue-700">Academic structure</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight">Units and teaching</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">A unit is a shared subject, not a programme. Link it to multiple departments and programmes, then assign one or more lecturers to each programme offering.</p>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">A unit is a shared subject, not a programme. Link it to multiple departments and programmes, assign lecturers to the unit once, and let students registered for it see its activities across programme offerings.</p>
       </header>
 
       {notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
@@ -270,7 +283,7 @@ export default function AdminUnits() {
                 {units.map((unit) => (
                   <li key={unit.id} className={`p-4 ${unit.id === selectedUnitId ? 'bg-blue-50/50' : ''}`}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <button type="button" onClick={() => { setSelectedUnitId(unit.id); setAssignmentCourseId(''); setAssignmentLecturerIds([]); }} aria-pressed={unit.id === selectedUnitId} className="min-w-0 flex-1 text-left">
+                      <button type="button" onClick={() => setSelectedUnitId(unit.id)} aria-pressed={unit.id === selectedUnitId} className="min-w-0 flex-1 text-left">
                         <span className="text-xs font-bold uppercase tracking-wide text-blue-700">{unit.code} · {unit.credits} credits</span>
                         <span className="mt-1 block font-semibold text-slate-900">{unit.title}</span>
                         <span className="mt-1 block text-xs text-slate-500">{unit.departments.map((department) => `${department.code} — ${department.name}`).join(' · ')}</span>
@@ -298,28 +311,21 @@ export default function AdminUnits() {
             <form onSubmit={saveTeachingAssignment} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div>
                 <h2 className="font-semibold">Assign lecturers</h2>
-                <p className="mt-1 text-sm text-slate-500">Assignments are specific to a unit within a programme. A lecturer can teach units across any department or programme.</p>
+                <p className="mt-1 text-sm text-slate-500">Selected lecturers will teach this unit across its active programme offerings. Students registered for the unit will see its activities.</p>
               </div>
-              <label className="block text-sm font-medium text-slate-700">
-                Programme offering
-                <select required value={assignmentCourseId} onChange={(event) => chooseOffering(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
-                  <option value="">Choose a programme</option>
-                  {selectedUnit.offerings.filter((offering) => offering.is_active).map((offering) => <option key={offering.course_id} value={offering.course_id}>{offering.course_code} — {offering.course_title}</option>)}
-                </select>
-              </label>
               <fieldset className="space-y-2">
-                <legend className="text-sm font-semibold text-slate-700">Lecturers</legend>
+                <legend className="text-sm font-semibold text-slate-700">Lecturers for {selectedUnit.code}</legend>
                 <div className="grid max-h-48 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 sm:grid-cols-2">
                   {lecturers.filter((lecturer) => lecturer.is_active).map((lecturer) => (
                     <label key={lecturer.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-50">
-                      <input type="checkbox" checked={assignmentLecturerIds.includes(lecturer.id)} onChange={() => setAssignmentLecturerIds((current) => toggleId(current, lecturer.id))} className="rounded border-slate-300 text-blue-700" />
+                      <input type="checkbox" checked={assignmentLecturerIds.includes(lecturer.id)} onChange={() => toggleAssignmentLecturer(lecturer.id)} className="rounded border-slate-300 text-blue-700" />
                       {lecturer.first_name} {lecturer.last_name}
                     </label>
                   ))}
                   {!lecturers.some((lecturer) => lecturer.is_active) && <p className="p-2 text-xs text-slate-500">Create active lecturer accounts first.</p>}
                 </div>
               </fieldset>
-              <button type="submit" disabled={assigning || !assignmentCourseId} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">{assigning ? 'Saving…' : 'Save lecturer assignments'}</button>
+              <button type="submit" disabled={assigning} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">{assigning ? 'Saving…' : 'Save unit lecturers'}</button>
             </form>
           )}
         </section>

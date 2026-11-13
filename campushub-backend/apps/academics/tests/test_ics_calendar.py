@@ -83,6 +83,21 @@ def test_ics_success_lecturer(client, lecturer, offering_with_events):
 
 def test_ics_success_student(client, student, offering_with_events):
     Enrollment.objects.create(student=student, course=offering_with_events.course, status='active')
+    from datetime import date, timedelta
+    from apps.academics.models import AcademicPeriod, Registration
+    today = date.today()
+    period = AcademicPeriod.objects.create(
+        name='Current semester',
+        start_date=today - timedelta(days=30),
+        end_date=today + timedelta(days=120),
+        status='active',
+    )
+    Registration.objects.create(
+        student=student,
+        academic_period=period,
+        unit=offering_with_events.unit,
+        registered_on=today,
+    )
     token, _ = make_pair(student)
     headers = {'HTTP_AUTHORIZATION': f'Bearer {token}'}
     response = client.get('/api/academics/calendar.ics', **headers)

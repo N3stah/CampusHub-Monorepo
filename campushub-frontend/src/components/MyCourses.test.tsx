@@ -19,8 +19,7 @@ vi.mock('next/link', async () => {
 
 beforeEach(() => {
   vi.mocked(getApiPage).mockImplementation((endpoint: string) => Promise.resolve(
-    endpoint === '/academics/enrollments/'
-      ? {
+    endpoint === '/academics/enrollments/' ? {
         count: 2,
         next: null,
         previous: null,
@@ -28,8 +27,15 @@ beforeEach(() => {
           { id: 1, course_id: 2, course_code: 'DIT', course_title: 'Diploma in IT', status: 'active', enrolled_at: '2026-01-01' },
           { id: 2, course_id: 3, course_code: 'BSC', course_title: 'Computing', status: 'dropped', enrolled_at: '2025-01-01' },
         ],
-      }
-      : {
+      } : endpoint === '/academics/registrations/' ? {
+        count: 2,
+        next: null,
+        previous: null,
+        results: [
+          { id: 1, unit_id: 41, status: 'registered', academic_period_status: 'active' },
+          { id: 2, unit_id: 42, status: 'registered', academic_period_status: 'completed' },
+        ],
+      } : {
         count: 2,
         next: null,
         previous: null,
@@ -78,7 +84,7 @@ beforeEach(() => {
 });
 
 describe('my units', () => {
-  it('lists only units in active programmes and links to the selected unit', async () => {
+  it('lists only semester-registered units in the active programme and links to the selected unit', async () => {
     render(<MyCourses />);
 
     expect(await screen.findByText('Artificial Intelligence')).toBeInTheDocument();

@@ -246,7 +246,7 @@ def test_ict_admin_can_manage_units_and_teaching_assignments(client, ict_admin, 
 
     response = client.post(
         f'/api/academics/units/{unit_id}/teaching-assignments/',
-        data={'course_id': additional_course.id, 'lecturer_ids': [lecturer.id for lecturer in lecturers]},
+        data={'lecturer_ids': [lecturer.id for lecturer in lecturers]},
         content_type='application/json',
         **headers,
     )
@@ -255,15 +255,35 @@ def test_ict_admin_can_manage_units_and_teaching_assignments(client, ict_admin, 
     assert set(offering.teaching_assignments.values_list('lecturer_id', flat=True)) == {
         lecturer.id for lecturer in lecturers
     }
-
+    other_offering = Offering.objects.create(unit_id=unit_id, course=course)
     response = client.post(
         f'/api/academics/units/{unit_id}/teaching-assignments/',
-        data={'course_id': additional_course.id, 'lecturer_ids': []},
+        data={'lecturer_ids': [lecturer.id for lecturer in lecturers]},
         content_type='application/json',
         **headers,
     )
     assert response.status_code == 200
-    assert not UnitTeachingAssignment.objects.filter(offering=offering).exists()
+    assert set(response.json()['offering_ids']) == {offering.id, other_offering.id}
+    for unit_offering in (offering, other_offering):
+        assert set(unit_offering.teaching_assignments.values_list('lecturer_id', flat=True)) == {
+            lecturer.id for lecturer in lecturers
+        }
+    response = client.post(
+        f'/api/academics/units/{unit_id}/teaching-assignments/',
+        data={'course_id': course.id, 'lecturer_ids': [lecturer.id for lecturer in lecturers]},
+        content_type='application/json',
+        **headers,
+    )
+    assert response.status_code == 400
+
+    response = client.post(
+        f'/api/academics/units/{unit_id}/teaching-assignments/',
+        data={'lecturer_ids': []},
+        content_type='application/json',
+        **headers,
+    )
+    assert response.status_code == 200
+    assert not UnitTeachingAssignment.objects.filter(offering__unit_id=unit_id).exists()
 
     response = client.delete(f'/api/academics/units/{unit_id}/', **headers)
     assert response.status_code == 200

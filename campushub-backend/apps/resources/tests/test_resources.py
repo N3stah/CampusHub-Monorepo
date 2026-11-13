@@ -9,7 +9,7 @@ from datetime import timedelta
 pytestmark = pytest.mark.django_db
 
 @pytest.fixture
-def setup_data(db):
+def setup_data(db, active_period, register_unit):
     admin = User.objects.create_user(email='admin@test.com', username='admin', password='pass', first_name='A', last_name='B', role='admin')
     lecturer = User.objects.create_user(email='lec@test.com', username='lec', password='pass', first_name='L', last_name='M', role='lecturer')
     student = User.objects.create_user(email='student@test.com', username='student', password='pass', first_name='S', last_name='N', role='student')
@@ -19,7 +19,8 @@ def setup_data(db):
     offering = Offering.objects.create(unit=unit, course=course)
     UnitTeachingAssignment.objects.create(offering=offering, lecturer=lecturer)
     Enrollment.objects.create(student=student, course=course, status='active')
-    return {'admin': admin, 'lecturer': lecturer, 'student': student, 'offering': offering, 'course': course}
+    register_unit(student, unit)
+    return {'admin': admin, 'lecturer': lecturer, 'student': student, 'offering': offering, 'course': course, 'unit': unit}
 
 
 def test_announcement_crud(client, setup_data):
@@ -94,3 +95,65 @@ def test_offering_announcement_create(client, setup_data):
     resp = client.get(f'/api/resources/offerings/{oid}/announcements/', **headers)
     assert resp.status_code == 200
     assert len(resp.json()) >= 1
+
+
+def test_registered_students_see_unit_activities_across_offerings(client, setup_data):
+    from apps.academics.models import Enrollment, Offering
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    other_course = Course.objects.create(
+        code='CS102',
+        title='Advanced Intro',
+        department=setup_data['course'].department,
+    )
+    other_offering = Offering.objects.create(unit=setup_data['unit'], course=other_course)
+    UnitTeachingAssignment.objects.create(offering=other_offering, lecturer=setup_data['lecturer'])
+    lecturer_token, _ = make_pair(setup_data['lecturer'])
+    lecturer_headers = {'HTTP_AUTHORIZATION': f'Bearer {lecturer_token}'}
+    response = client.post(
+        f'/api/resources/offerings/{other_offering.id}/resources/',
+        data={
+            'title': 'Shared notes',
+            'file': SimpleUploadedFile('notes.pdf', b'notes', content_type='application/pdf'),
+        },
+        **lecturer_headers,
+    )
+    assert response.status_code == 201
+    response = client.post(
+        f'/api/resources/offerings/{other_offering.id}/announcements/',
+        data={'title': 'Shared update', 'body': 'Unit-wide notice'},
+        content_type='application/json',
+        **lecturer_headers,
+    )
+    assert response.status_code == 201
+
+    student_token, _ = make_pair(setup_data['student'])
+    student_headers = {'HTTP_AUTHORIZATION': f'Bearer {student_token}'}
+    resource_response = client.get(
+        f'/api/resources/offerings/{setup_data["offering"].id}/resources/',
+        **student_headers,
+    )
+    announcement_response = client.get(
+        f'/api/resources/offerings/{setup_data["offering"].id}/announcements/',
+        **student_headers,
+    )
+    assert resource_response.status_code == 200
+    assert [resource['title'] for resource in resource_response.json()] == ['Shared notes']
+    assert announcement_response.status_code == 200
+    assert [announcement['title'] for announcement in announcement_response.json()] == ['Shared update']
+
+    unregistered = User.objects.create_user(
+        email='unregistered@test.com',
+        username='unregistered',
+        password='pass',
+        first_name='Unregistered',
+        last_name='Student',
+        role='student',
+    )
+    Enrollment.objects.create(student=unregistered, course=setup_data['course'], status='active')
+    unregistered_token, _ = make_pair(unregistered)
+    denied = client.get(
+        f'/api/resources/offerings/{setup_data["offering"].id}/resources/',
+        HTTP_AUTHORIZATION=f'Bearer {unregistered_token}',
+    )
+    assert denied.status_code == 403

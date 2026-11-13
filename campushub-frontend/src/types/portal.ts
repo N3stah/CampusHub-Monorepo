@@ -100,6 +100,15 @@ export interface Enrollment {
   enrolled_at: string;
 }
 
+export interface UnitRegistration {
+  id: number;
+  student_id: number;
+  academic_period_id: number;
+  academic_period_status: 'planned' | 'active' | 'completed' | string;
+  unit_id: number;
+  status: 'registered' | 'dropped' | 'completed' | string;
+}
+
 export interface Course {
   id: number;
   code: string;
